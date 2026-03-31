@@ -2,7 +2,7 @@
 SecretSweep — Shannon Entropy Calculator
 
 Calculates Shannon entropy of a string to help distinguish real secrets
-(high entropy, random-looking) from false positives (low entropy, 
+(high entropy, random-looking) from false positives (low entropy,
 repetitive or patterned strings).
 
 Shannon entropy for a string of base64/hex characters:
@@ -27,22 +27,22 @@ from collections import Counter
 def shannon_entropy(s: str) -> float:
     """
     Calculate Shannon entropy of a string in bits.
-    
+
     Returns 0.0 for empty strings or single-character strings.
     Maximum theoretical entropy for a string of length N with
     K distinct characters is log2(K).
     """
     if len(s) <= 1:
         return 0.0
-    
+
     counts = Counter(s)
     length = len(s)
-    
+
     entropy = 0.0
     for count in counts.values():
         if count == 0:
             continue
         probability = count / length
         entropy -= probability * math.log2(probability)
-    
+
     return round(entropy, 4)

@@ -3,7 +3,7 @@ ClassiFinder — AI / LLM Provider Patterns
 
 Patterns for OpenAI, Anthropic, and Cohere API keys.
 AI service secrets increased 81% year-over-year in 2025 (GitGuardian report).
-These are critical severity — a leaked key gives direct access to billable
+These are critical severity -- a leaked key gives direct access to billable
 API usage and potentially sensitive model interactions.
 
 Pattern design notes:
@@ -15,17 +15,20 @@ Pattern design notes:
 """
 
 import re
+
 from .registry import SecretPattern, register
 
-
-# ═══════════════════════════════════════════════
+# ===================================================
 # OPENAI
-# ═══════════════════════════════════════════════
+# ===================================================
 
 OPENAI_API_KEY = SecretPattern(
     id="openai_api_key",
     name="OpenAI API Key",
-    description="OpenAI API key starting with sk- prefix. Grants access to GPT models, DALL-E, embeddings, and other OpenAI services.",
+    description=(
+        "OpenAI API key starting with sk- prefix. Grants access to GPT models,"
+        " DALL-E, embeddings, and other OpenAI services."
+    ),
     provider="openai",
     severity="critical",
     regex=re.compile(
@@ -40,19 +43,26 @@ OPENAI_API_KEY = SecretPattern(
         "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     },
-    recommendation="Revoke this key immediately in the OpenAI Dashboard under API Keys. Generate a new key and update your application. Audit usage for unauthorized charges.",
+    recommendation=(
+        "Revoke this key immediately in the OpenAI Dashboard under API Keys."
+        " Generate a new key and update your application."
+        " Audit usage for unauthorized charges."
+    ),
     tags=["ai", "openai", "llm"],
 )
 
 
-# ═══════════════════════════════════════════════
+# ===================================================
 # ANTHROPIC
-# ═══════════════════════════════════════════════
+# ===================================================
 
 ANTHROPIC_API_KEY = SecretPattern(
     id="anthropic_api_key",
     name="Anthropic API Key",
-    description="Anthropic API key starting with sk-ant- prefix. Grants access to Claude models.",
+    description=(
+        "Anthropic API key starting with sk-ant- prefix."
+        " Grants access to Claude models."
+    ),
     provider="anthropic",
     severity="critical",
     regex=re.compile(
@@ -64,19 +74,25 @@ ANTHROPIC_API_KEY = SecretPattern(
     entropy_threshold=0.0,
     context_keywords=["anthropic", "ANTHROPIC_API_KEY", "claude", "api_key"],
     known_test_values=set(),
-    recommendation="Revoke this key immediately in the Anthropic Console under API Keys. Generate a new key and update your application.",
+    recommendation=(
+        "Revoke this key immediately in the Anthropic Console under API Keys."
+        " Generate a new key and update your application."
+    ),
     tags=["ai", "anthropic", "llm"],
 )
 
 
-# ═══════════════════════════════════════════════
+# ===================================================
 # COHERE
-# ═══════════════════════════════════════════════
+# ===================================================
 
 COHERE_API_KEY = SecretPattern(
     id="cohere_api_key",
     name="Cohere API Key",
-    description="Cohere API key. A 40-character alphanumeric string, typically found near COHERE_API_KEY or cohere context keywords.",
+    description=(
+        "Cohere API key. A 40-character alphanumeric string, typically found"
+        " near COHERE_API_KEY or cohere context keywords."
+    ),
     provider="cohere",
     severity="high",
     regex=re.compile(
@@ -90,9 +106,14 @@ COHERE_API_KEY = SecretPattern(
     ),
     confidence_base=0.75,  # no distinctive prefix, relies on context
     entropy_threshold=3.5,
-    context_keywords=["cohere", "COHERE_API_KEY", "cohere_key", "embed", "rerank"],
+    context_keywords=[
+        "cohere", "COHERE_API_KEY", "cohere_key", "embed", "rerank",
+    ],
     known_test_values=set(),
-    recommendation="Revoke this key in the Cohere Dashboard under API Keys. Generate a new key and update your application.",
+    recommendation=(
+        "Revoke this key in the Cohere Dashboard under API Keys."
+        " Generate a new key and update your application."
+    ),
     tags=["ai", "cohere", "llm"],
 )
 
