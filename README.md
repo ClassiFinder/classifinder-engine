@@ -15,16 +15,16 @@ classifinder-engine/
 ├── entropy.py          # Shannon entropy calculator for confidence scoring
 └── patterns/
     ├── registry.py     # Pattern registry and SecretPattern dataclass
-    ├── cloud.py        # AWS, GCP, Azure, DigitalOcean, Heroku, Cloudflare, Doppler, Terraform, Vault, Pulumi, Fly.io, Alibaba, Vercel, Netlify (18 patterns)
-    ├── payment.py      # Stripe, PayPal, Square, Shopify, credit cards with Luhn validation (11 patterns)
+    ├── cloud.py        # AWS, GCP, Azure, DigitalOcean, Heroku, Cloudflare, Doppler, Terraform, Vault, Pulumi, Fly.io, Alibaba, Vercel, Netlify, IBM Cloud (19 patterns)
+    ├── payment.py      # Stripe, PayPal, Square, Shopify, credit cards with Luhn validation, Ethereum, Bitcoin (13 patterns)
     ├── vcs.py          # GitHub, GitLab, Bitbucket, CircleCI, npm, PyPI, RubyGems, Airtable, NuGet (14 patterns)
-    ├── comms.py        # Slack, Twilio, SendGrid, Mailgun, Discord, Telegram, New Relic, Grafana, Linear, Notion, Sentry, Datadog, PagerDuty (20 patterns)
-    ├── database.py     # PostgreSQL, MySQL, MongoDB, Redis, SSH keys, .env passwords (7 patterns)
+    ├── comms.py        # Slack, Twilio, SendGrid, Mailgun, Discord, Telegram, New Relic, Grafana, Linear, Notion, Sentry, Datadog, PagerDuty, Figma, Auth0 (22 patterns)
+    ├── database.py     # PostgreSQL, MySQL, MongoDB, Redis, SSH keys, .env passwords, Supabase (8 patterns)
     ├── generic.py      # JWT, Bearer, Basic Auth, generic API keys, high-entropy strings (5 patterns)
     └── ai.py           # OpenAI, Anthropic, Cohere, HuggingFace, Replicate, Groq, DeepSeek (7 patterns)
 ```
 
-**82 detection patterns** across 7 categories. Each pattern includes a regex, base confidence score, entropy threshold, context keywords, known test values, and remediation guidance.
+**88 detection patterns** across 7 categories. Each pattern includes a regex, base confidence score, entropy threshold, context keywords, known test values, and remediation guidance.
 
 ## How It Works
 
@@ -42,7 +42,7 @@ redacted_text, redaction_map = redact(text, findings, style="label")
 ```
 
 The `scan()` function:
-1. Runs all 82 regex patterns against the input
+1. Runs all 88 regex patterns against the input
 2. Calculates confidence using: base score + context keyword boost - entropy penalty - test value penalty
 3. Deduplicates overlapping findings (highest confidence wins)
 4. Returns structured findings sorted by position

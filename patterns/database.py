@@ -288,6 +288,44 @@ SSH_PRIVATE_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# SUPABASE
+# ===================================================
+
+SUPABASE_SERVICE_KEY = SecretPattern(
+    id="supabase_service_key",
+    name="Supabase Service Role Key",
+    description=(
+        "Supabase service role key — a JWT with the standard HS256 header"
+        " (eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9) detected by Supabase context."
+        " Bypasses Row Level Security and grants full database access."
+    ),
+    provider="supabase",
+    severity="critical",
+    regex=re.compile(
+        r"(?:"
+        r"(?:SUPABASE_SERVICE_ROLE_KEY|SUPABASE_KEY|SUPABASE_SECRET|supabase.*service.*key|supabase.*token)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9_-]{20,500}\.[A-Za-z0-9_-]{20,500})"
+        r"(?![A-Za-z0-9_\-.])",
+        re.ASCII | re.IGNORECASE
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "supabase", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_KEY",
+        "supabase_url", "service_role",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Rotate this key in the Supabase Dashboard under Settings > API."
+        " The service role key bypasses RLS — never expose it client-side."
+    ),
+    tags=["database", "supabase", "auth"],
+)
+
+
 register(
     POSTGRES_CONNECTION_STRING,
     MYSQL_CONNECTION_STRING,
@@ -296,4 +334,5 @@ register(
     PASSWORD_IN_URL,
     ENV_DATABASE_PASSWORD,
     SSH_PRIVATE_KEY,
+    SUPABASE_SERVICE_KEY,
 )

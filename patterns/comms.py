@@ -637,6 +637,78 @@ PAGERDUTY_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# FIGMA
+# ===================================================
+
+FIGMA_PAT = SecretPattern(
+    id="figma_pat",
+    name="Figma Personal Access Token",
+    description=(
+        "Figma personal access token with a distinctive UUID-like structure:"
+        " 5-6 digit numeric prefix followed by hyphenated hex segments."
+        " Detected when Figma context is present."
+    ),
+    provider="figma",
+    severity="high",
+    regex=re.compile(
+        r"(?:"
+        r"(?:FIGMA_TOKEN|FIGMA_PAT|FIGMA_API_TOKEN|figma.*token|figma.*key)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[0-9]{5,6}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+        re.ASCII | re.IGNORECASE
+    ),
+    confidence_base=0.85,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "figma", "FIGMA_TOKEN", "FIGMA_PAT", "figma_api",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in Figma under Account Settings > Personal Access Tokens."
+        " An attacker can read and modify your Figma files."
+    ),
+    tags=["saas", "figma", "design"],
+)
+
+
+# ===================================================
+# AUTH0
+# ===================================================
+
+AUTH0_MANAGEMENT_TOKEN = SecretPattern(
+    id="auth0_management_token",
+    name="Auth0 Management API Token",
+    description=(
+        "Auth0 Management API token (JWT format) detected by auth0 context."
+        " Grants access to manage Auth0 tenants, users, and applications."
+    ),
+    provider="auth0",
+    severity="critical",
+    regex=re.compile(
+        r"(?:"
+        r"(?:AUTH0_MANAGEMENT_TOKEN|AUTH0_TOKEN|AUTH0_API_TOKEN|auth0.*token|auth0.*key|auth0.*secret)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>eyJ[A-Za-z0-9_-]{10,500}\.[A-Za-z0-9_-]{10,1000}\.[A-Za-z0-9_-]{10,500})"
+        r"(?![A-Za-z0-9_\-.])",
+        re.ASCII | re.IGNORECASE
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "auth0", "AUTH0_TOKEN", "AUTH0_MANAGEMENT_TOKEN", "auth0_domain",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in the Auth0 Dashboard under Applications > APIs."
+        " Management tokens grant full tenant access — rotate immediately."
+    ),
+    tags=["auth", "auth0", "identity"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -658,4 +730,6 @@ register(
     DATADOG_API_KEY,
     DATADOG_APP_KEY,
     PAGERDUTY_API_KEY,
+    FIGMA_PAT,
+    AUTH0_MANAGEMENT_TOKEN,
 )

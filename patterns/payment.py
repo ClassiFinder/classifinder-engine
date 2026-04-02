@@ -398,6 +398,84 @@ SHOPIFY_PRIVATE_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# ETHEREUM
+# ===================================================
+
+ETHEREUM_PRIVATE_KEY = SecretPattern(
+    id="ethereum_private_key",
+    name="Ethereum Private Key",
+    description=(
+        "Ethereum private key — 0x followed by 64 hex characters (256 bits)."
+        " Detected when preceded by Ethereum/wallet context keywords."
+        " Controls an Ethereum wallet and all its assets."
+    ),
+    provider="ethereum",
+    severity="critical",
+    regex=re.compile(
+        r"(?:"
+        r"(?:ETH_PRIVATE_KEY|ETHEREUM_PRIVATE_KEY|ethereum.*private.*key|eth.*key|wallet.*key|private.*key.*eth)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>0x[a-fA-F0-9]{64})"
+        r"(?![a-fA-F0-9])",
+        re.ASCII | re.IGNORECASE
+    ),
+    confidence_base=0.80,
+    entropy_threshold=3.5,
+    context_keywords=[
+        "ethereum", "eth", "wallet", "ETH_PRIVATE_KEY", "web3", "metamask",
+    ],
+    known_test_values={
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",  # Hardhat #0
+    },
+    recommendation=(
+        "Transfer all assets from this wallet immediately."
+        " An attacker with this key has full control of the wallet"
+        " and can drain all ETH and tokens."
+    ),
+    tags=["crypto", "ethereum", "wallet"],
+)
+
+
+# ===================================================
+# BITCOIN
+# ===================================================
+
+BITCOIN_WIF_KEY = SecretPattern(
+    id="bitcoin_wif_key",
+    name="Bitcoin WIF Private Key",
+    description=(
+        "Bitcoin private key in Wallet Import Format (WIF)."
+        " Starts with 5 (uncompressed), K, or L (compressed) followed by"
+        " 50-51 Base58Check characters."
+    ),
+    provider="bitcoin",
+    severity="critical",
+    regex=re.compile(
+        r"(?:"
+        r"(?:BTC_PRIVATE_KEY|BITCOIN_PRIVATE_KEY|bitcoin.*private.*key|bitcoin.*wif|btc.*key|wallet.*wif)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[5KL][1-9A-HJ-NP-Za-km-z]{50,51})"
+        r"(?![1-9A-HJ-NP-Za-km-z])",
+        re.ASCII | re.IGNORECASE
+    ),
+    confidence_base=0.80,
+    entropy_threshold=3.5,
+    context_keywords=[
+        "bitcoin", "btc", "wallet", "wif", "BTC_PRIVATE_KEY", "private_key",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Transfer all Bitcoin from this wallet immediately."
+        " An attacker with a WIF private key has full control"
+        " of the associated Bitcoin address."
+    ),
+    tags=["crypto", "bitcoin", "wallet"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -410,4 +488,6 @@ register(
     SHOPIFY_ACCESS_TOKEN,
     SHOPIFY_CUSTOM_TOKEN,
     SHOPIFY_PRIVATE_TOKEN,
+    ETHEREUM_PRIVATE_KEY,
+    BITCOIN_WIF_KEY,
 )

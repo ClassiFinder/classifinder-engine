@@ -609,6 +609,42 @@ NETLIFY_TOKEN = SecretPattern(
 
 
 # Register all cloud patterns
+# ===================================================
+# IBM CLOUD
+# ===================================================
+
+IBM_CLOUD_API_KEY = SecretPattern(
+    id="ibm_cloud_api_key",
+    name="IBM Cloud API Key",
+    description=(
+        "IBM Cloud IAM API key, a 44-character alphanumeric string."
+        " Detected when preceded by IBM-specific context keywords."
+    ),
+    provider="ibm",
+    severity="high",
+    regex=re.compile(
+        r"(?:"
+        r"(?:IBM_API_KEY|IBM_CLOUD_API_KEY|ibm.*api.*key|ibm.*token)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[A-Za-z0-9_\-]{44})"
+        r"(?![A-Za-z0-9_\-])",
+        re.ASCII | re.IGNORECASE
+    ),
+    confidence_base=0.75,
+    entropy_threshold=3.5,
+    context_keywords=[
+        "ibm", "IBM_API_KEY", "IBM_CLOUD_API_KEY", "ibm_cloud", "bluemix",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the IBM Cloud console under Manage > Access (IAM) > API Keys."
+        " Generate a new key with minimal permissions."
+    ),
+    tags=["cloud", "ibm"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -628,4 +664,5 @@ register(
     VERCEL_ACCESS_TOKEN,
     VERCEL_REFRESH_TOKEN,
     NETLIFY_TOKEN,
+    IBM_CLOUD_API_KEY,
 )
