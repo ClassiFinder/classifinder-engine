@@ -310,6 +310,94 @@ CREDIT_CARD_NUMBER = SecretPattern(
 )
 
 
+# ===================================================
+# SHOPIFY
+# ===================================================
+
+SHOPIFY_ACCESS_TOKEN = SecretPattern(
+    id="shopify_access_token",
+    name="Shopify Admin API Access Token",
+    description=(
+        "Shopify admin API access token with shpat_ prefix."
+        " Grants access to a Shopify store's admin API."
+    ),
+    provider="shopify",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>shpat_[a-fA-F0-9]{32})"
+        r"(?![a-fA-F0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "shopify", "SHOPIFY_ACCESS_TOKEN", "shopify_token", "shpat",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in the Shopify Partner Dashboard"
+        " or store admin under Apps > Develop apps."
+    ),
+    tags=["payment", "shopify", "ecommerce"],
+)
+
+
+SHOPIFY_CUSTOM_TOKEN = SecretPattern(
+    id="shopify_custom_token",
+    name="Shopify Custom App Access Token",
+    description=(
+        "Shopify custom app access token with shpca_ prefix."
+        " Grants custom app access to a Shopify store."
+    ),
+    provider="shopify",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>shpca_[a-fA-F0-9]{32})"
+        r"(?![a-fA-F0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "shopify", "SHOPIFY_CUSTOM_TOKEN", "shpca",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in the Shopify store admin"
+        " under Apps > Develop apps."
+    ),
+    tags=["payment", "shopify", "ecommerce"],
+)
+
+
+SHOPIFY_PRIVATE_TOKEN = SecretPattern(
+    id="shopify_private_token",
+    name="Shopify Private App Access Token",
+    description=(
+        "Shopify private app access token with shppa_ prefix."
+        " Grants private app access to a Shopify store."
+    ),
+    provider="shopify",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>shppa_[a-fA-F0-9]{32})"
+        r"(?![a-fA-F0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "shopify", "SHOPIFY_PRIVATE_TOKEN", "shppa",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Shopify deprecated private apps. Migrate to custom apps"
+        " and revoke this token."
+    ),
+    tags=["payment", "shopify", "ecommerce"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -319,4 +407,7 @@ register(
     PAYPAL_CLIENT_SECRET,
     SQUARE_ACCESS_TOKEN,
     CREDIT_CARD_NUMBER,
+    SHOPIFY_ACCESS_TOKEN,
+    SHOPIFY_CUSTOM_TOKEN,
+    SHOPIFY_PRIVATE_TOKEN,
 )

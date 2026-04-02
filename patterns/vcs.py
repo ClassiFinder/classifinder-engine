@@ -282,6 +282,94 @@ CIRCLECI_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# PACKAGE REGISTRIES
+# ===================================================
+
+NPM_TOKEN = SecretPattern(
+    id="npm_token",
+    name="npm Access Token",
+    description=(
+        "npm registry access token with npm_ prefix."
+        " Grants access to publish and manage npm packages."
+    ),
+    provider="npm",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>npm_[A-Za-z0-9]{36})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "npm", "NPM_TOKEN", "npmrc", "registry", "node",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token at npmjs.com under Access Tokens."
+        " An attacker can publish malicious packages under your name."
+    ),
+    tags=["vcs", "npm", "registry"],
+)
+
+
+PYPI_TOKEN = SecretPattern(
+    id="pypi_token",
+    name="PyPI API Token",
+    description=(
+        "PyPI API token with pypi-AgEIcHlwaS5vcmc prefix."
+        " Grants access to upload packages to the Python Package Index."
+    ),
+    provider="pypi",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>pypi-AgEIcHlwaS5vcmc[A-Za-z0-9\-_]{50,})"
+        r"(?![A-Za-z0-9\-_])",
+        re.ASCII
+    ),
+    confidence_base=0.99,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "pypi", "PYPI_TOKEN", "twine", "upload", "pip",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token at pypi.org under Account Settings > API Tokens."
+        " An attacker can publish malicious Python packages."
+    ),
+    tags=["vcs", "pypi", "registry"],
+)
+
+
+RUBYGEMS_TOKEN = SecretPattern(
+    id="rubygems_token",
+    name="RubyGems API Key",
+    description=(
+        "RubyGems API key with rubygems_ prefix."
+        " Grants access to publish and manage Ruby gems."
+    ),
+    provider="rubygems",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>rubygems_[A-Za-z0-9]{48})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "rubygems", "RUBYGEMS_API_KEY", "gem", "gem_host_api_key",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key at rubygems.org under Settings > API Keys."
+        " An attacker can publish malicious gems."
+    ),
+    tags=["vcs", "rubygems", "registry"],
+)
+
+
 register(
     GITHUB_PAT_CLASSIC,
     GITHUB_PAT_FINE_GRAINED,
@@ -292,4 +380,7 @@ register(
     GITLAB_PIPELINE_TRIGGER,
     BITBUCKET_APP_PASSWORD,
     CIRCLECI_TOKEN,
+    NPM_TOKEN,
+    PYPI_TOKEN,
+    RUBYGEMS_TOKEN,
 )

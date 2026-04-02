@@ -290,6 +290,191 @@ TELEGRAM_BOT_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# NEW RELIC
+# ===================================================
+
+NEWRELIC_ADMIN_API_KEY = SecretPattern(
+    id="newrelic_admin_api_key",
+    name="New Relic Admin API Key",
+    description=(
+        "New Relic admin API key with NRAA- prefix."
+        " Grants administrative access to a New Relic account."
+    ),
+    provider="newrelic",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>NRAA-[a-f0-9]{27})"
+        r"(?![a-f0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "newrelic", "new_relic", "NEW_RELIC_API_KEY", "nraa",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in New Relic under API Keys."
+        " Generate a new admin key with minimal permissions."
+    ),
+    tags=["monitoring", "newrelic"],
+)
+
+
+NEWRELIC_INSIGHTS_KEY = SecretPattern(
+    id="newrelic_insights_key",
+    name="New Relic Insights Insert/Query Key",
+    description=(
+        "New Relic Insights key with NRI prefix (NRII for insert, NRIQ for query)."
+        " Grants access to send or query event data."
+    ),
+    provider="newrelic",
+    severity="high",
+    regex=re.compile(
+        r"(?P<secret>NRI[IQ]-[A-Za-z0-9\-_]{32})"
+        r"(?![A-Za-z0-9\-_])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "newrelic", "new_relic", "insights", "NEW_RELIC_INSERT_KEY",
+        "NEW_RELIC_QUERY_KEY",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in New Relic under Insights > Manage Data."
+        " Generate a new key with appropriate access."
+    ),
+    tags=["monitoring", "newrelic"],
+)
+
+
+NEWRELIC_USER_API_KEY = SecretPattern(
+    id="newrelic_user_api_key",
+    name="New Relic User API Key",
+    description=(
+        "New Relic user API key with NRAK- prefix."
+        " Grants access to NerdGraph and REST APIs."
+    ),
+    provider="newrelic",
+    severity="high",
+    regex=re.compile(
+        r"(?P<secret>NRAK-[a-z0-9]{27})"
+        r"(?![a-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "newrelic", "new_relic", "NEW_RELIC_API_KEY", "nrak",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in New Relic under API Keys."
+        " Generate a new user API key."
+    ),
+    tags=["monitoring", "newrelic"],
+)
+
+
+# ===================================================
+# GRAFANA
+# ===================================================
+
+GRAFANA_API_KEY = SecretPattern(
+    id="grafana_api_key",
+    name="Grafana Service Account Token",
+    description=(
+        "Grafana Cloud service account token with glsa_ prefix."
+        " Grants access to Grafana dashboards and data sources."
+    ),
+    provider="grafana",
+    severity="high",
+    regex=re.compile(
+        r"(?P<secret>glsa_[A-Za-z0-9]{32}_[a-f0-9]{8})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "grafana", "GRAFANA_API_KEY", "grafana_token", "glsa",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in Grafana under"
+        " Administration > Service Accounts."
+    ),
+    tags=["monitoring", "grafana"],
+)
+
+
+# ===================================================
+# LINEAR
+# ===================================================
+
+LINEAR_API_KEY = SecretPattern(
+    id="linear_api_key",
+    name="Linear API Key",
+    description=(
+        "Linear personal API key with lin_api_ prefix."
+        " Grants access to Linear project management data."
+    ),
+    provider="linear",
+    severity="high",
+    regex=re.compile(
+        r"(?P<secret>lin_api_[A-Za-z0-9]{40})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "linear", "LINEAR_API_KEY", "linear_token",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in Linear under Settings > API."
+        " Generate a new personal API key."
+    ),
+    tags=["saas", "linear", "project-management"],
+)
+
+
+# ===================================================
+# NOTION
+# ===================================================
+
+NOTION_API_KEY = SecretPattern(
+    id="notion_api_key",
+    name="Notion Integration Token",
+    description=(
+        "Notion internal integration token with secret_ prefix."
+        " Grants access to Notion pages and databases."
+    ),
+    provider="notion",
+    severity="high",
+    regex=re.compile(
+        r"(?P<secret>secret_[A-Za-z0-9]{43})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "notion", "NOTION_API_KEY", "NOTION_TOKEN", "notion_secret",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in Notion under Settings > Integrations."
+        " Create a new integration with minimal page access."
+    ),
+    tags=["saas", "notion"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -300,4 +485,10 @@ register(
     MAILGUN_API_KEY,
     DISCORD_BOT_TOKEN,
     TELEGRAM_BOT_TOKEN,
+    NEWRELIC_ADMIN_API_KEY,
+    NEWRELIC_INSIGHTS_KEY,
+    NEWRELIC_USER_API_KEY,
+    GRAFANA_API_KEY,
+    LINEAR_API_KEY,
+    NOTION_API_KEY,
 )

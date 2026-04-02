@@ -118,8 +118,110 @@ COHERE_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# HUGGINGFACE
+# ===================================================
+
+HUGGINGFACE_TOKEN = SecretPattern(
+    id="huggingface_token",
+    name="HuggingFace Token",
+    description=(
+        "HuggingFace user access token with hf_ prefix."
+        " Grants access to model repos, datasets, and Inference API."
+    ),
+    provider="huggingface",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>hf_[A-Za-z0-9]{34,})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "huggingface", "hugging_face", "HF_TOKEN", "hf_token",
+        "HUGGINGFACE_TOKEN", "transformers",
+    ],
+    known_test_values={
+        "hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    },
+    recommendation=(
+        "Revoke this token at huggingface.co/settings/tokens."
+        " Generate a new token with minimal required permissions."
+    ),
+    tags=["ai", "huggingface", "ml"],
+)
+
+
+# ===================================================
+# REPLICATE
+# ===================================================
+
+REPLICATE_API_TOKEN = SecretPattern(
+    id="replicate_api_token",
+    name="Replicate API Token",
+    description=(
+        "Replicate API token with r8_ prefix."
+        " Grants access to run AI models on Replicate's infrastructure."
+    ),
+    provider="replicate",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>r8_[A-Za-z0-9]{36,})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "replicate", "REPLICATE_API_TOKEN", "replicate_token",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token at replicate.com/account/api-tokens."
+        " Generate a new token and update your application."
+    ),
+    tags=["ai", "replicate", "ml"],
+)
+
+
+# ===================================================
+# GROQ
+# ===================================================
+
+GROQ_API_KEY = SecretPattern(
+    id="groq_api_key",
+    name="Groq API Key",
+    description=(
+        "Groq API key with gsk_ prefix."
+        " Grants access to Groq's fast inference API for LLMs."
+    ),
+    provider="groq",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>gsk_[A-Za-z0-9]{52,})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "groq", "GROQ_API_KEY", "groq_key",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key at console.groq.com/keys."
+        " Generate a new key and update your application."
+    ),
+    tags=["ai", "groq", "llm"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
     COHERE_API_KEY,
+    HUGGINGFACE_TOKEN,
+    REPLICATE_API_TOKEN,
+    GROQ_API_KEY,
 )

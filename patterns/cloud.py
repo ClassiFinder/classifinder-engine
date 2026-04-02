@@ -328,6 +328,196 @@ CLOUDFLARE_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# DOPPLER
+# ===================================================
+
+DOPPLER_TOKEN = SecretPattern(
+    id="doppler_token",
+    name="Doppler Service Token",
+    description=(
+        "Doppler service token with dp.pt. prefix."
+        " Grants access to secrets stored in Doppler."
+    ),
+    provider="doppler",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>dp\.pt\.[A-Za-z0-9]{40,44})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["doppler", "DOPPLER_TOKEN", "dp_token"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in the Doppler dashboard"
+        " under Access > Service Tokens."
+    ),
+    tags=["cloud", "doppler", "secrets"],
+)
+
+
+# ===================================================
+# TERRAFORM CLOUD
+# ===================================================
+
+TERRAFORM_CLOUD_TOKEN = SecretPattern(
+    id="terraform_cloud_token",
+    name="Terraform Cloud / Enterprise API Token",
+    description=(
+        "Terraform Cloud or Enterprise API token with .atlasv1. segment."
+        " Grants access to manage infrastructure-as-code workspaces."
+    ),
+    provider="terraform",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>[A-Za-z0-9]{14}\.atlasv1\.[A-Za-z0-9]{67})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "terraform", "TF_TOKEN", "TFE_TOKEN", "atlas", "terraform_cloud",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in Terraform Cloud under User Settings > Tokens."
+        " An attacker with this token can modify your infrastructure."
+    ),
+    tags=["cloud", "terraform", "iac"],
+)
+
+
+# ===================================================
+# HASHICORP VAULT
+# ===================================================
+
+VAULT_TOKEN = SecretPattern(
+    id="vault_token",
+    name="HashiCorp Vault Token",
+    description=(
+        "HashiCorp Vault service token with hvs. prefix."
+        " Grants access to secrets stored in Vault."
+    ),
+    provider="vault",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>hvs\.[A-Za-z0-9]{24,})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "vault", "VAULT_TOKEN", "hashicorp", "hvs",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token using `vault token revoke`."
+        " Audit the token's policies and recent access logs."
+    ),
+    tags=["cloud", "vault", "secrets"],
+)
+
+
+# ===================================================
+# PULUMI
+# ===================================================
+
+PULUMI_ACCESS_TOKEN = SecretPattern(
+    id="pulumi_access_token",
+    name="Pulumi Access Token",
+    description=(
+        "Pulumi Cloud access token with pul- prefix."
+        " Grants access to manage Pulumi stacks and state."
+    ),
+    provider="pulumi",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>pul-[a-f0-9]{40})"
+        r"(?![a-f0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "pulumi", "PULUMI_ACCESS_TOKEN", "pulumi_token",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token at app.pulumi.com/account/tokens."
+        " An attacker can modify your infrastructure stacks."
+    ),
+    tags=["cloud", "pulumi", "iac"],
+)
+
+
+# ===================================================
+# FLY.IO
+# ===================================================
+
+FLY_API_TOKEN = SecretPattern(
+    id="fly_api_token",
+    name="Fly.io API Token",
+    description=(
+        "Fly.io deploy token with fo1_ prefix."
+        " Grants access to manage Fly.io applications and machines."
+    ),
+    provider="fly",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>fo1_[A-Za-z0-9]{39})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "fly", "FLY_API_TOKEN", "fly_token", "flyctl",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token at fly.io/dashboard under Tokens."
+        " Generate a new deploy token with minimal scope."
+    ),
+    tags=["cloud", "fly", "deploy"],
+)
+
+
+# ===================================================
+# ALIBABA CLOUD
+# ===================================================
+
+ALIBABA_ACCESS_KEY = SecretPattern(
+    id="alibaba_access_key",
+    name="Alibaba Cloud Access Key ID",
+    description=(
+        "Alibaba Cloud access key ID starting with LTAI prefix."
+        " Grants access to Alibaba Cloud services."
+    ),
+    provider="alibaba",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>LTAI[A-Za-z0-9]{17,21})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "alibaba", "aliyun", "ALIBABA_ACCESS_KEY", "alicloud",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Rotate this key in the Alibaba Cloud RAM console."
+        " Audit AccessKey usage via ActionTrail."
+    ),
+    tags=["cloud", "alibaba", "iam"],
+)
+
+
 # Register all cloud patterns
 register(
     AWS_ACCESS_KEY,
@@ -339,4 +529,10 @@ register(
     DIGITALOCEAN_TOKEN,
     HEROKU_API_KEY,
     CLOUDFLARE_API_TOKEN,
+    DOPPLER_TOKEN,
+    TERRAFORM_CLOUD_TOKEN,
+    VAULT_TOKEN,
+    PULUMI_ACCESS_TOKEN,
+    FLY_API_TOKEN,
+    ALIBABA_ACCESS_KEY,
 )

@@ -15,16 +15,16 @@ classifinder-engine/
 ├── entropy.py          # Shannon entropy calculator for confidence scoring
 └── patterns/
     ├── registry.py     # Pattern registry and SecretPattern dataclass
-    ├── cloud.py        # AWS, GCP, Azure, DigitalOcean, Heroku, Cloudflare (9 patterns)
-    ├── payment.py      # Stripe, PayPal, Square, credit cards with Luhn validation (8 patterns)
-    ├── vcs.py          # GitHub, GitLab, Bitbucket, CircleCI (9 patterns)
-    ├── comms.py        # Slack, Twilio, SendGrid, Mailgun, Discord, Telegram (9 patterns)
+    ├── cloud.py        # AWS, GCP, Azure, DigitalOcean, Heroku, Cloudflare, Doppler, Terraform, Vault, Pulumi, Fly.io, Alibaba (15 patterns)
+    ├── payment.py      # Stripe, PayPal, Square, Shopify, credit cards with Luhn validation (11 patterns)
+    ├── vcs.py          # GitHub, GitLab, Bitbucket, CircleCI, npm, PyPI, RubyGems (12 patterns)
+    ├── comms.py        # Slack, Twilio, SendGrid, Mailgun, Discord, Telegram, New Relic, Grafana, Linear, Notion (15 patterns)
     ├── database.py     # PostgreSQL, MySQL, MongoDB, Redis, SSH keys, .env passwords (7 patterns)
     ├── generic.py      # JWT, Bearer, Basic Auth, generic API keys, high-entropy strings (5 patterns)
-    └── ai.py           # OpenAI, Anthropic, Cohere (3 patterns)
+    └── ai.py           # OpenAI, Anthropic, Cohere, HuggingFace, Replicate, Groq (6 patterns)
 ```
 
-**50 detection patterns** across 7 categories. Each pattern includes a regex, base confidence score, entropy threshold, context keywords, known test values, and remediation guidance.
+**71 detection patterns** across 7 categories. Each pattern includes a regex, base confidence score, entropy threshold, context keywords, known test values, and remediation guidance.
 
 ## How It Works
 
@@ -42,7 +42,7 @@ redacted_text, redaction_map = redact(text, findings, style="label")
 ```
 
 The `scan()` function:
-1. Runs all 50 regex patterns against the input
+1. Runs all 71 regex patterns against the input
 2. Calculates confidence using: base score + context keyword boost - entropy penalty - test value penalty
 3. Deduplicates overlapping findings (highest confidence wins)
 4. Returns structured findings sorted by position
