@@ -64,6 +64,23 @@ If a pattern's regex is too broad (false positives) or too narrow (misses valid 
 - No I/O of any kind — no file reads, no network calls, no logging of secret values
 - PEP 8, 100-character line limit
 
+## Writing Tests
+
+Tests live in `tests/` and run with `python -m pytest tests/ -v`.
+
+**Important:** GitHub push protection will block commits containing secret-like strings (e.g., `sk_live_*`, `ghp_*`). Since this is a secret scanner, our tests inherently need these patterns. Build test secrets at runtime instead of writing them as string literals:
+
+```python
+# Bad — GitHub blocks the push
+scan("sk_live_" + "51H7bKLkdFJH38djfhKSDJfh29fhsdkjfh3")
+
+# Good — assembled at runtime, invisible to static scanning
+prefix = "sk_live_"
+scan(f"STRIPE_KEY={prefix}{'0' * 32}")
+```
+
+This only affects prefixes that GitHub recognizes (Stripe, GitHub PATs, etc.). Most patterns are fine as plain strings.
+
 ## Pull Request Process
 
 1. Fork the repo and create a branch from `main`
