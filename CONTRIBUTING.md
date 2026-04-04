@@ -57,6 +57,15 @@ Then register it in `patterns/registry.py` by adding it to `PATTERN_REGISTRY`.
 
 If a pattern's regex is too broad (false positives) or too narrow (misses valid secrets), open a PR with the fix and include test cases showing the before/after.
 
+### Tune Confidence Scoring
+
+The generic patterns (`generic_api_key_env`, `generic_high_entropy`) are the most false-positive-prone. Their accuracy depends on two parameters in the pattern definition:
+
+- `entropy_threshold` — minimum Shannon entropy to avoid the confidence penalty (currently 3.0 for `generic_api_key_env`, 4.5 for `generic_high_entropy`)
+- The entropy penalty itself — currently -0.50 in `scanner.py`
+
+These values were tuned using `classifinder-benchmark/` (private), which scans public GitHub files and collects metadata-only signals (type, confidence, entropy, file context). If you're proposing threshold changes, include before/after data showing the impact on false positive rates. The `classifinder-tests/` corpus suite must pass with zero regressions.
+
 ## Code Style
 
 - Python 3.12+, type hints on all functions
