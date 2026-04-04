@@ -151,7 +151,7 @@ def scan(
             if pattern.entropy_threshold > 0:
                 entropy = shannon_entropy(secret_value)
                 if entropy < pattern.entropy_threshold:
-                    confidence -= 0.30  # heavy penalty for low entropy
+                    confidence -= 0.50  # heavy penalty for low entropy
 
             # Luhn validation (credit card patterns)
             if pattern.id == "credit_card_number":

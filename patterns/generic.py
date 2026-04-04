@@ -230,7 +230,7 @@ GENERIC_HIGH_ENTROPY = SecretPattern(
         re.ASCII | re.IGNORECASE,
     ),
     confidence_base=0.45,  # very low -- entropy check does the heavy lifting
-    entropy_threshold=4.0,  # must be high entropy to survive
+    entropy_threshold=4.5,  # must be high entropy to survive
     context_keywords=[
         "key",
         "token",
