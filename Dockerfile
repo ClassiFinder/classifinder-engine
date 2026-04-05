@@ -16,4 +16,7 @@ ENV CLASSIFINDER_RATE_LIMIT_PER_MINUTE="60"
 ENV CLASSIFINDER_MAX_PAYLOAD_BYTES="262144"
 ENV CLASSIFINDER_VERSION="1.0.0"
 
+RUN adduser --disabled-password --no-create-home appuser
+USER appuser
+
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
