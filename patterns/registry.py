@@ -41,6 +41,6 @@ class SecretPattern:
 PATTERN_REGISTRY: list[SecretPattern] = []
 
 
-def register(*patterns: SecretPattern):
+def register(*patterns: SecretPattern) -> None:
     """Add patterns to the global registry."""
     PATTERN_REGISTRY.extend(patterns)
