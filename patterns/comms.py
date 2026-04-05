@@ -727,6 +727,96 @@ AUTH0_MANAGEMENT_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# DISCORD WEBHOOK
+# ===================================================
+
+DISCORD_WEBHOOK_URL = SecretPattern(
+    id="discord_webhook_url",
+    name="Discord Webhook URL",
+    description=(
+        "Discord incoming webhook URL. Allows posting messages to a channel"
+        " without bot authentication."
+    ),
+    provider="discord",
+    severity="high",
+    regex=re.compile(
+        r"(?P<secret>https://discord(?:app)?\.com/api/webhooks/[0-9]{17,20}/[A-Za-z0-9_\-]{60,68})"
+        r"(?![A-Za-z0-9_\-])",
+        re.ASCII,
+    ),
+    confidence_base=0.99,
+    entropy_threshold=0.0,
+    context_keywords=["discord", "webhook"],
+    known_test_values=set(),
+    recommendation=(
+        "Delete this webhook in Discord Server Settings > Integrations > Webhooks."
+        " An attacker can post messages to the linked channel."
+    ),
+    tags=["comms", "discord", "webhook"],
+)
+
+
+# ===================================================
+# MICROSOFT TEAMS WEBHOOK
+# ===================================================
+
+TEAMS_WEBHOOK_URL = SecretPattern(
+    id="teams_webhook_url",
+    name="Microsoft Teams Incoming Webhook URL",
+    description=(
+        "Microsoft Teams incoming webhook URL."
+        " Allows posting messages and cards to a Teams channel."
+    ),
+    provider="microsoft",
+    severity="high",
+    regex=re.compile(
+        r"(?P<secret>https://[a-z0-9\-]+\.webhook\.office\.com/webhookb2/"
+        r"[a-f0-9\-]{36}@[a-f0-9\-]{36}/IncomingWebhook/[a-f0-9]{32}/[a-f0-9\-]{36})",
+        re.ASCII,
+    ),
+    confidence_base=0.99,
+    entropy_threshold=0.0,
+    context_keywords=["teams", "webhook", "office", "microsoft"],
+    known_test_values=set(),
+    recommendation=(
+        "Remove this webhook in Microsoft Teams under the channel's Connectors settings."
+    ),
+    tags=["comms", "teams", "webhook"],
+)
+
+
+# ===================================================
+# MATTERMOST
+# ===================================================
+
+MATTERMOST_TOKEN = SecretPattern(
+    id="mattermost_token",
+    name="Mattermost Personal Access Token",
+    description=(
+        "Mattermost personal access token, a 26-character lowercase alphanumeric string."
+        " Detected when preceded by Mattermost-specific context keywords."
+    ),
+    provider="mattermost",
+    severity="high",
+    regex=re.compile(
+        r"(?:"
+        r"(?:MATTERMOST_TOKEN|MATTERMOST_ACCESS_TOKEN|mattermost.*token)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-z0-9]{26})"
+        r"(?![a-z0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=3.0,
+    context_keywords=["mattermost", "MATTERMOST_TOKEN"],
+    known_test_values=set(),
+    recommendation="Revoke this token in Mattermost under Account Settings > Security > Personal Access Tokens.",
+    tags=["comms", "mattermost"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -750,4 +840,7 @@ register(
     PAGERDUTY_API_KEY,
     FIGMA_PAT,
     AUTH0_MANAGEMENT_TOKEN,
+    DISCORD_WEBHOOK_URL,
+    TEAMS_WEBHOOK_URL,
+    MATTERMOST_TOKEN,
 )

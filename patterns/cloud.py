@@ -101,7 +101,10 @@ AWS_SECRET_KEY = SecretPattern(
 GCP_API_KEY = SecretPattern(
     id="gcp_api_key",
     name="GCP API Key",
-    description=("Google Cloud Platform API key, 39 characters starting with AIza."),
+    description=(
+        "Google Cloud Platform API key, 39 characters starting with AIza."
+        " As of 2025-2026, GCP API keys also grant access to Google Gemini AI models."
+    ),
     provider="gcp",
     severity="critical",
     regex=re.compile(
@@ -118,6 +121,8 @@ GCP_API_KEY = SecretPattern(
         "api-key",
         "GOOGLE_API_KEY",
         "firebase",
+        "gemini",
+        "generativelanguage",
     ],
     known_test_values={
         "AIzaSyA-FAKE-KEY-FOR-TESTING-1234567",
@@ -661,6 +666,94 @@ IBM_CLOUD_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# OKTA
+# ===================================================
+
+OKTA_API_TOKEN = SecretPattern(
+    id="okta_api_token",
+    name="Okta API Token",
+    description=(
+        "Okta API token starting with 00 prefix followed by 40 alphanumeric characters."
+        " Detected when preceded by Okta-specific context keywords."
+    ),
+    provider="okta",
+    severity="critical",
+    regex=re.compile(
+        r"(?:"
+        r"(?:OKTA_API_TOKEN|OKTA_TOKEN|okta.*token|okta.*key)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>00[A-Za-z0-9_\-]{40})"
+        r"(?![A-Za-z0-9_\-])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=3.0,
+    context_keywords=["okta", "OKTA_API_TOKEN", "okta_token", "sso"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in Okta Admin Console under Security > API > Tokens."
+    ),
+    tags=["cloud", "okta", "identity"],
+)
+
+
+# ===================================================
+# BUILDKITE
+# ===================================================
+
+BUILDKITE_TOKEN = SecretPattern(
+    id="buildkite_token",
+    name="Buildkite API Token",
+    description="Buildkite API token with bkua_ prefix followed by 40 alphanumeric characters.",
+    provider="buildkite",
+    severity="high",
+    regex=re.compile(
+        r"(?P<secret>bkua_[A-Za-z0-9]{40})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["buildkite", "BUILDKITE_TOKEN", "buildkite_agent"],
+    known_test_values=set(),
+    recommendation="Revoke this token in Buildkite under Personal Settings > API Access Tokens.",
+    tags=["ci", "buildkite"],
+)
+
+
+# ===================================================
+# RAILWAY
+# ===================================================
+
+RAILWAY_TOKEN = SecretPattern(
+    id="railway_token",
+    name="Railway Deploy Token",
+    description=(
+        "Railway deploy token, a UUID-format string."
+        " Detected when preceded by Railway-specific context keywords."
+    ),
+    provider="railway",
+    severity="high",
+    regex=re.compile(
+        r"(?:"
+        r"(?:RAILWAY_TOKEN|railway.*token)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-f0-9\-]{36})"
+        r"(?![a-f0-9\-])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=0.0,
+    context_keywords=["railway", "RAILWAY_TOKEN"],
+    known_test_values=set(),
+    recommendation="Revoke this token in the Railway dashboard under Project Settings > Tokens.",
+    tags=["cloud", "railway", "deploy"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -681,4 +774,7 @@ register(
     VERCEL_REFRESH_TOKEN,
     NETLIFY_TOKEN,
     IBM_CLOUD_API_KEY,
+    OKTA_API_TOKEN,
+    BUILDKITE_TOKEN,
+    RAILWAY_TOKEN,
 )

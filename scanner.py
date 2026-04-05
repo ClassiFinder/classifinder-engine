@@ -17,7 +17,9 @@ sanitized text.
 
 from dataclasses import dataclass
 
+from .decoders import decode_base64_segments
 from .entropy import shannon_entropy
+from .false_positives import is_known_false_positive
 
 # Import all pattern modules to trigger registration
 from .patterns import (
@@ -50,6 +52,7 @@ class Finding:
     is_likely_test_value: bool
     recommendation: str
     matched_pattern: str
+    encoding: str | None = None
 
 
 def _mask_value(value: str) -> str:
@@ -125,6 +128,9 @@ def scan(
     raw_findings: list[Finding] = []
     finding_counter = 0
 
+    # Decode base64 segments and collect (decoded_text, orig_start, orig_end)
+    decoded_segments = decode_base64_segments(text)
+
     for pattern in registry.PATTERN_REGISTRY:
         # Filter by type if specified
         if types and "all" not in types and pattern.id not in types:
@@ -159,6 +165,12 @@ def scan(
                 if not _luhn_check(digits_only):
                     confidence = 0.15  # fails checksum -- likely not a real card
 
+            # False positive wordlist penalty (only for lower-confidence patterns)
+            if confidence < 0.85:
+                fp_match, _fp_reason = is_known_false_positive(secret_value)
+                if fp_match:
+                    confidence -= 0.40
+
             # Test value penalty
             if secret_value in pattern.known_test_values:
                 confidence = 0.15
@@ -188,6 +200,28 @@ def scan(
                 matched_pattern=f"{pattern.id}_v1",
             )
             raw_findings.append(finding)
+
+    # -- Scan decoded base64 segments for secrets --
+    for decoded_text, orig_start, orig_end in decoded_segments:
+        decoded_findings = scan(decoded_text, types=types, min_confidence=min_confidence, include_context=False)
+        for df in decoded_findings:
+            finding_counter += 1
+            raw_findings.append(Finding(
+                id=f"f_{finding_counter:03d}",
+                type=df.type,
+                type_name=df.type_name,
+                provider=df.provider,
+                severity=df.severity,
+                confidence=df.confidence,
+                value_preview=df.value_preview,
+                span_start=orig_start,
+                span_end=orig_end,
+                context=(_extract_context(text, orig_start, orig_end) if include_context else None),
+                is_likely_test_value=df.is_likely_test_value,
+                recommendation=df.recommendation,
+                matched_pattern=df.matched_pattern,
+                encoding="base64",
+            ))
 
     # -- Deduplication: overlapping spans --
     # Sort by confidence descending, then resolve overlaps

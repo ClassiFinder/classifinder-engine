@@ -506,6 +506,36 @@ BITCOIN_WIF_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# RAZORPAY
+# ===================================================
+
+RAZORPAY_KEY = SecretPattern(
+    id="razorpay_key",
+    name="Razorpay API Key",
+    description=(
+        "Razorpay API key with rzp_live_ or rzp_test_ prefix."
+        " Grants access to Razorpay payment processing."
+    ),
+    provider="razorpay",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>rzp_(?:live|test)_[A-Za-z0-9]{14,})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["razorpay", "RAZORPAY_KEY", "rzp"],
+    known_test_values=set(),
+    recommendation=(
+        "Rotate this key in the Razorpay Dashboard under Settings > API Keys."
+        " Audit recent transactions for unauthorized activity."
+    ),
+    tags=["payment", "razorpay"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -520,4 +550,5 @@ register(
     SHOPIFY_PRIVATE_TOKEN,
     ETHEREUM_PRIVATE_KEY,
     BITCOIN_WIF_KEY,
+    RAZORPAY_KEY,
 )

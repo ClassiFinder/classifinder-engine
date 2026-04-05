@@ -263,6 +263,178 @@ DEEPSEEK_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# XAI (GROK)
+# ===================================================
+
+XAI_API_KEY = SecretPattern(
+    id="xai_api_key",
+    name="xAI API Key",
+    description="xAI (Grok) API key with xai- prefix. Grants access to Grok language models.",
+    provider="xai",
+    severity="critical",
+    regex=re.compile(
+        r"(?P<secret>xai-[A-Za-z0-9]{20,})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["xai", "grok", "XAI_API_KEY", "xai_key"],
+    known_test_values=set(),
+    recommendation="Revoke this key at console.x.ai under API Keys.",
+    tags=["ai", "xai", "llm"],
+)
+
+
+# ===================================================
+# ELEVENLABS
+# ===================================================
+
+ELEVENLABS_API_KEY = SecretPattern(
+    id="elevenlabs_api_key",
+    name="ElevenLabs API Key",
+    description=(
+        "ElevenLabs API key, a 32-character hex string."
+        " Detected when preceded by ElevenLabs-specific context keywords."
+    ),
+    provider="elevenlabs",
+    severity="high",
+    regex=re.compile(
+        r"(?:"
+        r"(?:ELEVENLABS_API_KEY|ELEVEN_LABS_API_KEY|xi-api-key|elevenlabs.*key)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-f0-9]{32})"
+        r"(?![a-f0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=3.5,
+    context_keywords=["elevenlabs", "eleven_labs", "xi-api-key", "text_to_speech", "tts"],
+    known_test_values=set(),
+    recommendation="Revoke this key at elevenlabs.io under Profile > API Keys.",
+    tags=["ai", "elevenlabs", "tts"],
+)
+
+
+# ===================================================
+# ASSEMBLYAI
+# ===================================================
+
+ASSEMBLYAI_API_KEY = SecretPattern(
+    id="assemblyai_api_key",
+    name="AssemblyAI API Key",
+    description=(
+        "AssemblyAI API key, a 32-character hex string."
+        " Detected when preceded by AssemblyAI-specific context keywords."
+    ),
+    provider="assemblyai",
+    severity="high",
+    regex=re.compile(
+        r"(?:"
+        r"(?:ASSEMBLYAI_API_KEY|ASSEMBLY_AI_KEY|assemblyai.*key)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-f0-9]{32})"
+        r"(?![a-f0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=3.5,
+    context_keywords=["assemblyai", "assembly_ai", "transcription", "speech_to_text"],
+    known_test_values=set(),
+    recommendation="Revoke this key at assemblyai.com under Account > API Keys.",
+    tags=["ai", "assemblyai", "stt"],
+)
+
+
+# ===================================================
+# DEEPGRAM
+# ===================================================
+
+DEEPGRAM_API_KEY = SecretPattern(
+    id="deepgram_api_key",
+    name="Deepgram API Key",
+    description=(
+        "Deepgram API key, a 40-character hex string."
+        " Detected when preceded by Deepgram-specific context keywords."
+    ),
+    provider="deepgram",
+    severity="high",
+    regex=re.compile(
+        r"(?:"
+        r"(?:DEEPGRAM_API_KEY|DEEPGRAM_KEY|deepgram.*key)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-f0-9]{40})"
+        r"(?![a-f0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=3.5,
+    context_keywords=["deepgram", "DEEPGRAM_API_KEY", "speech", "transcription"],
+    known_test_values=set(),
+    recommendation="Revoke this key at console.deepgram.com under Settings > API Keys.",
+    tags=["ai", "deepgram", "stt"],
+)
+
+
+# ===================================================
+# LANGFUSE
+# ===================================================
+
+LANGFUSE_SECRET_KEY = SecretPattern(
+    id="langfuse_secret_key",
+    name="LangFuse Secret Key",
+    description="LangFuse secret key with sk-lf- prefix. Grants access to LangFuse LLM observability.",
+    provider="langfuse",
+    severity="high",
+    regex=re.compile(
+        r"(?P<secret>sk-lf-[A-Za-z0-9\-]{20,})"
+        r"(?![A-Za-z0-9\-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["langfuse", "LANGFUSE_SECRET_KEY", "langfuse_key"],
+    known_test_values=set(),
+    recommendation="Revoke this key at cloud.langfuse.com under Settings > API Keys.",
+    tags=["ai", "langfuse", "observability"],
+)
+
+
+# ===================================================
+# MISTRAL
+# ===================================================
+
+MISTRAL_API_KEY = SecretPattern(
+    id="mistral_api_key",
+    name="Mistral AI API Key",
+    description=(
+        "Mistral AI API key, a 32-character alphanumeric string."
+        " Detected when preceded by Mistral-specific context keywords."
+    ),
+    provider="mistral",
+    severity="critical",
+    regex=re.compile(
+        r"(?:"
+        r"(?:MISTRAL_API_KEY|mistral.*key|mistral.*token)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=3.5,
+    context_keywords=["mistral", "MISTRAL_API_KEY", "mistral_key"],
+    known_test_values=set(),
+    recommendation="Revoke this key at console.mistral.ai under API Keys.",
+    tags=["ai", "mistral", "llm"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -271,4 +443,10 @@ register(
     REPLICATE_API_TOKEN,
     GROQ_API_KEY,
     DEEPSEEK_API_KEY,
+    XAI_API_KEY,
+    ELEVENLABS_API_KEY,
+    ASSEMBLYAI_API_KEY,
+    DEEPGRAM_API_KEY,
+    LANGFUSE_SECRET_KEY,
+    MISTRAL_API_KEY,
 )
