@@ -48,7 +48,7 @@ def redact(
     text: str,
     findings: list[Finding],
     style: str = "label",
-) -> tuple[str, list[dict[str, str | int]]]:
+) -> tuple[str, list[dict[str, str]]]:
     """
     Produce a redacted version of the input text.
 
