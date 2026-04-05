@@ -6,7 +6,7 @@ from classifinder_engine.patterns.registry import PATTERN_REGISTRY
 
 
 def test_all_patterns_registered():
-    assert len(PATTERN_REGISTRY) >= 88
+    assert len(PATTERN_REGISTRY) >= 101
 
 
 def test_pattern_ids_are_unique():

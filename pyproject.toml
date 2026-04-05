@@ -1,7 +1,7 @@
 [project]
 name = "classifinder-engine"
 version = "0.1.0"
-description = "Standalone secret detection engine — 88 patterns, zero dependencies"
+description = "Standalone secret detection engine — 101 patterns, zero dependencies"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.12"
