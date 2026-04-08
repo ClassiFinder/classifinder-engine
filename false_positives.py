@@ -7,6 +7,12 @@ terms, placeholder names, and documentation patterns.
 
 Used by the scanner as a post-match confidence penalty for findings that
 contain known false positive terms.
+
+Provenance: independently authored. The wordlist (data/fp_wordlist.txt) and
+the DEFAULT_FALSE_POSITIVES set below were curated by hand. The lookup
+implementation is a plain substring scan, not Aho-Corasick. Audited
+2026-04-07 against TruffleHog's wordlists; overlap was limited to universal
+English/programming keywords. See ATTRIBUTION.md.
 """
 
 from functools import lru_cache

@@ -1,3 +1,19 @@
+# False-positive wordlist for ClassiFinder.
+#
+# Independently authored by ClassiFinder. Each entry is a generic
+# English/programming term, a placeholder phrase ("mytoken", "deletemelater"),
+# or a ClassiFinder-specific key-format placeholder ("sk_xxxx", "pk_xxxx").
+#
+# Audited 2026-04-07 against TruffleHog's combined wordlists
+# (fp_words.txt + fp_badlist.txt + fp_programmingbooks.txt, 3306 entries).
+# Overlap was 14/79 (~18%), all of which are universal English/programming
+# keywords (function, return, string, public, private, etc.) — facts about
+# software, not copyrightable expression. The remaining 65 entries are
+# demonstrably independent. No code or data was copied from any other
+# secret scanner. See ATTRIBUTION.md.
+#
+# Lines starting with # are ignored by the loader.
+
 private
 public
 default
