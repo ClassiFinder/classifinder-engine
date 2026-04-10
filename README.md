@@ -64,7 +64,7 @@ The included `Dockerfile` shows exactly what runs in production: Python 3.12, Fa
 
 Don't want to run this yourself? [ClassiFinder](https://classifinder.ai) wraps this engine in a fast, stateless API with auth, rate limiting, a Python SDK (`pip install classifinder`), and a LangChain integration. Free tier: 60 requests/minute, no credit card required.
 
-Want a ready-to-use CLI? [cfsniff](https://github.com/ThomasParas/cfsniff) wraps the ClassiFinder API to scan files, shell history, and configs for secrets (`pipx install cfsniff`).
+Want a ready-to-use CLI? [cfsniff](https://github.com/classifinder/cfsniff) wraps the ClassiFinder API to scan files, shell history, and configs for secrets (`pipx install cfsniff`).
 
 ## License
 

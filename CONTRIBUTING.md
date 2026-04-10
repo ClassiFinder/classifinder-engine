@@ -5,7 +5,7 @@ Thanks for your interest in contributing! This is the open-source scanner engine
 ## Getting Started
 
 ```bash
-git clone https://github.com/ThomasParas/classifinder-engine.git
+git clone https://github.com/classifinder/classifinder-engine.git
 cd classifinder-engine
 python -c "from scanner import scan; print(scan('AKIAIOSFODNN7EXAMPLE'))"
 ```
@@ -16,7 +16,7 @@ No dependencies beyond the Python 3.12+ standard library.
 
 ### Report a False Positive or False Negative
 
-If the engine misclassifies text, [open an issue](https://github.com/ThomasParas/classifinder-engine/issues) with:
+If the engine misclassifies text, [open an issue](https://github.com/classifinder/classifinder-engine/issues) with:
 
 - The input text (use a fake/test value — never post real secrets)
 - What the engine returned
