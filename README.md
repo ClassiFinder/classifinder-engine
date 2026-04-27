@@ -24,7 +24,7 @@ classifinder-engine/
     └── ai.py           # OpenAI, Anthropic, Cohere, HuggingFace, Replicate, Groq, DeepSeek (7 patterns)
 ```
 
-**101 detection patterns** across 7 categories. Each pattern includes a regex, base confidence score, entropy threshold, context keywords, known test values, and remediation guidance.
+**106 detection patterns** across 7 categories. Each pattern includes a regex, base confidence score, entropy threshold, context keywords, known test values, and remediation guidance.
 
 ## How It Works
 
@@ -42,7 +42,7 @@ redacted_text, redaction_map = redact(text, findings, style="label")
 ```
 
 The `scan()` function:
-1. Runs all 101 regex patterns against the input
+1. Runs all 106 regex patterns against the input
 2. Calculates confidence: `base + context_boost (+0.02/keyword, max +0.10) - entropy_penalty (-0.50 if below threshold) → override to 0.15 if test value → clamp [0.05, 0.99]`
 3. Deduplicates overlapping findings (highest confidence wins)
 4. Returns structured findings sorted by position
