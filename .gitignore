@@ -5,3 +5,9 @@ __pycache__/
 .env.*
 .gstack/
 CLAUDE.md
+
+# Build artifacts (python -m build, hatchling, setuptools)
+dist/
+build/
+*.egg-info/
+.eggs/

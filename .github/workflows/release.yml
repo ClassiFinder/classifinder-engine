@@ -1,0 +1,81 @@
+name: Release to PyPI
+
+# Trusted publishing via OIDC + PEP 740 build attestations.
+# No long-lived PyPI token. Tag a release (vX.Y.Z), approve the
+# environment gate, attestations are minted automatically.
+#
+# Prerequisites (one-time setup, see classifinder-knowledge/2026-04-11-pypi-trusted-publishing-plan.md):
+#   1. PyPI: register classifinder-engine as a pending publisher
+#      (Publisher: GitHub, Owner: ClassiFinder, Repo: classifinder-engine,
+#       Workflow: release.yml, Environment: pypi)
+#   2. GitHub: create the `pypi` environment with required reviewer
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Avoid double-publishing if a tag is force-pushed.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Verify tag matches pyproject version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          TAG_VERSION="${TAG_NAME#v}"
+          PKG_VERSION="$(python -c 'import tomllib; print(tomllib.loads(open("pyproject.toml").read())["project"]["version"])')"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag $TAG_NAME does not match pyproject.toml version $PKG_VERSION"
+            exit 1
+          fi
+          echo "Tag and pyproject version agree: $PKG_VERSION"
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/classifinder-engine
+    permissions:
+      id-token: write       # OIDC trusted publishing
+      attestations: write   # PEP 740 build attestations
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        # attestations: true is the default in v1.11+
