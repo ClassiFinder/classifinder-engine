@@ -1,8 +1,20 @@
 # ClassiFinder Engine
 
+[![PyPI version](https://img.shields.io/pypi/v/classifinder-engine.svg)](https://pypi.org/project/classifinder-engine/) [![Python versions](https://img.shields.io/pypi/pyversions/classifinder-engine.svg)](https://pypi.org/project/classifinder-engine/) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
+[![Provenance: PyPI Trusted Publishing](https://img.shields.io/badge/provenance-PyPI%20trusted%20publishing%20%2B%20PEP%20740-brightgreen.svg)](https://pypi.org/project/classifinder-engine/)
+
 The open-source core of [ClassiFinder](https://classifinder.ai) — the secret scanner built for AI pipelines.
 
 This is the code that touches your data. It's published here so you can read it yourself and verify that it does exactly what we claim: scan text for secrets, return findings, and discard everything. No I/O, no side effects, no storage.
+
+## Install
+
+```bash
+pip install classifinder-engine
+```
+
+Zero runtime dependencies. Pure Python 3.12+.
 
 ## What's Here
 
@@ -69,6 +81,14 @@ The included `Dockerfile` shows exactly what runs in production: Python 3.12, Fa
 Don't want to run this yourself? [ClassiFinder](https://classifinder.ai) wraps this engine in a fast, stateless API with auth, rate limiting, a Python SDK (`pip install classifinder`), and a LangChain integration. Free tier: 60 requests/minute, no credit card required.
 
 Want a ready-to-use CLI? [cfsniff](https://github.com/ClassiFinder/cfsniff) wraps the ClassiFinder API to scan files, shell history, and configs for secrets (`pipx install cfsniff`).
+
+## Verifying This Build
+
+Every release is published via [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) with [PEP 740 build attestations](https://docs.pypi.org/attestations/). No long-lived API tokens. The wheel you `pip install` is byte-identical to what GitHub Actions built from a tagged commit.
+
+To verify a release: visit the [project page on PyPI](https://pypi.org/project/classifinder-engine/), click **Download files**, and check the **Provenance** section under each artifact. You'll see the sigstore attestation, the GitHub workflow run, and the exact commit SHA — all logged to the public [Sigstore transparency log](https://search.sigstore.dev/) for independent verification.
+
+This answers "is the wheel what's in the source?" — the cryptographic chain proves this wheel was built from `ClassiFinder/classifinder-engine` at the tagged commit, by a GitHub-hosted runner, and cannot be tampered with after the fact.
 
 ## License
 
