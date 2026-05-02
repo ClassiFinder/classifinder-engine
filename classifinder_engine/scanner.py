@@ -15,6 +15,7 @@ The redactor is a separate module that takes scanner output and produces
 sanitized text.
 """
 
+import bisect
 from dataclasses import dataclass
 
 from .decoders import decode_base64_segments
@@ -109,6 +110,7 @@ def scan(
     types: list[str] | None = None,
     min_confidence: float = 0.5,
     include_context: bool = True,
+    _depth: int = 0,
 ) -> list[Finding]:
     """
     Scan text for secrets. Returns a list of findings sorted by span position.
@@ -128,8 +130,11 @@ def scan(
     raw_findings: list[Finding] = []
     finding_counter = 0
 
-    # Decode base64 segments and collect (decoded_text, orig_start, orig_end)
-    decoded_segments = decode_base64_segments(text)
+    # Decode base64 segments only at the top level. The recursive call below
+    # passes _depth=1 and skips this — enforcing the "single-pass only"
+    # contract documented in decoders.py and preventing exponential blow-up
+    # on nested base64 inputs.
+    decoded_segments = decode_base64_segments(text) if _depth == 0 else []
 
     for pattern in registry.PATTERN_REGISTRY:
         # Filter by type if specified
@@ -201,11 +206,12 @@ def scan(
             )
             raw_findings.append(finding)
 
-    # -- Scan decoded base64 segments for secrets --
+    # -- Scan decoded base64 segments for secrets (single-pass: _depth=1) --
     for decoded_text, orig_start, orig_end in decoded_segments:
         decoded_findings = scan(
             decoded_text, types=types,
             min_confidence=min_confidence, include_context=False,
+            _depth=_depth + 1,
         )
         for df in decoded_findings:
             finding_counter += 1
@@ -226,30 +232,53 @@ def scan(
                 encoding="base64",
             ))
 
-    # -- Deduplication: overlapping spans --
-    # Sort by confidence descending, then resolve overlaps
-    raw_findings.sort(key=lambda f: (-f.confidence, f.span_start))
-
-    final_findings: list[Finding] = []
-    occupied_ranges: list[tuple] = []
-
-    for finding in raw_findings:
-        # Check if this finding overlaps with any already-accepted finding
-        overlaps = False
-        for occ_start, occ_end in occupied_ranges:
-            if finding.span_start < occ_end and finding.span_end > occ_start:
-                overlaps = True
-                break
-
-        if not overlaps:
-            final_findings.append(finding)
-            occupied_ranges.append((finding.span_start, finding.span_end))
-
-    # Sort final results by position in text
-    final_findings.sort(key=lambda f: f.span_start)
+    final_findings = _dedup_overlapping_findings(raw_findings)
 
     # Re-number IDs sequentially after dedup
     for i, f in enumerate(final_findings, 1):
         f.id = f"f_{i:03d}"
 
+    return final_findings
+
+
+def _dedup_overlapping_findings(raw_findings: list[Finding]) -> list[Finding]:
+    """Greedy-by-confidence dedup: highest-confidence finding wins each overlap.
+
+    Walks findings in (-confidence, span_start) order so the most reliable
+    finding gets first claim on its span. For each candidate, checks for overlap
+    against the already-accepted set in O(log F) via bisect on a span-sorted list
+    of (start, end) tuples — only the immediate neighbors (predecessor and
+    successor by span_start) can possibly overlap, since accepted intervals are
+    non-overlapping by construction. Returns findings sorted ascending by
+    span_start for downstream consumers (redactor, response serializer).
+
+    Replaces an O(F^2) Python-level overlap loop. F can hit hundreds to
+    thousands on long documents.
+    """
+    if not raw_findings:
+        return []
+
+    # Highest confidence wins; span_start is a stable tie-breaker.
+    raw_findings.sort(key=lambda f: (-f.confidence, f.span_start))
+
+    accepted_intervals: list[tuple[int, int]] = []  # (start, end), sorted by start, non-overlapping
+    final_findings: list[Finding] = []
+
+    for finding in raw_findings:
+        s, e = finding.span_start, finding.span_end
+        # Position where (s, ...) would slot in. Comparing against (s,) places us
+        # before any interval whose start equals s, so we still detect overlap there.
+        i = bisect.bisect_left(accepted_intervals, (s,))
+
+        # Successor at i (start >= s): overlaps iff its start < e.
+        if i < len(accepted_intervals) and accepted_intervals[i][0] < e:
+            continue
+        # Predecessor at i-1 (start < s): overlaps iff its end > s.
+        if i > 0 and accepted_intervals[i - 1][1] > s:
+            continue
+
+        accepted_intervals.insert(i, (s, e))
+        final_findings.append(finding)
+
+    final_findings.sort(key=lambda f: f.span_start)
     return final_findings

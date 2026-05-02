@@ -8,8 +8,10 @@ with all detected secrets replaced. Supports three redaction styles:
 - "mask":   AKIA**************
 - "hash":   [REDACTED:sha256:a1b2c3d4]  (first 8 chars of hash, for dedup)
 
-The redactor works backwards through the text (highest span first) so that
-replacing one secret doesn't shift the character offsets of earlier secrets.
+The redactor walks the original text once with a cursor, sorting findings by
+span_start ascending and emitting [text up to finding] [replacement] segments
+into a parts list joined at the end. This is O(N+L) total instead of O(N*L)
+from the prior right-to-left string-slice rebuild on each finding.
 """
 
 import hashlib
@@ -64,11 +66,12 @@ def redact(
     if not findings:
         return text, []
 
-    # Sort findings by span_start descending so we replace from end to start
-    sorted_findings = sorted(findings, key=lambda f: f.span_start, reverse=True)
+    # Sort ascending so we can sweep the text once with a forward-moving cursor.
+    sorted_findings = sorted(findings, key=lambda f: f.span_start)
 
-    redacted = text
-    redaction_map = []
+    parts: list[str] = []
+    redaction_map: list[dict[str, str]] = []
+    cursor = 0
 
     for finding in sorted_findings:
         start = finding.span_start
@@ -81,7 +84,9 @@ def redact(
         else:  # "label" (default)
             replacement = _label_for_type(finding.type)
 
-        redacted = redacted[:start] + replacement + redacted[end:]
+        parts.append(text[cursor:start])
+        parts.append(replacement)
+        cursor = end
 
         redaction_map.append(
             {
@@ -90,7 +95,6 @@ def redact(
             }
         )
 
-    # Reverse the map so it's in text-order (we built it backwards)
-    redaction_map.reverse()
+    parts.append(text[cursor:])
 
-    return redacted, redaction_map
+    return "".join(parts), redaction_map
