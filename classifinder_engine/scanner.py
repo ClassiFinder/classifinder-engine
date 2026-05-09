@@ -30,6 +30,7 @@ from .patterns import (
     database,  # noqa: F401
     generic,  # noqa: F401
     payment,  # noqa: F401
+    prompt_injection,  # noqa: F401 -- side effect: registers prompt injection markers
     registry,
     vcs,  # noqa: F401
 )
