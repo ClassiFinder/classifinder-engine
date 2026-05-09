@@ -1,7 +1,7 @@
 """
 ClassiFinder — Version Control & CI/CD Patterns
 
-Patterns for GitHub, GitLab, Bitbucket, CircleCI, and Jenkins credentials.
+Patterns for GitHub, GitLab, Bitbucket, and CircleCI credentials.
 These are among the most commonly leaked secret types -- GitHub tokens alone
 account for a huge share of secrets found on public repos.
 
