@@ -33,6 +33,7 @@ class SecretPattern:
     known_test_values: set[str] = field(default_factory=set)
     recommendation: str = ""
     tags: list[str] = field(default_factory=list)
+    safe_mcp_ids: list[str] = field(default_factory=list)  # SAFE-MCP technique IDs this pattern detects (e.g., ["SAFE-T1001", "SAFE-T1102"])
 
 
 # -----------------------------------------------

@@ -85,6 +85,7 @@ ROLE_HIJACK_MARKER = SecretPattern(
         " — opt out via the types= filter for those use cases."
     ),
     tags=["prompt-injection", "role-hijack", "high-precision"],
+    safe_mcp_ids=["SAFE-T1001", "SAFE-T1102"],
 )
 
 
@@ -129,6 +130,7 @@ TOOL_CALL_INJECTION = SecretPattern(
         " indexing such content."
     ),
     tags=["prompt-injection", "agent-attack", "high-precision"],
+    safe_mcp_ids=["SAFE-T1102"],
 )
 
 
@@ -174,6 +176,7 @@ JAILBREAK_PERSONA = SecretPattern(
         " those use cases."
     ),
     tags=["prompt-injection", "jailbreak", "high-precision"],
+    safe_mcp_ids=["SAFE-T1102"],
 )
 
 
@@ -209,6 +212,7 @@ BIDI_OVERRIDE = SecretPattern(
         " pattern is tuned for English-language deployment surfaces."
     ),
     tags=["prompt-injection", "encoding-attack", "trojan-source", "high-precision"],
+    safe_mcp_ids=["SAFE-T1001", "SAFE-T1402"],
 )
 
 
@@ -253,6 +257,7 @@ ZERO_WIDTH_SMUGGLING = SecretPattern(
         " threshold rules out most accidental cases."
     ),
     tags=["prompt-injection", "encoding-attack", "phase-2"],
+    safe_mcp_ids=["SAFE-T1001", "SAFE-T1402"],
 )
 
 
@@ -297,6 +302,7 @@ FAKE_ASSISTANT_TURN = SecretPattern(
         " 0.8 in support pipelines to suppress."
     ),
     tags=["prompt-injection", "role-hijack", "phase-2"],
+    safe_mcp_ids=["SAFE-T1102"],
 )
 
 
@@ -337,6 +343,7 @@ PROMPT_EXTRACTION = SecretPattern(
         " 'show me the message' (without that qualifier) doesn't match."
     ),
     tags=["prompt-injection", "extraction", "phase-2"],
+    safe_mcp_ids=["SAFE-T1603"],
 )
 
 
@@ -379,6 +386,7 @@ INSTRUCTION_OVERRIDE = SecretPattern(
         " unless context keywords boost confidence."
     ),
     tags=["prompt-injection", "instruction-override", "phase-2"],
+    safe_mcp_ids=["SAFE-T1102"],
 )
 
 
@@ -433,6 +441,7 @@ PERSONA_OVERRIDE = SecretPattern(
         " user messages on WildChat-4.8M."
     ),
     tags=["prompt-injection", "persona-override", "phase-2", "context-gated"],
+    safe_mcp_ids=["SAFE-T1102"],
 )
 
 
@@ -475,6 +484,229 @@ ENCODED_PAYLOAD_MARKER = SecretPattern(
         " overlapping findings."
     ),
     tags=["prompt-injection", "encoding-attack", "phase-2"],
+    safe_mcp_ids=["SAFE-T1402"],
+)
+
+
+# ===================================================
+# PHASE 3 — SAFE-MCP-derived markers (additive coverage)
+# ===================================================
+# Patterns 11-14 expand prompt-injection coverage based on the SAFE-MCP
+# technique catalog (https://github.com/safe-mcp/safe-mcp, CC-BY-4.0).
+# Cleanroom posture: each regex below was authored from the prose narrative
+# of the corresponding SAFE-T technique README — not translated from the
+# upstream Sigma detection-rule.yml. Attribution in classifinder-engine/
+# ATTRIBUTION.md. See classifinder-knowledge/2026-05-15-safe-mcp-incorporation-decisions.md
+# for the full license and provenance rationale.
+
+
+# ===================================================
+# 11. HTML COMMENT DIRECTIVE — hidden instructions in HTML comments
+# ===================================================
+
+HTML_COMMENT_DIRECTIVE = SecretPattern(
+    id="pi_html_comment_directive",
+    name="HTML Comment Hidden Directive",
+    description=(
+        "HTML comments containing LLM control vocabulary (SYSTEM, PRIORITY_"
+        "INSTRUCTION, PRIORITY DIRECTIVE, INSTRUCTION). Used to smuggle"
+        " hidden directives into tool descriptions, RAG-indexed documents,"
+        " or markdown that an LLM will process. The HTML comment renders"
+        " as invisible to humans but is parsed by the model."
+    ),
+    provider="prompt_injection",
+    severity="high",
+    # Discriminator: HTML comment opener + capitalized LLM-control vocabulary
+    # (SYSTEM, PRIORITY_INSTRUCTION, INSTRUCTION) followed by a delimiter
+    # ([:>\s]) that proves directive usage rather than incidental mention.
+    # Capitalization is intentionally NOT case-folded — `<!-- system check -->`
+    # is benign while `<!-- SYSTEM: ignore -->` is the attack form.
+    # Source: SAFE-MCP technique catalog (CC-BY-4.0) — https://github.com/safe-mcp/safe-mcp/tree/main/techniques/SAFE-T1001
+    # Source: SAFE-MCP technique catalog (CC-BY-4.0) — https://github.com/safe-mcp/safe-mcp/tree/main/techniques/SAFE-T1402
+    # Independently authored from the technique narrative — regex not derived from upstream detection-rule.yml.
+    regex=re.compile(
+        r"<!--\s*"
+        r"(?P<secret>"
+        r"\[?"
+        r"(?:"
+        r"SYSTEM(?:_(?:PROMPT|DIRECTIVE|CONTEXT|MESSAGE|UPDATE))*"
+        r"|PRIORITY[_ ](?:INSTRUCTION|DIRECTIVE)"
+        r"|INSTRUCTION"
+        r")"
+        r"\]?"
+        r"[\s:>]"
+        r"[^>]{0,500}"
+        r")"
+        r"-->",
+    ),
+    confidence_base=0.78,
+    entropy_threshold=0.0,
+    context_keywords=[],
+    known_test_values=set(),
+    recommendation=(
+        "Strip HTML comments before passing text to the LLM, or escape the"
+        " comment markers. Hidden HTML-comment directives are a known"
+        " smuggling vector for tool-description poisoning and RAG-document"
+        " injection. Known FP class: documentation about prompt-injection"
+        " attacks (this comment block included) — opt out via the types="
+        " filter when RAG-indexing security research."
+    ),
+    tags=["prompt-injection", "steganography", "html-comment", "high-precision"],
+    safe_mcp_ids=["SAFE-T1001", "SAFE-T1402"],
+)
+
+
+# ===================================================
+# 12. DATA BOUNDARY MANIPULATION — closing-tag-into-system-context jump
+# ===================================================
+
+DATA_BOUNDARY_MANIPULATION = SecretPattern(
+    id="pi_data_boundary_manipulation",
+    name="Data Boundary Manipulation",
+    description=(
+        "Sequences that close a data/user/context tag and immediately open"
+        " a system/instruction tag or directive — an attempt to escape data"
+        " context and inject into instruction context. Classic indirect"
+        " injection pattern in tool outputs and database fields."
+    ),
+    provider="prompt_injection",
+    severity="high",
+    # Discriminator: closing data-context tag followed by whitespace + opener
+    # for system context. Closing tags treated case-insensitively (they are
+    # structural). SYSTEM/INSTRUCTION as bare directive tokens require caps —
+    # case-folding here would FP on prose like "</context> system info."
+    # Source: SAFE-MCP technique catalog (CC-BY-4.0) — https://github.com/safe-mcp/safe-mcp/tree/main/techniques/SAFE-T1102
+    # Independently authored from the technique narrative — regex not derived from upstream detection-rule.yml.
+    regex=re.compile(
+        r"(?P<secret>"
+        r"</(?i:(?:data|user|input|context|content|document|tool_output|tool_result|response|prompt|message))>"
+        r"\s{0,40}"
+        r"(?:"
+        r"(?i:<(?:system|sys|instruction|sys_prompt)\b)"
+        r"|\[(?:SYSTEM|INSTRUCTION|PRIORITY[ _]INSTRUCTION)\]"
+        r"|SYSTEM:"
+        r"|###\s*SYSTEM"
+        r")"
+        r")",
+    ),
+    confidence_base=0.80,
+    entropy_threshold=0.0,
+    context_keywords=[],
+    known_test_values=set(),
+    recommendation=(
+        "Treat as indirect injection. Quarantine the source data and"
+        " re-render with strict tag escaping before the next LLM call."
+        " Common in poisoned database records, scraped HTML, and"
+        " tool-output payloads."
+    ),
+    tags=["prompt-injection", "indirect-injection", "boundary-attack", "high-precision"],
+    safe_mcp_ids=["SAFE-T1102"],
+)
+
+
+# ===================================================
+# 13. LINE JUMPING MARKER — assertive precedence directives (phase 2)
+# ===================================================
+
+LINE_JUMPING_MARKER = SecretPattern(
+    id="pi_line_jumping_marker",
+    name="Line Jumping Precedence Marker",
+    description=(
+        "Assertive directives that try to establish precedence over later"
+        " security rules — 'takes precedence', 'bypass all subsequent',"
+        " 'disable restrictions', 'SYSTEM CONTEXT UPDATE', etc."
+        " Phase-2 (medium-precision) because some phrasings occur in"
+        " legitimate policy/legal text."
+    ),
+    provider="prompt_injection",
+    severity="medium",
+    # Phase-2 vocabulary: imperative verbs combined with security/restriction
+    # objects. Each alternative requires a tight verb+object pairing to
+    # discriminate from legal/policy prose like "this document takes
+    # precedence over prior versions" (which lacks the security object).
+    # Source: SAFE-MCP technique catalog (CC-BY-4.0) — https://github.com/safe-mcp/safe-mcp/tree/main/techniques/SAFE-T1401
+    # Independently authored from the technique narrative — regex not derived from upstream detection-rule.yml.
+    regex=re.compile(
+        r"(?P<secret>"
+        r"(?:takes?\s+precedence\s+over\s+(?:all|any|other|every)"
+        r"|bypass(?:es)?\s+(?:all|any)\s+(?:subsequent|authorization|security|safety)"
+        r"|(?:ignore|disregard)\s+(?:any|all)\s+(?:restrictions?|safety|security|prior)"
+        r"|(?:suspend(?:ed)?|disable(?:d)?)\s+(?:all\s+)?(?:security|restrictions?|validation|authorization|safety)"
+        r"|override\s+(?:all|any|previous)\s+(?:system|safety|security|instructions?)"
+        r"|temporarily\s+suspended\s+for\s+this"
+        r"|(?:SYSTEM|PRIORITY|IMPORTANT)\s+DIRECTIVE"
+        r"|SYSTEM\s+CONTEXT\s+UPDATE"
+        r"|PRIORITY[_ ]INSTRUCTION"
+        r"|security\s+validation\s+mode\s*:"
+        r")"
+        r")",
+        re.IGNORECASE,
+    ),
+    confidence_base=0.65,
+    entropy_threshold=0.0,
+    context_keywords=["jailbreak", "uncensored", "no rules"],
+    known_test_values=set(),
+    recommendation=(
+        "Review the input source. Phase-2 — confidence base 0.65 keeps"
+        " findings out of default scans (min_confidence=0.5 still surfaces"
+        " them, but downstream filters can suppress). Known FP class:"
+        " legal/policy text ('this clause takes precedence over prior"
+        " agreements'), security policy documentation, technical docs about"
+        " precedence semantics. The verb+object pairings limit but don't"
+        " eliminate these. Tune min_confidence to 0.7+ if scanning"
+        " policy-heavy content."
+    ),
+    tags=["prompt-injection", "line-jumping", "phase-2"],
+    safe_mcp_ids=["SAFE-T1401"],
+)
+
+
+# ===================================================
+# 14. SYSTEM TAG INJECTION — plain <system>...</system>, [SYSTEM], ###SYSTEM###
+# ===================================================
+
+SYSTEM_TAG_INJECTION = SecretPattern(
+    id="pi_system_tag_injection",
+    name="System Tag Injection",
+    description=(
+        "Plain <system>...</system> blocks, [SYSTEM] markers, or"
+        " ###SYSTEM### dividers embedded in user-submitted text. Distinct"
+        " from pi_role_hijack_marker (which catches chat-template tokens"
+        " like <|system|> with pipes); this pattern targets the XML-style"
+        " or markdown-style system block used in some prompt formats and"
+        " commonly imitated by injection attempts."
+    ),
+    provider="prompt_injection",
+    severity="high",
+    # The \b after `system` prevents false matches on <systemctl>, <systems>,
+    # etc. Content capped at 500 chars to bound capture; non-greedy to allow
+    # multiple occurrences in long inputs.
+    # Source: SAFE-MCP technique catalog (CC-BY-4.0) — https://github.com/safe-mcp/safe-mcp/tree/main/techniques/SAFE-T1102
+    # Source: SAFE-MCP technique catalog (CC-BY-4.0) — https://github.com/safe-mcp/safe-mcp/tree/main/techniques/SAFE-T1603
+    # Independently authored from the technique narrative — regex not derived from upstream detection-rule.yml.
+    regex=re.compile(
+        r"(?P<secret>"
+        r"<system\b[^>]*>[\s\S]{1,500}?</system\s*>"
+        r"|\[SYSTEM\][:\s][^\n]{1,300}"
+        r"|###\s*SYSTEM\s*###"
+        r")",
+        re.IGNORECASE,
+    ),
+    confidence_base=0.82,
+    entropy_threshold=0.0,
+    context_keywords=[],
+    known_test_values=set(),
+    recommendation=(
+        "Block or strip system-tag blocks from user-submitted input."
+        " Most production LLM APIs deliver system context out-of-band"
+        " (separate message field, not inline tags). User input that"
+        " contains literal <system>...</system> is almost always an"
+        " injection attempt. Known FP class: RAG over LLM API"
+        " documentation and prompt-engineering tutorials — opt out via"
+        " types= filter for those use cases."
+    ),
+    tags=["prompt-injection", "tag-injection", "high-precision"],
+    safe_mcp_ids=["SAFE-T1102", "SAFE-T1603"],
 )
 
 
@@ -489,4 +721,8 @@ register(
     INSTRUCTION_OVERRIDE,
     PERSONA_OVERRIDE,
     ENCODED_PAYLOAD_MARKER,
+    HTML_COMMENT_DIRECTIVE,
+    DATA_BOUNDARY_MANIPULATION,
+    LINE_JUMPING_MARKER,
+    SYSTEM_TAG_INJECTION,
 )

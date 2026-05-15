@@ -38,6 +38,26 @@ ClassiFinder's secret-detection pattern library has multiple lineages. Each patt
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 
+### SAFE-MCP (CC-BY-4.0)
+
+**Project:** https://github.com/safe-mcp/safe-mcp
+**License:** Creative Commons Attribution 4.0 International (CC-BY-4.0) for technique documentation; Apache-2.0 for code
+**Use in ClassiFinder:** SAFE-MCP is a MITRE-ATT&CK-style threat-technique catalog for the Model Context Protocol ecosystem. ClassiFinder uses SAFE-MCP as a **threat-class reference**, not as a source of detection strings:
+
+1. **Cross-referencing:** Each prompt-injection pattern in `patterns/prompt_injection.py` carries a `safe_mcp_ids: list[str]` field mapping it to the SAFE-T technique IDs it detects. This is pure classification (reference to public identifiers like CVE numbers) and not a derivative work.
+2. **Four patterns inspired by the technique catalog:** `pi_html_comment_directive`, `pi_data_boundary_manipulation`, `pi_line_jumping_marker`, and `pi_system_tag_injection` were authored independently from the **prose narrative** of their respective SAFE-T README files. The regex implementations were NOT translated from the upstream Sigma `detection-rule.yml` files — that distinction is enforced by ClassiFinder's cleanroom authoring discipline. Each pattern carries a two-line inline provenance comment naming the technique URL and stating the cleanroom posture.
+
+| ClassiFinder Pattern | SAFE-MCP Technique |
+|---|---|
+| `pi_html_comment_directive` | https://github.com/safe-mcp/safe-mcp/tree/main/techniques/SAFE-T1001, https://github.com/safe-mcp/safe-mcp/tree/main/techniques/SAFE-T1402 |
+| `pi_data_boundary_manipulation` | https://github.com/safe-mcp/safe-mcp/tree/main/techniques/SAFE-T1102 |
+| `pi_line_jumping_marker` | https://github.com/safe-mcp/safe-mcp/tree/main/techniques/SAFE-T1401 |
+| `pi_system_tag_injection` | https://github.com/safe-mcp/safe-mcp/tree/main/techniques/SAFE-T1102, https://github.com/safe-mcp/safe-mcp/tree/main/techniques/SAFE-T1603 |
+
+CC-BY-4.0 requires attribution. By using ClassiFinder you acknowledge SAFE-MCP as the source threat catalog informing these four patterns and the SAFE-T cross-reference field on all prompt-injection findings. ClassiFinder regexes are independently authored.
+
+Full license text: https://creativecommons.org/licenses/by/4.0/legalcode
+
 ### secrets-patterns-db (CC-BY-4.0)
 
 **Project:** https://github.com/mazen160/secrets-patterns-db
@@ -109,4 +129,4 @@ Run `pip-licenses` against any subproject's lockfile for the exhaustive list.
 
 ---
 
-*Last updated: 2026-04-07*
+*Last updated: 2026-05-15* (SAFE-MCP attribution added in [2026-05-15-safe-mcp-incorporation-decisions.md](../classifinder-knowledge/2026-05-15-safe-mcp-incorporation-decisions.md))

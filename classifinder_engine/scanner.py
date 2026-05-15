@@ -16,7 +16,7 @@ sanitized text.
 """
 
 import bisect
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .decoders import decode_base64_segments
 from .entropy import shannon_entropy
@@ -55,6 +55,7 @@ class Finding:
     recommendation: str
     matched_pattern: str
     encoding: str | None = None
+    safe_mcp_ids: list[str] = field(default_factory=list)
 
 
 def _mask_value(value: str) -> str:
@@ -208,6 +209,7 @@ def scan(
                 is_likely_test_value=is_test,
                 recommendation=pattern.recommendation,
                 matched_pattern=f"{pattern.id}_v1",
+                safe_mcp_ids=list(pattern.safe_mcp_ids),
             )
             raw_findings.append(finding)
 
@@ -235,6 +237,7 @@ def scan(
                 recommendation=df.recommendation,
                 matched_pattern=df.matched_pattern,
                 encoding="base64",
+                safe_mcp_ids=list(df.safe_mcp_ids),
             ))
 
     final_findings = _dedup_overlapping_findings(raw_findings)
