@@ -41,6 +41,27 @@ def test_detects_stripe_live_key():
     assert "stripe_live_secret_key" in types
 
 
+def test_square_access_token_high_conf_with_context():
+    """Square token in code (with SQUARE_ACCESS_TOKEN variable name or
+    'square'/'access_token' nearby) should reach high confidence (>=0.80)."""
+    text = 'SQUARE_ACCESS_TOKEN = "EAAAEABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-abcdefghi"'
+    findings = scan(text, min_confidence=0.1)
+    square = [f for f in findings if f.type == "square_access_token"]
+    assert len(square) == 1
+    assert square[0].confidence >= 0.80
+
+
+def test_square_access_token_demoted_without_context():
+    """Bare EAA-prefixed base64 (common in notebook image/data payloads) must
+    NOT be high-confidence — needs context to be promoted. Locks in the fix
+    documented in benchmark-results-2026-05-19.md (4560 notebook FPs)."""
+    text = '"output_data": "EAAxA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4Y5Z6a7b8c9d0e1f2g3h4"'
+    findings = scan(text, min_confidence=0.1)
+    square = [f for f in findings if f.type == "square_access_token"]
+    assert len(square) == 1
+    assert square[0].confidence < 0.80
+
+
 def test_detects_generic_jwt():
     # Standard example JWT — use types filter since generic_high_entropy can win dedup
     jwt = (

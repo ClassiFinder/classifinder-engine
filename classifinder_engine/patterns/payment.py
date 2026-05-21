@@ -243,7 +243,13 @@ SQUARE_ACCESS_TOKEN = SecretPattern(
         r"(?![a-zA-Z0-9\-_])",
         re.ASCII,
     ),
-    confidence_base=0.85,
+    # Tuned 2026-05-20 from 0.85 → 0.78 per benchmark-results-2026-05-19.md.
+    # The EAA prefix collides with notebook base64 payloads (image data, model
+    # weights, etc.) — benchmark surfaced 4560 high-conf FPs in .ipynb files,
+    # 100% with zero supporting context. Base 0.78 keeps real tokens at high-
+    # conf via context boost (+0.02/keyword) while demoting bare-shape matches.
+    # See tasks/Finished Tasks/2026-05-20-tune-square-access-token-anomaly.md.
+    confidence_base=0.78,
     entropy_threshold=3.0,
     context_keywords=[
         "square",
