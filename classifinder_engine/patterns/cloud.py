@@ -728,9 +728,15 @@ VERCEL_PERSONAL_ACCESS_TOKEN = SecretPattern(
     ),
     provider="vercel",
     severity="critical",
+    # Body length corrected 2026-05-21 from {50,70} to {24} per cross-reference:
+    #   - github.com/odomojuli/regextokens README cites Vercel's 2024 token format
+    #     announcement + GitGuardian's Vercel API Access Token detector
+    #   - GitHub secret-scanning catalog (docs.github.com/.../supported-secret-scanning-patterns)
+    #     lists vercel_personal_access_token as a recognized type (Vercel = partner)
+    # Pre-fix regex {50,70} would not match real 24-char PATs (zero-recall bug).
     # Pattern attribution: Betterleaks MIT (betterleaks.toml:4873) — vcp_ vendor prefix
     regex=re.compile(
-        r"(?P<secret>vcp_[A-Za-z0-9]{50,70})"
+        r"(?P<secret>vcp_[A-Za-z0-9]{24})"
         r"(?![A-Za-z0-9])",
         re.ASCII,
     ),
