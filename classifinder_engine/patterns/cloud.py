@@ -557,20 +557,49 @@ ALIBABA_ACCESS_KEY = SecretPattern(
 # VERCEL
 # ===================================================
 
+# ---------------------------------------------------
+# VERCEL — 5-prefix taxonomy reconciled 2026-05-21
+# ---------------------------------------------------
+# Vercel's official changelog (2026-02-09) at
+#   https://vercel.com/changelog/new-token-formats-and-secret-scanning
+# lists exactly five prefixed token types:
+#   vcp_ — Personal Access Token
+#   vci_ — Integration Token
+#   vca_ — App Access Token (OAuth)
+#   vcr_ — App Refresh Token (OAuth)
+#   vck_ — AI Gateway API Key
+# The vendor changelog confirms PREFIXES only; body length and charset
+# are not vendor-documented. Body length 56 + charset [A-Za-z0-9_-]
+# (URL-safe base64) come from Betterleaks' empirical observation, verified
+# 2026-05-21 by reading betterleaks/cmd/generate/config/rules/vercel.go
+# (which contains verbatim 56-char synthetic test tokens for all five
+# prefixes). Cross-checked against Grok + Gemini independent research.
+# Vercel's single published example (vca_BQuu9...340sjz on the
+# sign-in-with-vercel/tokens docs page) is 56 alphanumeric chars and
+# fits within [A-Za-z0-9_-].
+#
+# The (?P<secret>...{56})(?![A-Za-z0-9_-]) shape uses a trailing
+# negative lookahead in place of \b because the body charset includes
+# _ and -, which are not word boundaries in Python re.
+#
+# A 6th GitHub-catalog type (vercel_support_access_token) is omitted —
+# its prefix is not publicly disclosed. Tracked as a P3 follow-up.
+
 VERCEL_ACCESS_TOKEN = SecretPattern(
     id="vercel_access_token",
-    name="Vercel OAuth Access Token",
+    name="Vercel OAuth App Access Token",
     description=(
-        "Vercel OAuth access token with vca_ prefix."
-        " Grants access to Vercel deployments and project management."
+        "Vercel OAuth app access token with vca_ prefix."
+        " Grants access to Vercel deployments and project management on behalf of a user."
     ),
     provider="vercel",
     severity="critical",
-    # Pattern attribution: Betterleaks MIT (betterleaks.toml:4798) — vca_ vendor prefix
-    # 2026-05-20: added (?!u_) negative lookahead to disambiguate from vcau_ (app access token).
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/vercel.go) — vca_ prefix
+    # Vendor-confirmed prefix per Vercel changelog 2026-02-09 + sign-in-with-vercel/tokens docs.
+    # Example token from Vercel docs: vca_BQuu9ChDu3n6Pfh6YQnCshpoYkWDSFKogLqmBtQ0tC8NAA5rXt340sjz (56 chars).
     regex=re.compile(
-        r"(?P<secret>vca_(?!u_)[A-Za-z0-9]{50,70})"
-        r"(?![A-Za-z0-9])",
+        r"(?P<secret>vca_[A-Za-z0-9_-]{56})"
+        r"(?![A-Za-z0-9_-])",
         re.ASCII,
     ),
     confidence_base=0.95,
@@ -582,23 +611,24 @@ VERCEL_ACCESS_TOKEN = SecretPattern(
     ],
     known_test_values=set(),
     recommendation=("Revoke this token in the Vercel dashboard under Account Settings > Tokens."),
-    tags=["cloud", "vercel", "deploy"],
+    tags=["cloud", "vercel", "deploy", "oauth"],
 )
 
 
 VERCEL_REFRESH_TOKEN = SecretPattern(
     id="vercel_refresh_token",
-    name="Vercel OAuth Refresh Token",
+    name="Vercel OAuth App Refresh Token",
     description=(
-        "Vercel OAuth refresh token with vcr_ prefix. Can be exchanged for new access tokens."
+        "Vercel OAuth app refresh token with vcr_ prefix."
+        " Can be exchanged for new access tokens — treat as critical."
     ),
     provider="vercel",
     severity="critical",
-    # Pattern attribution: Betterleaks MIT (betterleaks.toml:4823) — vcr_ vendor prefix
-    # 2026-05-20: added (?!a_) negative lookahead to disambiguate from vcar_ (app refresh token).
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/vercel.go) — vcr_ prefix
+    # Vendor-confirmed prefix per Vercel changelog 2026-02-09 + sign-in-with-vercel/tokens docs.
     regex=re.compile(
-        r"(?P<secret>vcr_(?!a_)[A-Za-z0-9]{50,70})"
-        r"(?![A-Za-z0-9])",
+        r"(?P<secret>vcr_[A-Za-z0-9_-]{56})"
+        r"(?![A-Za-z0-9_-])",
         re.ASCII,
     ),
     confidence_base=0.95,
@@ -617,74 +647,39 @@ VERCEL_REFRESH_TOKEN = SecretPattern(
 )
 
 
-# ---------------------------------------------------
-# BATCH 4 — Vercel variant expansions (2026-05-20)
-# ---------------------------------------------------
-# Vercel issues distinct OAuth/app/PAT token types with unique prefixes.
-# All four use the same shape as vca_/vcr_ (50-70 alphanumeric body) per
-# Betterleaks observations and the consistent Vercel token format.
-# Spec: classifinder-knowledge/2026-04-07-batch-4-devops-enterprise-spec.md §1.1
-
-VERCEL_APP_ACCESS_TOKEN = SecretPattern(
-    id="vercel_app_access_token",
-    name="Vercel OAuth App Access Token",
+VERCEL_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="vercel_personal_access_token",
+    name="Vercel Personal Access Token",
     description=(
-        "Vercel OAuth app access token with vcau_ prefix."
-        " Issued to OAuth apps for delegated access to a user's Vercel resources."
+        "Vercel personal access token (PAT) with vcp_ prefix."
+        " Grants full account-level access to a user's Vercel resources — treat as critical."
     ),
     provider="vercel",
-    severity="high",
-    # Pattern attribution: Betterleaks MIT (betterleaks.toml:4796) — vcau_ vendor prefix
+    severity="critical",
+    # Vendor-confirmed vcp_ prefix per Vercel changelog 2026-02-09. Body length
+    # resolved 2026-05-21 via Betterleaks source + multi-LLM triangulation:
+    # the prefixed PAT format is 56 chars [A-Za-z0-9_-]. The earlier {24}
+    # reading was the legacy unprefixed format (still detected by TruffleHog).
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/vercel.go)
     regex=re.compile(
-        r"(?P<secret>vcau_[A-Za-z0-9]{50,70})"
-        r"(?![A-Za-z0-9])",
+        r"(?P<secret>vcp_[A-Za-z0-9_-]{56})"
+        r"(?![A-Za-z0-9_-])",
         re.ASCII,
     ),
     confidence_base=0.95,
     entropy_threshold=0.0,
     context_keywords=[
         "vercel",
-        "VERCEL_APP_TOKEN",
-        "vercel_app_token",
-        "oauth",
+        "VERCEL_PAT",
+        "vercel_pat",
+        "personal access",
     ],
     known_test_values=set(),
     recommendation=(
-        "Revoke this app access token in the Vercel dashboard under the OAuth app's settings."
+        "Revoke this personal access token in the Vercel dashboard under"
+        " Account Settings > Tokens. PATs grant full account-level access."
     ),
-    tags=["cloud", "vercel", "oauth", "app"],
-)
-
-
-VERCEL_APP_REFRESH_TOKEN = SecretPattern(
-    id="vercel_app_refresh_token",
-    name="Vercel OAuth App Refresh Token",
-    description=(
-        "Vercel OAuth app refresh token with vcar_ prefix."
-        " Allows OAuth apps to persistently renew access tokens — treat as critical."
-    ),
-    provider="vercel",
-    severity="high",
-    # Pattern attribution: Betterleaks MIT (betterleaks.toml:4821) — vcar_ vendor prefix
-    regex=re.compile(
-        r"(?P<secret>vcar_[A-Za-z0-9]{50,70})"
-        r"(?![A-Za-z0-9])",
-        re.ASCII,
-    ),
-    confidence_base=0.95,
-    entropy_threshold=0.0,
-    context_keywords=[
-        "vercel",
-        "VERCEL_APP_REFRESH",
-        "vercel_app_refresh",
-        "refresh",
-    ],
-    known_test_values=set(),
-    recommendation=(
-        "Revoke this app refresh token in the Vercel dashboard."
-        " App refresh tokens provide persistent OAuth access."
-    ),
-    tags=["cloud", "vercel", "oauth", "app"],
+    tags=["cloud", "vercel", "pat"],
 )
 
 
@@ -697,10 +692,12 @@ VERCEL_INTEGRATION_TOKEN = SecretPattern(
     ),
     provider="vercel",
     severity="high",
-    # Pattern attribution: Betterleaks MIT (betterleaks.toml:4847) — vci_ vendor prefix
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/vercel.go) — vci_ prefix.
+    # Vendor-confirmed prefix per Vercel changelog 2026-02-09. Body 56 chars +
+    # [A-Za-z0-9_-] charset per Betterleaks empirical observation.
     regex=re.compile(
-        r"(?P<secret>vci_[A-Za-z0-9]{50,70})"
-        r"(?![A-Za-z0-9])",
+        r"(?P<secret>vci_[A-Za-z0-9_-]{56})"
+        r"(?![A-Za-z0-9_-])",
         re.ASCII,
     ),
     confidence_base=0.95,
@@ -719,42 +716,9 @@ VERCEL_INTEGRATION_TOKEN = SecretPattern(
 )
 
 
-VERCEL_PERSONAL_ACCESS_TOKEN = SecretPattern(
-    id="vercel_personal_access_token",
-    name="Vercel Personal Access Token",
-    description=(
-        "Vercel personal access token (PAT) with vcp_ prefix."
-        " Grants full account-level access to a user's Vercel resources — treat as critical."
-    ),
-    provider="vercel",
-    severity="critical",
-    # Body length corrected 2026-05-21 from {50,70} to {24} per cross-reference:
-    #   - github.com/odomojuli/regextokens README cites Vercel's 2024 token format
-    #     announcement + GitGuardian's Vercel API Access Token detector
-    #   - GitHub secret-scanning catalog (docs.github.com/.../supported-secret-scanning-patterns)
-    #     lists vercel_personal_access_token as a recognized type (Vercel = partner)
-    # Pre-fix regex {50,70} would not match real 24-char PATs (zero-recall bug).
-    # Pattern attribution: Betterleaks MIT (betterleaks.toml:4873) — vcp_ vendor prefix
-    regex=re.compile(
-        r"(?P<secret>vcp_[A-Za-z0-9]{24})"
-        r"(?![A-Za-z0-9])",
-        re.ASCII,
-    ),
-    confidence_base=0.95,
-    entropy_threshold=0.0,
-    context_keywords=[
-        "vercel",
-        "VERCEL_PAT",
-        "vercel_pat",
-        "personal access",
-    ],
-    known_test_values=set(),
-    recommendation=(
-        "Revoke this personal access token in the Vercel dashboard under"
-        " Account Settings > Tokens. PATs grant full account-level access."
-    ),
-    tags=["cloud", "vercel", "pat"],
-)
+# vck_ (Vercel AI Gateway API Key) — already defined in patterns/ai.py
+# (existing pattern uses [A-Za-z0-9_\-]{56}, the same shape as the four
+# above; consolidating here would be a churn refactor for no benefit).
 
 
 # ===================================================
@@ -947,10 +911,9 @@ register(
     ALIBABA_ACCESS_KEY,
     VERCEL_ACCESS_TOKEN,
     VERCEL_REFRESH_TOKEN,
-    VERCEL_APP_ACCESS_TOKEN,
-    VERCEL_APP_REFRESH_TOKEN,
-    VERCEL_INTEGRATION_TOKEN,
     VERCEL_PERSONAL_ACCESS_TOKEN,
+    VERCEL_INTEGRATION_TOKEN,
+    # VERCEL_AI_GATEWAY_KEY (vck_) is registered from patterns/ai.py
     NETLIFY_TOKEN,
     IBM_CLOUD_API_KEY,
     OKTA_API_TOKEN,
