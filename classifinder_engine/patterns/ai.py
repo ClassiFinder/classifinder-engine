@@ -164,6 +164,42 @@ HUGGINGFACE_TOKEN = SecretPattern(
 )
 
 
+# Batch 4 Part 1.8 — HuggingFace organization API token (2026-05-21)
+# Body shape from Betterleaks MIT cmd/generate/config/rules/huggingface.go.
+# Note: charset is letters-only (no digits) — confirmed by BL example tokens
+# like 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 (34 chars, all letters).
+
+HUGGINGFACE_ORGANIZATION_API_TOKEN = SecretPattern(
+    id="huggingface_organization_api_token",
+    name="HuggingFace Organization API Token",
+    description=(
+        "HuggingFace organization-scoped API token with api_org_ prefix (34 letters)."
+        " Grants access to organization-owned model repos, datasets, and Inference API."
+        " Higher privilege than user tokens — treat as critical."
+    ),
+    provider="huggingface",
+    severity="critical",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/huggingface.go) — api_org_ prefix.
+    # Charset is letters-only per BL observation (no digits in the body).
+    regex=re.compile(
+        r"(?P<secret>api_org_[A-Za-z]{34})"
+        r"(?![A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "huggingface", "hugging_face", "HF_ORG_TOKEN", "transformers", "api_org",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this organization token at huggingface.co/organizations/<org>/settings/tokens."
+        " Organization tokens carry broader permissions than user tokens."
+    ),
+    tags=["ai", "huggingface", "ml", "organization"],
+)
+
+
 # ===================================================
 # REPLICATE
 # ===================================================
@@ -627,6 +663,7 @@ register(
     ANTHROPIC_ADMIN_API_KEY,
     COHERE_API_KEY,
     HUGGINGFACE_TOKEN,
+    HUGGINGFACE_ORGANIZATION_API_TOKEN,
     REPLICATE_API_TOKEN,
     GROQ_API_KEY,
     DEEPSEEK_API_KEY,

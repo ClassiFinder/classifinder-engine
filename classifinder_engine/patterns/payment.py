@@ -435,6 +435,36 @@ SHOPIFY_PRIVATE_TOKEN = SecretPattern(
 )
 
 
+# Batch 4 Part 1.10 — Shopify shared secret (2026-05-21)
+# Body shape from Betterleaks MIT cmd/generate/config/rules/shopify.go.
+
+SHOPIFY_SHARED_SECRET = SecretPattern(
+    id="shopify_shared_secret",
+    name="Shopify Shared Secret",
+    description=(
+        "Shopify app shared secret with shpss_ prefix (32 hex chars)."
+        " Used to verify webhook signatures from Shopify to your app."
+    ),
+    provider="shopify",
+    severity="high",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/shopify.go) — shpss_ vendor prefix
+    regex=re.compile(
+        r"(?P<secret>shpss_[a-fA-F0-9]{32})"
+        r"(?![a-fA-F0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["shopify", "shared_secret", "SHOPIFY_SHARED_SECRET", "shpss"],
+    known_test_values=set(),
+    recommendation=(
+        "Rotate this Shopify shared secret in the Partner Dashboard under"
+        " App setup > Client credentials. Compromised secrets allow webhook forgery."
+    ),
+    tags=["payment", "shopify", "ecommerce", "webhook"],
+)
+
+
 # ===================================================
 # ETHEREUM
 # ===================================================
@@ -568,6 +598,7 @@ register(
     SHOPIFY_ACCESS_TOKEN,
     SHOPIFY_CUSTOM_TOKEN,
     SHOPIFY_PRIVATE_TOKEN,
+    SHOPIFY_SHARED_SECRET,
     ETHEREUM_PRIVATE_KEY,
     BITCOIN_WIF_KEY,
     RAZORPAY_KEY,

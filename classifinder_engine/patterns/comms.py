@@ -431,6 +431,69 @@ MAILGUN_API_KEY = SecretPattern(
 )
 
 
+# Batch 4 Part 1.7 — Mailgun additions (2026-05-21)
+# Body shapes from Betterleaks MIT cmd/generate/config/rules/mailgun.go.
+
+MAILGUN_PUB_KEY = SecretPattern(
+    id="mailgun_pub_key",
+    name="Mailgun Public API Key",
+    description=(
+        "Mailgun public API key with pubkey- prefix (32 hex chars)."
+        " Lower-severity than private API keys but still credential-shaped."
+    ),
+    provider="mailgun",
+    severity="low",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/mailgun.go) — pubkey- prefix
+    regex=re.compile(
+        r"(?P<secret>pubkey-[a-f0-9]{32})"
+        r"(?![a-f0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.93,
+    entropy_threshold=0.0,
+    context_keywords=["mailgun", "pubkey", "public_key", "MAILGUN_PUB_KEY"],
+    known_test_values=set(),
+    recommendation=(
+        "Mailgun public keys identify the sender domain; they're not strictly secret"
+        " but should still be rotated if exposed alongside other credentials."
+    ),
+    tags=["comms", "mailgun", "email", "public-key"],
+)
+
+
+MAILGUN_SIGNING_KEY = SecretPattern(
+    id="mailgun_signing_key",
+    name="Mailgun Webhook Signing Key",
+    description=(
+        "Mailgun webhook signing key (32-8-8 hyphenated hex with mailgun context)."
+        " Used to verify webhook authenticity."
+    ),
+    provider="mailgun",
+    severity="high",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/mailgun.go) — signing-key shape.
+    # Context-gated (the [a-h] charset is what BL uses; widening to [a-f] would be marginally more
+    # strict but matches the practical hex shape).
+    regex=re.compile(
+        r"(?:"
+        r"(?:mailgun.*sign|MAILGUN_SIGNING_KEY|signing_key)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-f0-9]{32}-[a-f0-9]{8}-[a-f0-9]{8})"
+        r"(?![a-f0-9\-])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=0.0,
+    context_keywords=["mailgun", "signing", "webhook"],
+    known_test_values=set(),
+    recommendation=(
+        "Rotate this signing key in the Mailgun control panel."
+        " A compromised signing key allows webhook forgery."
+    ),
+    tags=["comms", "mailgun", "email", "webhook"],
+)
+
+
 # ===================================================
 # DISCORD
 # ===================================================
@@ -1078,6 +1141,8 @@ register(
     TWILIO_AUTH_TOKEN,
     SENDGRID_API_KEY,
     MAILGUN_API_KEY,
+    MAILGUN_PUB_KEY,
+    MAILGUN_SIGNING_KEY,
     DISCORD_BOT_TOKEN,
     TELEGRAM_BOT_TOKEN,
     NEWRELIC_ADMIN_API_KEY,
