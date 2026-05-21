@@ -166,8 +166,8 @@ HUGGINGFACE_TOKEN = SecretPattern(
 
 # Batch 4 Part 1.8 — HuggingFace organization API token (2026-05-21)
 # Body shape from Betterleaks MIT cmd/generate/config/rules/huggingface.go.
-# Note: charset is letters-only (no digits) — confirmed by BL example tokens
-# like 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 (34 chars, all letters).
+# Note: charset is letters-only (no digits, no special chars) — 34 chars
+# after the api_org_ prefix.
 
 HUGGINGFACE_ORGANIZATION_API_TOKEN = SecretPattern(
     id="huggingface_organization_api_token",
