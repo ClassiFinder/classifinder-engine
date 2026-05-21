@@ -31,6 +31,7 @@ from .patterns import (
     database,  # noqa: F401
     devops,  # noqa: F401 -- Batch 4 Part 2.1/2.2: DevOps + security tooling patterns
     generic,  # noqa: F401
+    identity,  # noqa: F401 -- Batch 4 Part 2.4: enterprise identity & collab patterns
     payment,  # noqa: F401
     prompt_injection,  # noqa: F401 -- side effect: registers prompt injection markers
     registry,
