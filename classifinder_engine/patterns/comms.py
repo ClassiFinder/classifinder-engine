@@ -98,6 +98,215 @@ SLACK_WEBHOOK_URL = SecretPattern(
 )
 
 
+# ---------------------------------------------------
+# BATCH 4 Part 1.2 — Slack variant expansions (2026-05-21)
+# ---------------------------------------------------
+# Vendor docs (https://docs.slack.dev/authentication/tokens) confirm all
+# prefixes below as current or legacy Slack token types. Body shapes derived
+# from Betterleaks MIT cmd/generate/config/rules/slack.go (which contains
+# verbatim test tokens for each rule — self-validated 2026-05-21). Exotic
+# prefixes (xapp-, xoxe.xoxp-, xoxe-) corroborated by 5+ independent code
+# corpus sources including Google's osv-scalibr scanner.
+
+SLACK_APP_TOKEN = SecretPattern(
+    id="slack_app_token",
+    name="Slack App-Level Token",
+    description=(
+        "Slack app-level token with xapp- prefix."
+        " Used to authenticate Socket Mode connections and apps acting on their own behalf."
+    ),
+    provider="slack",
+    severity="high",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/slack.go) — xapp- prefix.
+    # Vendor-confirmed prefix per docs.slack.dev/authentication/tokens.
+    regex=re.compile(
+        r"(?P<secret>xapp-\d-[A-Z0-9]+-\d+-[a-z0-9]+)",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["slack", "xapp", "SLACK_APP_TOKEN", "app_token", "socket_mode"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this app-level token in the Slack app's Basic Information page"
+        " under App-Level Tokens. Regenerate if still needed."
+    ),
+    tags=["comms", "slack", "app"],
+)
+
+
+SLACK_CONFIG_ACCESS_TOKEN = SecretPattern(
+    id="slack_config_access_token",
+    name="Slack Configuration Access Token",
+    description=(
+        "Slack configuration access token with xoxe.xoxp- or xoxe.xoxb- compound prefix."
+        " Grants programmatic access to manage Slack app configuration."
+    ),
+    provider="slack",
+    severity="critical",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/slack.go) — config-access compound prefix.
+    # Vendor-confirmed compound prefix per docs.slack.dev/authentication/tokens.
+    regex=re.compile(
+        r"(?P<secret>xoxe\.xox[bp]-\d-[A-Z0-9]{163,166})",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "slack", "config", "SLACK_APP_CONFIG_TOKEN", "xoxe.xoxp", "xoxe.xoxb",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this configuration access token via the Slack app configuration API."
+        " These tokens grant broad access to manage app configuration — treat as critical."
+    ),
+    tags=["comms", "slack", "config"],
+)
+
+
+SLACK_CONFIG_REFRESH_TOKEN = SecretPattern(
+    id="slack_config_refresh_token",
+    name="Slack Configuration Refresh Token",
+    description=(
+        "Slack configuration refresh token with xoxe- prefix (146-char body)."
+        " Used to refresh expired configuration access tokens — long-lived credential."
+    ),
+    provider="slack",
+    severity="high",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/slack.go) — xoxe- config-refresh shape.
+    # Distinct from xoxe- user-token shape: this rule requires exactly 146 alphanumeric chars after
+    # the single-digit version, while user tokens have multiple hyphen-separated groups.
+    regex=re.compile(
+        r"(?P<secret>xoxe-\d-[A-Z0-9]{146})",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["slack", "xoxe", "config", "refresh", "SLACK_APP_CONFIG_REFRESH_TOKEN"],
+    known_test_values=set(),
+    recommendation=(
+        "Rotate this configuration refresh token via the Slack app configuration API."
+        " Refresh tokens grant persistent ability to mint new access tokens."
+    ),
+    tags=["comms", "slack", "config"],
+)
+
+
+SLACK_LEGACY_BOT_TOKEN = SecretPattern(
+    id="slack_legacy_bot_token",
+    name="Slack Legacy Bot Token",
+    description=(
+        "Legacy Slack bot token (xoxb- with shorter single-number-group shape)."
+        " Older bot tokens with a simpler structure than current xoxb- tokens."
+    ),
+    provider="slack",
+    severity="high",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/slack.go) — legacy xoxb- shape.
+    # Distinct from current slack_bot_token by structure: legacy has ONE number group, current has TWO.
+    # Slack has been progressively rotating these out, but leaked legacy tokens may still exist.
+    regex=re.compile(
+        r"(?P<secret>xoxb-[0-9]{8,14}-[a-zA-Z0-9]{18,26})"
+        r"(?![a-zA-Z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.93,
+    entropy_threshold=0.0,
+    context_keywords=["slack", "xoxb", "bot", "legacy", "SLACK_BOT_TOKEN"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this legacy bot token in Slack. The legacy format is deprecated —"
+        " regenerate as the current xoxb- format under OAuth & Permissions."
+    ),
+    tags=["comms", "slack", "bot", "legacy"],
+)
+
+
+SLACK_LEGACY_WORKSPACE_TOKEN = SecretPattern(
+    id="slack_legacy_workspace_token",
+    name="Slack Legacy Workspace Token",
+    description=(
+        "Legacy Slack workspace token with xoxa- (access) or xoxr- (refresh) prefix."
+        " Deprecated workspace-scoped tokens from the legacy workspace apps program."
+    ),
+    provider="slack",
+    severity="high",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/slack.go) — xoxa-/xoxr- legacy.
+    # Loose pattern matching the recognizable head (Betterleaks does not capture full body).
+    regex=re.compile(
+        r"(?P<secret>xox[ar]-(?:\d-)?[0-9a-zA-Z]{8,48})"
+        r"(?![0-9a-zA-Z])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=["slack", "xoxa", "xoxr", "workspace", "legacy"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this legacy workspace token in Slack. Workspace apps program is"
+        " deprecated — migrate to the modern app/bot token model."
+    ),
+    tags=["comms", "slack", "workspace", "legacy"],
+)
+
+
+SLACK_SESSION_COOKIE = SecretPattern(
+    id="slack_session_cookie",
+    name="Slack Session Cookie",
+    description=(
+        "Slack browser/desktop session cookie with xoxd- prefix."
+        " Authenticates user sessions in Slack web and desktop clients."
+        " High-value credential — full account access."
+    ),
+    provider="slack",
+    severity="critical",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/slack.go) — xoxd- session cookie.
+    # Used by Slack desktop/browser clients to maintain authenticated sessions; if leaked, an attacker
+    # gains the same access as the user (including private channels and DMs).
+    regex=re.compile(
+        r"(?P<secret>xoxd-[\w/\\+-]{100,}={0,2})"
+        r"(?:[^\w/+=-]|\Z)",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["slack", "xoxd", "cookie", "session", "d_cookie"],
+    known_test_values=set(),
+    recommendation=(
+        "Sign out of all Slack sessions in the workspace settings."
+        " If this cookie is leaked, an attacker has full account access until session expiry."
+    ),
+    tags=["comms", "slack", "session", "cookie"],
+)
+
+
+SLACK_SESSION_TOKEN = SecretPattern(
+    id="slack_session_token",
+    name="Slack Session Token",
+    description=(
+        "Slack session token with xoxc- prefix."
+        " Short-lived companion token paired with session cookies (xoxd-)."
+    ),
+    provider="slack",
+    severity="high",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/slack.go) — xoxc- session token.
+    # Companion to xoxd- session cookies; together they authenticate Slack client sessions.
+    regex=re.compile(
+        r"(?P<secret>xoxc-\d{9,15}-\d{9,15}-\d{9,15}-[a-f0-9]{64})"
+        r"\b",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["slack", "xoxc", "session", "token"],
+    known_test_values=set(),
+    recommendation=(
+        "Sign out of all Slack sessions. Session tokens are short-lived but treat any"
+        " leak as a credential rotation event."
+    ),
+    tags=["comms", "slack", "session"],
+)
+
+
 # ===================================================
 # TWILIO
 # ===================================================
@@ -858,6 +1067,13 @@ register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
     SLACK_WEBHOOK_URL,
+    SLACK_APP_TOKEN,
+    SLACK_CONFIG_ACCESS_TOKEN,
+    SLACK_CONFIG_REFRESH_TOKEN,
+    SLACK_LEGACY_BOT_TOKEN,
+    SLACK_LEGACY_WORKSPACE_TOKEN,
+    SLACK_SESSION_COOKIE,
+    SLACK_SESSION_TOKEN,
     TWILIO_ACCOUNT_SID,
     TWILIO_AUTH_TOKEN,
     SENDGRID_API_KEY,
