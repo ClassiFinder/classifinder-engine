@@ -657,9 +657,10 @@ VERCEL_PERSONAL_ACCESS_TOKEN = SecretPattern(
     provider="vercel",
     severity="critical",
     # Vendor-confirmed vcp_ prefix per Vercel changelog 2026-02-09. Body length
-    # resolved 2026-05-21 via Betterleaks source + multi-LLM triangulation:
-    # the prefixed PAT format is 56 chars [A-Za-z0-9_-]. The earlier {24}
-    # reading was the legacy unprefixed format (still detected by TruffleHog).
+    # = 56 chars [A-Za-z0-9_-] confirmed via three independent paths 2026-05-21:
+    #   1. Betterleaks source cmd/generate/config/rules/vercel.go (synthetic test tokens)
+    #   2. Grok + Gemini independent research (both converge on 56)
+    #   3. Empirical: real PAT minted from a Vercel account matched at exactly 56 chars
     # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/vercel.go)
     regex=re.compile(
         r"(?P<secret>vcp_[A-Za-z0-9_-]{56})"
