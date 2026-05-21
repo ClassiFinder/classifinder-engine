@@ -344,6 +344,74 @@ CLOUDFLARE_API_TOKEN = SecretPattern(
 )
 
 
+# ---------------------------------------------------
+# BATCH 4 Part 1.6 — Cloudflare additions (2026-05-21)
+# ---------------------------------------------------
+# Body shapes from Betterleaks MIT cmd/generate/config/rules/cloudflare.go.
+# Global API Key is the nuclear option for Cloudflare accounts — grants
+# unrestricted access to all zones and services; rotation is a major incident.
+
+CLOUDFLARE_GLOBAL_API_KEY = SecretPattern(
+    id="cloudflare_global_api_key",
+    name="Cloudflare Global API Key",
+    description=(
+        "Cloudflare Global API Key (37 lowercase hex chars, context-gated)."
+        " The original Cloudflare API auth method, with UNRESTRICTED access to all"
+        " account zones and services. Treat any leak as a major incident."
+    ),
+    provider="cloudflare",
+    severity="critical",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/cloudflare.go) — context-gated 37 hex.
+    # Context-gated because raw 37-hex strings are not distinctive (might match SHA hashes, etc).
+    # Only fires when "cloudflare" keyword is present in the line/assignment.
+    regex=re.compile(
+        r"(?:"
+        r"(?:CLOUDFLARE_GLOBAL_API_KEY|cloudflare.*global.*api.*key|cloudflare.*api.*key)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-f0-9]{37})"
+        r"(?![a-f0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=0.0,
+    context_keywords=["cloudflare", "global_api_key", "X-Auth-Key"],
+    known_test_values=set(),
+    recommendation=(
+        "Immediately rotate this Global API Key in the Cloudflare dashboard."
+        " Critical — Global API Keys grant unrestricted access. Migrate to scoped API tokens."
+    ),
+    tags=["cloud", "cloudflare", "global"],
+)
+
+
+CLOUDFLARE_ORIGIN_CA_KEY = SecretPattern(
+    id="cloudflare_origin_ca_key",
+    name="Cloudflare Origin CA Key",
+    description=(
+        "Cloudflare Origin CA key with v1.0- prefix (24-hex + - + 146-hex structure)."
+        " Used to manage Cloudflare-issued origin TLS certificates."
+    ),
+    provider="cloudflare",
+    severity="high",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/cloudflare.go) — v1.0- prefix.
+    regex=re.compile(
+        r"(?P<secret>v1\.0-[a-f0-9]{24}-[a-f0-9]{146})"
+        r"(?![a-f0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["cloudflare", "origin", "ca", "X-Auth-User-Service-Key"],
+    known_test_values=set(),
+    recommendation=(
+        "Rotate this Origin CA key in the Cloudflare dashboard."
+        " Compromised keys allow attackers to issue/revoke origin certificates."
+    ),
+    tags=["cloud", "cloudflare", "ca", "tls"],
+)
+
+
 # ===================================================
 # DOPPLER
 # ===================================================
@@ -798,6 +866,76 @@ DROPBOX_SHORT_LIVED_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# JFROG / ARTIFACTORY (Batch 4 Part 1.5, 2026-05-21)
+# ===================================================
+# Supply-chain critical — JFrog Artifactory is the canonical package
+# repository for many enterprises. Compromised tokens can poison releases.
+# Body shapes from Betterleaks MIT cmd/generate/config/rules/artifactory.go.
+# The cmVmd prefix is the base64 encoding of "ref" + first byte of "tkn"
+# (reference token), distinctive enough to anchor reliably.
+#
+# Spec proposed jfrog_identity_token (JWT-shaped) but Betterleaks doesn't
+# carry it, and our existing jwt_token pattern catches JWTs. Skipped here;
+# file a follow-up if JFrog-specific JWT identity tokens need detection.
+
+JFROG_API_KEY = SecretPattern(
+    id="jfrog_api_key",
+    name="JFrog Artifactory API Key",
+    description=(
+        "JFrog/Artifactory API key with AKCp prefix (73 chars total)."
+        " Authenticates against JFrog Artifactory package repositories."
+        " Supply-chain critical — compromised keys can poison releases."
+    ),
+    provider="jfrog",
+    severity="critical",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/artifactory.go) — AKCp prefix.
+    # Vendor-published format — JFrog documents AKCp as the API key prefix.
+    regex=re.compile(
+        r"(?P<secret>AKCp[A-Za-z0-9]{69})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["jfrog", "artifactory", "bintray", "xray", "JFROG_API_KEY"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this JFrog/Artifactory API key in the JFrog platform."
+        " Audit recent package publishes and downloads — supply-chain compromise risk."
+    ),
+    tags=["cloud", "jfrog", "artifactory", "supply-chain"],
+)
+
+
+ARTIFACTORY_REFERENCE_TOKEN = SecretPattern(
+    id="artifactory_reference_token",
+    name="Artifactory Reference Token",
+    description=(
+        "JFrog Artifactory reference token with cmVmd prefix (64 chars total)."
+        " The cmVmd prefix is the base64 encoding of 'ref' + first byte of 'tkn'."
+        " Used by Artifactory clients to authenticate package operations."
+    ),
+    provider="jfrog",
+    severity="critical",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/artifactory.go) — cmVmd prefix.
+    regex=re.compile(
+        r"(?P<secret>cmVmd[A-Za-z0-9]{59})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["jfrog", "artifactory", "reference", "ref_token"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this Artifactory reference token in the JFrog platform."
+        " Audit package operations performed with this token — supply-chain risk."
+    ),
+    tags=["cloud", "jfrog", "artifactory", "supply-chain"],
+)
+
+
 DROPBOX_LONG_LIVED_API_TOKEN = SecretPattern(
     id="dropbox_long_lived_api_token",
     name="Dropbox Long-Lived API Token",
@@ -976,6 +1114,8 @@ register(
     DIGITALOCEAN_TOKEN,
     HEROKU_API_KEY,
     CLOUDFLARE_API_TOKEN,
+    CLOUDFLARE_GLOBAL_API_KEY,
+    CLOUDFLARE_ORIGIN_CA_KEY,
     DOPPLER_TOKEN,
     TERRAFORM_CLOUD_TOKEN,
     VAULT_TOKEN,
@@ -990,6 +1130,8 @@ register(
     NETLIFY_TOKEN,
     DROPBOX_SHORT_LIVED_API_TOKEN,
     DROPBOX_LONG_LIVED_API_TOKEN,
+    JFROG_API_KEY,
+    ARTIFACTORY_REFERENCE_TOKEN,
     IBM_CLOUD_API_KEY,
     OKTA_API_TOKEN,
     BUILDKITE_TOKEN,
