@@ -757,6 +757,78 @@ NETLIFY_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# DROPBOX (Batch 4 Part 1.4, 2026-05-21)
+# ===================================================
+# Vendor docs (developers.dropbox.com) confirm token TYPES (short-lived,
+# long-lived) but withhold format details. Body shapes from Betterleaks MIT
+# cmd/generate/config/rules/dropbox.go.
+#
+# The generic dropbox-api-token rule in Betterleaks (15-char alphanumeric
+# near "dropbox" keyword) is deliberately omitted — its FP risk is
+# unfavorable in ClassiFinder's scoring model, where a 15-char alphanumeric
+# string near "dropbox" matches countless variable names, UUIDs, and hash
+# fragments inside Dropbox SDK code.
+
+DROPBOX_SHORT_LIVED_API_TOKEN = SecretPattern(
+    id="dropbox_short_lived_api_token",
+    name="Dropbox Short-Lived API Token",
+    description=(
+        "Dropbox short-lived OAuth2 access token with sl. prefix (135-char body)."
+        " Returned by /oauth2/token; typically expires within hours."
+    ),
+    provider="dropbox",
+    severity="high",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/dropbox.go) — sl. prefix.
+    # Vendor-confirmed type per developers.dropbox.com/oauth-guide (short-lived access tokens).
+    regex=re.compile(
+        r"(?P<secret>sl\.[a-z0-9\-=_]{135})"
+        r"(?![a-z0-9\-=_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["dropbox", "DROPBOX_TOKEN", "DROPBOX_ACCESS_TOKEN"],
+    known_test_values=set(),
+    recommendation=(
+        "Short-lived tokens auto-expire, but revoke any associated refresh tokens"
+        " in the Dropbox App Console if a long-lived secret was leaked together."
+    ),
+    tags=["cloud", "dropbox", "oauth"],
+)
+
+
+DROPBOX_LONG_LIVED_API_TOKEN = SecretPattern(
+    id="dropbox_long_lived_api_token",
+    name="Dropbox Long-Lived API Token",
+    description=(
+        "Dropbox legacy long-lived API token with 64-char structural format."
+        " 11 alphanumeric + literal 'AAAAAAAAAA' middle marker + 43 alphanumeric-with-special."
+        " Treat as critical — these tokens have no expiry."
+    ),
+    provider="dropbox",
+    severity="critical",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/dropbox.go) — long-lived shape.
+    # No prefix; the literal AAAAAAAAAA mid-token sequence is the structural anchor.
+    # Distinctive enough that random alphanumeric won't accidentally contain that exact run.
+    regex=re.compile(
+        r"(?P<secret>[a-z0-9]{11}AAAAAAAAAA[a-z0-9\-_=]{43})"
+        r"(?![a-z0-9\-_=])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,
+    context_keywords=["dropbox", "DROPBOX_TOKEN", "DROPBOX_ACCESS_TOKEN"],
+    known_test_values=set(),
+    recommendation=(
+        "Rotate this Dropbox long-lived token in the App Console immediately."
+        " Long-lived tokens have no expiry — if leaked, an attacker has persistent access."
+        " Migrate to short-lived tokens with refresh-token rotation when possible."
+    ),
+    tags=["cloud", "dropbox", "legacy"],
+)
+
+
 # Register all cloud patterns
 # ===================================================
 # IBM CLOUD
@@ -916,6 +988,8 @@ register(
     VERCEL_INTEGRATION_TOKEN,
     # VERCEL_AI_GATEWAY_KEY (vck_) is registered from patterns/ai.py
     NETLIFY_TOKEN,
+    DROPBOX_SHORT_LIVED_API_TOKEN,
+    DROPBOX_LONG_LIVED_API_TOKEN,
     IBM_CLOUD_API_KEY,
     OKTA_API_TOKEN,
     BUILDKITE_TOKEN,
