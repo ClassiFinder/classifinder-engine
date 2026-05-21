@@ -62,6 +62,30 @@ def test_square_access_token_demoted_without_context():
     assert square[0].confidence < 0.80
 
 
+def test_generic_api_key_env_low_entropy_drops_below_default():
+    """Low-entropy values in API_KEY= assignments (template/test strings) must
+    drop below the default 0.5 threshold. Locks in the entropy threshold raise
+    from 3.0 → 4.0 (benchmark-results-2026-05-19.md showed 81% of mid-band
+    findings had entropy <4.0 — overwhelmingly fake/test content)."""
+    # Entropy ~3.91 — currently passes 3.0 threshold; after threshold raises to
+    # 4.0 the -0.50 penalty drops it from ~0.67 to ~0.17.
+    text = "ACCESS_TOKEN=abc_def_ghi_jkl123"
+    findings = scan(text, min_confidence=0.01)
+    gk = [f for f in findings if f.type == "generic_api_key_env"]
+    assert len(gk) == 1
+    assert gk[0].confidence < 0.50
+
+
+def test_generic_api_key_env_high_entropy_stays_visible():
+    """Real-looking high-entropy values (≥4.5) must remain visible at the
+    default 0.5 threshold — no recall regression from the entropy tuning."""
+    text = "API_KEY=aB3xKp9LqVnT5mFw8zRy7sCdEhJ2gNiMbOvUyXr1Q4tHcW"
+    findings = scan(text, min_confidence=0.01)
+    gk = [f for f in findings if f.type == "generic_api_key_env"]
+    assert len(gk) == 1
+    assert gk[0].confidence >= 0.50
+
+
 def test_detects_generic_jwt():
     # Standard example JWT — use types filter since generic_high_entropy can win dedup
     jwt = (

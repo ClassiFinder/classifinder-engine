@@ -188,7 +188,15 @@ GENERIC_API_KEY_ENV = SecretPattern(
         re.ASCII | re.IGNORECASE,
     ),
     confidence_base=0.65,  # generic -- many false positives possible
-    entropy_threshold=3.0,  # must have reasonable entropy
+    # Tuned 2026-05-20 from 3.0 → 4.0 per benchmark-results-2026-05-19.md.
+    # Baseline run surfaced 2168 mid-band findings (0.65-0.79 confidence);
+    # 81% had entropy <4.0 — overwhelmingly fake/test/template values that
+    # the existing -0.50 penalty now demotes below the default 0.5 threshold.
+    # Parallels the April 2026 win on generic_high_entropy (3.0 → 4.5 there;
+    # leaving this slightly more permissive at 4.0 since the env-var assignment
+    # is a stronger structural signal than the keyword-context anchor).
+    # See tasks/Finished Tasks/2026-05-20-tune-generic-api-key-env-entropy-threshold.md.
+    entropy_threshold=4.0,  # must have reasonable entropy
     context_keywords=[
         "api",
         "key",
