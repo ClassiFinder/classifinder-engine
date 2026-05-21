@@ -27,6 +27,7 @@ from .patterns import (
     ai,  # noqa: F401 -- side effect: registers AI provider patterns
     cloud,  # noqa: F401 -- side effect: registers patterns
     comms,  # noqa: F401
+    data,  # noqa: F401 -- Batch 4 Part 2.3: data, analytics, dev-tools patterns
     database,  # noqa: F401
     devops,  # noqa: F401 -- Batch 4 Part 2.1/2.2: DevOps + security tooling patterns
     generic,  # noqa: F401
