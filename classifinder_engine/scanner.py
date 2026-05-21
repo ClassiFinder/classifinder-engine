@@ -28,6 +28,7 @@ from .patterns import (
     cloud,  # noqa: F401 -- side effect: registers patterns
     comms,  # noqa: F401
     database,  # noqa: F401
+    devops,  # noqa: F401 -- Batch 4 Part 2.1/2.2: DevOps + security tooling patterns
     generic,  # noqa: F401
     payment,  # noqa: F401
     prompt_injection,  # noqa: F401 -- side effect: registers prompt injection markers
