@@ -491,6 +491,68 @@ SOURCEGRAPH_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# KUBERNETES SECRET YAML
+# ===================================================
+# Multi-line context pattern — fundamentally different shape from prefix-anchored
+# token regex. Matches inline Kubernetes Secret manifests in YAML files (committed
+# to git, present in Helm charts, in-line in CI config). The data: block contains
+# base64-encoded credentials by Kubernetes convention; Phase 1 captures the first
+# base64 value as the "secret" group for finding/redaction purposes (the goal is
+# to surface that the manifest exists, not to enumerate every value).
+#
+# FP tuning: charset [A-Za-z0-9+/] excludes Helm template chars ({, }, ., space)
+# so {{ .Values.X | b64enc }} doesn't fire. Entropy threshold 4.0 demotes
+# low-entropy values like 'aaaaaa' or 'changeme' below the default surface
+# threshold. ConfigMap and other non-Secret kinds don't match because of the
+# trailing whitespace requirement after "Secret".
+#
+# Deferred to a future task: file-extension constraint (.yaml/.yml only),
+# explicit Helm template allowlist, multi-value extraction.
+
+KUBERNETES_SECRET_YAML = SecretPattern(
+    id="kubernetes_secret_yaml",
+    name="Kubernetes Secret (inline YAML manifest)",
+    description=(
+        "Inline Kubernetes Secret manifest with base64-encoded data values."
+        " Found in committed YAML files, Helm charts, kustomize bases, and CI"
+        " configs. Indicates credentials checked into git rather than mounted"
+        " via an external secret store."
+    ),
+    provider="kubernetes",
+    severity="high",
+    # kind: Secret + within 200 chars + data: + base64 value >=10 chars.
+    # The {0,200} bound prevents runaway matching across unrelated manifests.
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/kubernetes.go) — kind:Secret + data: shape.
+    regex=re.compile(
+        r"kind:\s*[\"']?Secret[\"']?\s+"
+        r"(?s:.{0,200}?)"
+        r"data:\s*"
+        r"[\s\S]*?(?P<secret>[A-Za-z0-9+/]{10,}={0,2})",
+        re.MULTILINE,
+    ),
+    confidence_base=0.65,
+    entropy_threshold=4.0,
+    context_keywords=[
+        "kubernetes",
+        "secret",
+        "k8s",
+        "kubectl",
+        "manifest",
+        "apiVersion",
+        "metadata",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Move credentials out of the committed YAML. Use sealed-secrets,"
+        " external-secrets-operator, SOPS, or the cluster's CSI secret driver."
+        " Committed Kubernetes Secrets are base64-encoded, not encrypted —"
+        " anyone with repo read access can decode them."
+    ),
+    tags=["devops", "kubernetes", "yaml", "manifest"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -509,4 +571,6 @@ register(
     SNYK_API_TOKEN,
     SONAR_API_TOKEN,
     SOURCEGRAPH_ACCESS_TOKEN,
+    # Part 2.1 follow-up — multi-line context detector
+    KUBERNETES_SECRET_YAML,
 )
