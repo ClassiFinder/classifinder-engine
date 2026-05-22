@@ -30,8 +30,15 @@ SLACK_BOT_TOKEN = SecretPattern(
     ),
     provider="slack",
     severity="critical",
-    # Pattern attribution: Betterleaks MIT (betterleaks.toml:4394) — xoxb- vendor prefix
-    regex=re.compile(r"(?P<secret>xoxb-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,36})", re.ASCII),
+    # Body shape widened 2026-05-22: optional hyphen separator, hyphens in body
+    # charset, length range {20,80} (was {24,36}). Captures real BL-observed bot
+    # tokens with hyphens in body or lengths >36 chars. Negative lookahead bounds.
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/slack.go) — xoxb- prefix.
+    regex=re.compile(
+        r"(?P<secret>xoxb-[0-9]{10,13}-[0-9]{10,13}-?[a-zA-Z0-9-]{20,80})"
+        r"(?![a-zA-Z0-9-])",
+        re.ASCII,
+    ),
     confidence_base=0.97,
     entropy_threshold=0.0,
     context_keywords=["slack", "bot", "token", "SLACK_BOT_TOKEN", "xoxb"],
@@ -91,10 +98,20 @@ SLACK_WEBHOOK_URL = SecretPattern(
     ),
     provider="slack",
     severity="high",
-    # Vendor-published format — hooks.slack.com URL structure is Slack-documented
+    # Expanded 2026-05-22 with three path alternations: services/ (incoming
+    # webhooks, original shape), workflows/ (4-segment shape per docs.slack.dev
+    # example T123ABC456/AXYZ987TUV/1234567890987/A314159B271828), and triggers/
+    # (loose tail match — structure beyond T-id is undocumented).
+    # Vendor-published format — hooks.slack.com URL structure per docs.slack.dev.
     regex=re.compile(
-        r"(?P<secret>https://hooks\.slack\.com/services/"
-        r"T[A-Z0-9]{8,12}/B[A-Z0-9]{8,12}/[a-zA-Z0-9]{24})",
+        r"(?P<secret>"
+        r"https://hooks\.slack\.com/"
+        r"(?:"
+        r"services/T[A-Z0-9]{8,12}/B[A-Z0-9]{8,12}/[a-zA-Z0-9]{24}"
+        r"|workflows/T[A-Z0-9]{8,12}/A[A-Z0-9]{8,12}/[0-9]{10,18}/[a-zA-Z0-9]{12,40}"
+        r"|triggers/T[A-Z0-9]{8,12}/[a-zA-Z0-9/]{20,200}"
+        r")"
+        r")",
         re.ASCII,
     ),
     confidence_base=0.99,
