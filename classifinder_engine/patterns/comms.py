@@ -48,19 +48,30 @@ SLACK_USER_TOKEN = SecretPattern(
     id="slack_user_token",
     name="Slack User Token",
     description=(
-        "Slack user OAuth token with xoxp- prefix."
+        "Slack user OAuth token with xoxp- or xoxe- prefix."
         " Grants user-level access to a Slack workspace"
         " -- more privileged than bot tokens."
     ),
     provider="slack",
     severity="critical",
-    # Vendor-published format — xoxp- prefix is Slack-documented user token format
+    # Vendor-published format — xoxp- (standard) and xoxe- (rotating) per
+    # docs.slack.dev/authentication/tokens. Body shape widened 2026-05-21
+    # from [a-f0-9]{32} to [a-zA-Z0-9-]{28,34} per Betterleaks empirical
+    # observation; the prior hex-only regex would miss tokens with uppercase
+    # letters or hyphens (which real tokens contain). The collision with
+    # slack_config_refresh_token (also xoxe-) is structural: user tokens
+    # have 4 hyphen-separated groups; config-refresh has a single digit
+    # followed by 146 chars with no further hyphens. The shapes are
+    # mutually exclusive.
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/slack.go)
     regex=re.compile(
-        r"(?P<secret>xoxp-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[a-f0-9]{32})", re.ASCII
+        r"(?P<secret>xox[pe]-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9-]{28,34})"
+        r"(?![a-zA-Z0-9-])",
+        re.ASCII,
     ),
     confidence_base=0.97,
     entropy_threshold=0.0,
-    context_keywords=["slack", "user", "token", "SLACK_USER_TOKEN", "xoxp"],
+    context_keywords=["slack", "user", "token", "SLACK_USER_TOKEN", "xoxp", "xoxe"],
     known_test_values=set(),
     recommendation=(
         "Revoke this user token immediately."
