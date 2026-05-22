@@ -21,8 +21,10 @@ def test_no_secrets_returns_empty():
 
 
 def test_detects_aws_access_key():
-    # Use a non-test-value key (test values get confidence overridden to 0.15)
-    findings = scan("AWS_ACCESS_KEY_ID=AKIAZ3MHQWRSDHOF7EPN")
+    # Use a non-test-value key (test values get confidence overridden to 0.15).
+    # Body is clearly-synthetic alphabet (16 letters) to satisfy AKIA[A-Z0-9]{16}
+    # without tripping GitHub's secret scanner.
+    findings = scan("AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP")
     types = [f.type for f in findings]
     assert "aws_access_key" in types
 
@@ -102,7 +104,7 @@ def test_detects_generic_jwt():
 
 
 def test_finding_has_correct_fields():
-    findings = scan("AWS_ACCESS_KEY_ID=AKIAZ3MHQWRSDHOF7EPN")
+    findings = scan("AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP")
     assert len(findings) >= 1
     f = next(f for f in findings if f.type == "aws_access_key")
     assert isinstance(f, Finding)
