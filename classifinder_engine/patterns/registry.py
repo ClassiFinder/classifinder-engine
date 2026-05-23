@@ -45,3 +45,31 @@ PATTERN_REGISTRY: list[SecretPattern] = []
 def register(*patterns: SecretPattern) -> None:
     """Add patterns to the global registry."""
     PATTERN_REGISTRY.extend(patterns)
+
+
+# -----------------------------------------------
+# Eager pattern-module import — populate the registry at registry-module
+# load time, not as a side effect of importing scanner.py.
+#
+# Imports are placed at the BOTTOM of the file (not the top) to break the
+# circular dependency: each pattern module needs SecretPattern + register
+# from this file, and those must be defined before pattern modules load.
+#
+# Before this change: `from registry import PATTERN_REGISTRY` returned an
+# empty list unless something else had already imported a pattern module
+# (typically via scanner.py). That was a footgun for tooling, standalone
+# scripts, and test isolation. See:
+# classifinder-knowledge/tasks/Finished Tasks/2026-05-19-promote-pattern-registry-to-eager-registration.md
+from . import (  # noqa: E402, F401
+    ai,
+    cloud,
+    comms,
+    data,
+    database,
+    devops,
+    generic,
+    identity,
+    payment,
+    prompt_injection,
+    vcs,
+)
