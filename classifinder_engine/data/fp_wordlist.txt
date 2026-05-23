@@ -93,3 +93,17 @@ testsecret
 deletemelater
 donotuse
 donot
+# Added 2026-05-22 (evidence-based FP analysis on benign corpus):
+# `replace_with` — prevents 6 wordlist-band FPs in
+# corpus/benign/config-templates/terraform_tfvars_example.txt
+# (REPLACE_WITH_REAL_KEY, REPLACE_WITH_OPENAI_KEY, REPLACE_WITH_DATADOG_KEY,
+# REPLACE_WITH_SENDGRID_KEY, REPLACE_WITH_STRIPE_KEY, REPLACE_WITH_AUTH_TOKEN).
+# Existing `replace_me` only catches the literal "REPLACE_ME" form.
+replace_with
+# `_here` — prevents 3 wordlist-band FPs in
+# corpus/benign/config-templates/env_example.txt where `your_*_here`
+# placeholders lack `secret`/`key`/`token` substring (e.g.
+# your_twilio_auth_token_here, your_datadog_api_key_here,
+# your_datadog_app_key_here). Real cryptographic values containing
+# the literal substring `_here` are vanishingly rare.
+_here
