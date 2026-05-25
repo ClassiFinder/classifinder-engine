@@ -162,12 +162,31 @@ def scan(
             # Context boost
             confidence += _context_boost(text, span_start, span_end, pattern.context_keywords)
 
+            # Entropy: compute once if any downstream check needs it (the
+            # entropy penalty path OR the length+entropy bonus path).
+            entropy: float | None = None
+            if (
+                pattern.entropy_threshold > 0
+                or pattern.length_entropy_bonus_threshold is not None
+            ):
+                entropy = shannon_entropy(secret_value)
+
             # Entropy penalty (generic patterns only)
             is_test = False
             if pattern.entropy_threshold > 0:
-                entropy = shannon_entropy(secret_value)
+                assert entropy is not None
                 if entropy < pattern.entropy_threshold:
                     confidence -= 0.50  # heavy penalty for low entropy
+
+            # Length + entropy bonus (opt-in via pattern field). Two-axis gate:
+            # both length AND entropy must clear the configured floor for the
+            # bonus to fire. Applied before the FP-wordlist / known-test-values
+            # overrides so explicit "this is fake" signals still win.
+            if pattern.length_entropy_bonus_threshold is not None:
+                min_len, min_entropy = pattern.length_entropy_bonus_threshold
+                assert entropy is not None
+                if len(secret_value) >= min_len and entropy >= min_entropy:
+                    confidence += 0.15
 
             # Luhn validation (credit card patterns)
             if pattern.id == "credit_card_number":
@@ -269,8 +288,19 @@ def _dedup_overlapping_findings(raw_findings: list[Finding]) -> list[Finding]:
     if not raw_findings:
         return []
 
-    # Highest confidence wins; span_start is a stable tie-breaker.
-    raw_findings.sort(key=lambda f: (-f.confidence, f.span_start))
+    # Non-generic patterns always beat generic at overlapping spans, regardless
+    # of confidence: when both a specific provider pattern (e.g., cohere_api_key)
+    # and the catch-all generic_api_key_env match the same value, the specific
+    # reading is by definition more meaningful — it carries provider attribution
+    # the generic pattern can't. This invariant was implicit before the
+    # length+entropy bonus shipped (generic always lost on raw confidence); the
+    # bonus can push generic above some specific patterns' post-context
+    # confidence (~0.79), so we now enforce the invariant in the sort key.
+    # Within the same generic/non-generic bucket, highest confidence wins;
+    # span_start is the stable tie-breaker.
+    raw_findings.sort(
+        key=lambda f: (f.provider == "generic", -f.confidence, f.span_start)
+    )
 
     accepted_intervals: list[tuple[int, int]] = []  # (start, end), sorted by start, non-overlapping
     final_findings: list[Finding] = []

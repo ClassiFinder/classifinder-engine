@@ -29,6 +29,14 @@ class SecretPattern:
     regex: re.Pattern  # Compiled regex with named capture groups
     confidence_base: float  # Starting confidence before context adjustment (0.0-1.0)
     entropy_threshold: float = 0.0  # Min Shannon entropy to pass (0.0 = skip entropy check)
+    # Opt-in length+entropy bonus. When set to (min_len, min_entropy),
+    # matches whose secret_value has BOTH length ≥ min_len AND Shannon entropy
+    # ≥ min_entropy receive +0.15 confidence. Designed to promote real-looking
+    # generic findings (where prefix anchoring isn't available) to high-band
+    # without distorting prefix-anchored patterns. See
+    # classifinder-knowledge/tasks/Finished Tasks/
+    # 2026-05-20-add-length-entropy-bonus-for-generic-patterns.md.
+    length_entropy_bonus_threshold: tuple[int, float] | None = None
     context_keywords: list[str] = field(default_factory=list)
     known_test_values: set[str] = field(default_factory=set)
     recommendation: str = ""

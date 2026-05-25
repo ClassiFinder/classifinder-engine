@@ -197,6 +197,14 @@ GENERIC_API_KEY_ENV = SecretPattern(
     # is a stronger structural signal than the keyword-context anchor).
     # See tasks/Finished Tasks/2026-05-20-tune-generic-api-key-env-entropy-threshold.md.
     entropy_threshold=4.0,  # must have reasonable entropy
+    # Promote real-looking findings: length ≥32 AND entropy ≥4.5 adds +0.15,
+    # pushing 0.69 → 0.84 so strict-threshold users (min_confidence=0.8)
+    # surface them. Closes the recall gap surfaced in
+    # benchmark-results-2026-05-19.md (208 long+high-entropy matches sat at
+    # 0.65-0.79 despite looking like real keys). See
+    # classifinder-knowledge/tasks/Finished Tasks/
+    # 2026-05-20-add-length-entropy-bonus-for-generic-patterns.md.
+    length_entropy_bonus_threshold=(32, 4.5),
     context_keywords=[
         "api",
         "key",
