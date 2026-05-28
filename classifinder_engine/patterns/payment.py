@@ -586,6 +586,150 @@ RAZORPAY_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# FLUTTERWAVE
+# ===================================================
+
+FLUTTERWAVE_SECRET_KEY = SecretPattern(
+    id="flutterwave_secret_key",
+    name="Flutterwave Secret Key",
+    description=(
+        "Flutterwave secret key with FLWSECK_TEST- or FLWSECK_LIVE- prefix"
+        " followed by 32 hex chars and -X suffix."
+        " Grants access to Flutterwave payment APIs."
+    ),
+    provider="flutterwave",
+    severity="critical",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/flutterwave.go) —
+    # FLWSECK_TEST- prefix, [a-h0-9]{32} charset, -X suffix.
+    # Live variant (FLWSECK_LIVE-) independently authored — mirrors test key structure.
+    regex=re.compile(
+        r"(?P<secret>FLWSECK_(?:TEST|LIVE)-[a-hA-H0-9]{32}-X)"
+        r"(?![a-hA-H0-9\-])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["flutterwave", "FLWSECK", "flw_secret"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the Flutterwave Dashboard under Settings > API Keys."
+        " Audit recent transactions for unauthorized activity."
+    ),
+    tags=["payment", "flutterwave"],
+)
+
+
+# ===================================================
+# ETHERSCAN
+# ===================================================
+
+ETHERSCAN_API_KEY = SecretPattern(
+    id="etherscan_api_key",
+    name="Etherscan API Key",
+    description=(
+        "Etherscan API key, a 34-character uppercase alphanumeric string."
+        " Detected when preceded by Etherscan-specific context keywords."
+        " Used for Ethereum blockchain data queries."
+    ),
+    provider="etherscan",
+    severity="medium",
+    # Independently authored — context-gated 34-char uppercase alphanumeric per
+    # Etherscan API documentation (https://docs.etherscan.io/).
+    regex=re.compile(
+        r"(?:"
+        r"(?:ETHERSCAN_API_KEY|etherscan.*key|etherscan.*token)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[A-Z0-9]{34})"
+        r"(?![A-Z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.80,
+    entropy_threshold=3.5,
+    context_keywords=["etherscan", "ETHERSCAN_API_KEY", "ethereum", "blockchain"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key at etherscan.io under My Account > API Keys."
+        " Generate a new key and update your application."
+    ),
+    tags=["payment", "etherscan", "crypto", "blockchain"],
+)
+
+
+# ===================================================
+# GOCARDLESS
+# ===================================================
+
+GOCARDLESS_ACCESS_TOKEN = SecretPattern(
+    id="gocardless_access_token",
+    name="GoCardless Access Token",
+    description=(
+        "GoCardless access token with live_ prefix (40 alphanumeric chars)."
+        " Detected when GoCardless context keywords are present."
+        " Grants access to GoCardless payment collection APIs."
+    ),
+    provider="gocardless",
+    severity="critical",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/gocardless.go) —
+    # live_ prefix + context gate on gocardless.
+    regex=re.compile(
+        r"(?:"
+        r"(?:GOCARDLESS_ACCESS_TOKEN|gocardless.*token|gocardless.*key)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>live_[a-zA-Z0-9\-_=]{40})"
+        r"(?![a-zA-Z0-9\-_=])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=3.5,
+    context_keywords=["gocardless", "GOCARDLESS_ACCESS_TOKEN", "direct_debit"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in the GoCardless Dashboard under Developers > Access tokens."
+        " Generate a new token with minimal required permissions."
+    ),
+    tags=["payment", "gocardless"],
+)
+
+
+# ===================================================
+# WISE (formerly TransferWise)
+# ===================================================
+
+WISE_API_TOKEN = SecretPattern(
+    id="wise_api_token",
+    name="Wise API Token",
+    description=(
+        "Wise (formerly TransferWise) API token in UUID format."
+        " Detected when Wise or TransferWise context keywords are present."
+        " Grants access to Wise international payment APIs."
+    ),
+    provider="wise",
+    severity="critical",
+    # Independently authored — context-gated UUID format per Wise API documentation.
+    regex=re.compile(
+        r"(?:"
+        r"(?:WISE_API_TOKEN|WISE_API_KEY|TRANSFERWISE_API_TOKEN|wise.*token|wise.*key|transferwise.*token)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+        r"(?![0-9a-f\-])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=0.0,
+    context_keywords=["wise", "transferwise", "WISE_API_TOKEN", "WISE_API_KEY"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token at wise.com under Settings > API tokens."
+        " Generate a new token and audit recent transactions."
+    ),
+    tags=["payment", "wise", "transferwise"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -602,4 +746,8 @@ register(
     ETHEREUM_PRIVATE_KEY,
     BITCOIN_WIF_KEY,
     RAZORPAY_KEY,
+    FLUTTERWAVE_SECRET_KEY,
+    ETHERSCAN_API_KEY,
+    GOCARDLESS_ACCESS_TOKEN,
+    WISE_API_TOKEN,
 )

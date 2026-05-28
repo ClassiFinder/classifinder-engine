@@ -367,6 +367,132 @@ SUPABASE_SERVICE_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# RABBITMQ
+# ===================================================
+
+RABBITMQ_CONNECTION_STRING = SecretPattern(
+    id="rabbitmq_connection_string",
+    name="RabbitMQ Connection String (with credentials)",
+    description=(
+        "RabbitMQ connection URI containing embedded credentials."
+        " Format: amqp://user:password@host:port/vhost"
+        " or amqps:// for TLS connections."
+    ),
+    provider="rabbitmq",
+    severity="high",
+    # Source: IANA URI scheme registrations for amqp and amqps.
+    #   https://www.iana.org/assignments/uri-schemes/prov/amqp
+    #   https://www.iana.org/assignments/uri-schemes/prov/amqps
+    regex=re.compile(
+        r"(?P<secret>"
+        r"amqps?://"
+        r"[^:@\s\"']{1,64}"   # username
+        r":"
+        r"[^@\s\"']{1,128}"   # password
+        r"@"
+        r"[^\s\"']{1,256}"    # host[:port][/vhost]
+        r")",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,
+    context_keywords=["rabbitmq", "amqp", "RABBITMQ_URL", "AMQP_URL", "broker"],
+    known_test_values={
+        "amqp://user:password@localhost:5672/vhost",
+        "amqps://admin:pass@localhost/",
+    },
+    recommendation=(
+        "Rotate the RabbitMQ credentials."
+        " Use a secrets manager to inject credentials at runtime"
+        " instead of embedding them in connection strings."
+    ),
+    tags=["database", "rabbitmq", "messaging"],
+)
+
+
+# ===================================================
+# JDBC
+# ===================================================
+
+JDBC_CONNECTION_STRING = SecretPattern(
+    id="jdbc_connection_string",
+    name="JDBC Connection String (with credentials)",
+    description=(
+        "JDBC connection URL containing embedded credentials."
+        " Matches both user:password@host format and ?password= / ;password= query params."
+    ),
+    provider="jdbc",
+    severity="high",
+    # Source: Java JDBC URL specification (JDBC 4.3, JSR 221).
+    regex=re.compile(
+        r"(?P<secret>"
+        r"jdbc:[a-z][a-z0-9+\-_:]*://"
+        r"(?:"
+        r"[^:@\s\"']{1,64}:[^@\s\"']{3,128}@[^\s\"']{1,256}"
+        r"|"
+        r"[^\s\"']*[?;](?:[^\s\"'&;=]*&)?(?:password|passwd)=[^\s\"'&;]+"
+        r")"
+        r")",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=0.0,
+    context_keywords=["jdbc", "datasource", "JDBC_URL", "db_url", "database"],
+    known_test_values={
+        "jdbc:mysql://root:password@localhost:3306/mydb",
+        "jdbc:postgresql://user:pass@localhost:5432/testdb",
+        "jdbc:oracle:thin:@//localhost:1521/orcl?password=secret",
+    },
+    recommendation=(
+        "Remove embedded credentials from JDBC URLs."
+        " Use a secrets manager or connection pool with credential injection."
+    ),
+    tags=["database", "jdbc", "java"],
+)
+
+
+# ===================================================
+# COUCHBASE
+# ===================================================
+
+COUCHBASE_CONNECTION_STRING = SecretPattern(
+    id="couchbase_connection_string",
+    name="Couchbase Connection String (with credentials)",
+    description=(
+        "Couchbase connection URI containing embedded credentials."
+        " Format: couchbase://user:password@host or couchbases:// for TLS."
+    ),
+    provider="couchbase",
+    severity="high",
+    # Source: Couchbase SDK connection string specification.
+    #   https://docs.couchbase.com/sdk-api/couchbase-c-client/md_doc_connstr.html
+    regex=re.compile(
+        r"(?P<secret>"
+        r"couchbases?://"
+        r"[^:@\s\"']{1,64}"   # username
+        r":"
+        r"[^@\s\"']{1,128}"   # password
+        r"@"
+        r"[^\s\"']{1,256}"    # host[:port]
+        r")",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,
+    context_keywords=["couchbase", "couchbases", "COUCHBASE_URL", "bucket"],
+    known_test_values={
+        "couchbase://user:password@localhost",
+        "couchbases://admin:secret@cluster.example.com",
+    },
+    recommendation=(
+        "Rotate the Couchbase credentials."
+        " Use Couchbase Vault integration or a secrets manager for credential injection."
+    ),
+    tags=["database", "couchbase"],
+)
+
+
 register(
     POSTGRES_CONNECTION_STRING,
     MYSQL_CONNECTION_STRING,
@@ -376,4 +502,7 @@ register(
     ENV_DATABASE_PASSWORD,
     SSH_PRIVATE_KEY,
     SUPABASE_SERVICE_KEY,
+    RABBITMQ_CONNECTION_STRING,
+    JDBC_CONNECTION_STRING,
+    COUCHBASE_CONNECTION_STRING,
 )

@@ -239,6 +239,157 @@ ZENDESK_SECRET_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# ASANA
+# ===================================================
+
+ASANA_PAT = SecretPattern(
+    id="asana_pat",
+    name="Asana Personal Access Token",
+    description=(
+        "Asana Personal Access Token with 0/ prefix followed by 32-64 hex chars."
+        " Detected when Asana context keywords are present."
+        " Grants access to Asana project management APIs."
+    ),
+    provider="asana",
+    severity="high",
+    # Independently authored — context-gated with 0/ prefix per Asana developer
+    # documentation (https://developers.asana.com/docs/personal-access-token).
+    # Asana docs note that token formats may change; this covers the observed 0/ format.
+    regex=re.compile(
+        r"(?:"
+        r"(?:ASANA_PAT|ASANA_ACCESS_TOKEN|ASANA_TOKEN|asana.*token|asana.*key)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>0/[a-f0-9]{32,64})"
+        r"(?![a-f0-9/])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=3.5,
+    context_keywords=["asana", "ASANA_PAT", "ASANA_TOKEN", "ASANA_ACCESS_TOKEN"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token at app.asana.com/0/my-apps under Personal Access Tokens."
+    ),
+    tags=["identity", "asana", "project-management"],
+)
+
+
+# ===================================================
+# HASURA
+# ===================================================
+
+HASURA_ADMIN_SECRET = SecretPattern(
+    id="hasura_admin_secret",
+    name="Hasura Admin Secret",
+    description=(
+        "Hasura GraphQL Engine admin secret."
+        " Detected by HASURA_GRAPHQL_ADMIN_SECRET env var or x-hasura-admin-secret header."
+        " Grants unrestricted access to the Hasura GraphQL API and underlying database."
+    ),
+    provider="hasura",
+    severity="critical",
+    # Independently authored — env-var-style pattern gated on HASURA_GRAPHQL_ADMIN_SECRET,
+    # as documented at https://hasura.io/docs/latest/deployment/graphql-engine-flags/reference/.
+    regex=re.compile(
+        r"(?P<context_key>"
+        r"(?:HASURA_GRAPHQL_ADMIN_SECRET|x-hasura-admin-secret)"
+        r")"
+        r"[\s]*[=:\"'\s]+"
+        r"(?P<secret>[^\s\"'#]{8,128})"
+        r"[\"']?",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=1.5,
+    context_keywords=["hasura", "HASURA_GRAPHQL_ADMIN_SECRET", "x-hasura-admin-secret", "graphql"],
+    known_test_values={
+        "password",
+        "secret",
+        "changeme",
+        "admin",
+        "myadminsecret",
+    },
+    recommendation=(
+        "Rotate the Hasura admin secret by updating the HASURA_GRAPHQL_ADMIN_SECRET env var"
+        " and redeploying. Enable JWT or webhook auth as the primary auth mode."
+    ),
+    tags=["identity", "hasura", "graphql"],
+)
+
+
+# ===================================================
+# JUMPCLOUD
+# ===================================================
+
+JUMPCLOUD_API_KEY = SecretPattern(
+    id="jumpcloud_api_key",
+    name="JumpCloud API Key",
+    description=(
+        "JumpCloud API key, a 40-character hex string."
+        " Detected when preceded by JumpCloud-specific context keywords."
+        " Grants access to JumpCloud directory and identity APIs."
+    ),
+    provider="jumpcloud",
+    severity="high",
+    # Independently authored — context-gated 40-char hex per JumpCloud API
+    # documentation (https://docs.jumpcloud.com/api/1.0/).
+    regex=re.compile(
+        r"(?:"
+        r"(?:JUMPCLOUD_API_KEY|jumpcloud.*key|jumpcloud.*token)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-f0-9]{40})"
+        r"(?![a-f0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.80,
+    entropy_threshold=3.5,
+    context_keywords=["jumpcloud", "JUMPCLOUD_API_KEY"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the JumpCloud Admin Console under API Settings."
+    ),
+    tags=["identity", "jumpcloud", "directory"],
+)
+
+
+# ===================================================
+# CLICKUP
+# ===================================================
+
+CLICKUP_PAT = SecretPattern(
+    id="clickup_pat",
+    name="ClickUp Personal API Token",
+    description=(
+        "ClickUp personal API token with pk_ prefix followed by a numeric user ID"
+        " and a 32-character alphanumeric hash."
+        " The numeric segment after pk_ is structurally distinct from Stripe's"
+        " pk_live_ and pk_test_ prefixes — no collision risk."
+    ),
+    provider="clickup",
+    severity="high",
+    # Vendor-published format — pk_<numeric_user_id>_<hash> per ClickUp API documentation
+    # (https://developer.clickup.com/). The numeric segment after pk_ is structurally
+    # distinct from Stripe's pk_live_ and pk_test_ prefixes (no collision risk).
+    regex=re.compile(
+        r"(?P<secret>pk_[0-9]+_[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.93,
+    entropy_threshold=0.0,
+    context_keywords=["clickup", "CLICKUP_API_KEY", "ClickUp"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token at app.clickup.com under Settings > Apps."
+        " Generate a new token and update your integrations."
+    ),
+    tags=["identity", "clickup", "project-management"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -247,4 +398,8 @@ register(
     MAPBOX_API_TOKEN,
     MAXMIND_LICENSE_KEY,
     ZENDESK_SECRET_KEY,
+    ASANA_PAT,
+    HASURA_ADMIN_SECRET,
+    JUMPCLOUD_API_KEY,
+    CLICKUP_PAT,
 )

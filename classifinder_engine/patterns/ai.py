@@ -657,6 +657,75 @@ WEIGHTS_AND_BIASES_V1_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# LANGSMITH
+# ===================================================
+
+LANGSMITH_API_KEY = SecretPattern(
+    id="langsmith_api_key",
+    name="LangSmith API Key",
+    description=(
+        "LangSmith API key with lsv2_pt_ or lsv2_sk_ prefix (32 lowercase alphanumeric chars)."
+        " Grants access to LangSmith LLM observability and tracing."
+    ),
+    provider="langsmith",
+    severity="high",
+    # Independently authored — lsv2_pt_/lsv2_sk_ vendor-published prefix per LangSmith
+    # API key documentation (https://docs.smith.langchain.com/how_to_guides/setup/create_account_api_key).
+    regex=re.compile(
+        r"(?P<secret>lsv2_(?:pt|sk)_[a-z0-9]{32})"
+        r"(?![a-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["langsmith", "LANGSMITH_API_KEY", "langchain", "lsv2"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the LangSmith Settings page under API Keys."
+        " Generate a new key and update your tracing configuration."
+    ),
+    tags=["ai", "langsmith", "observability"],
+)
+
+
+# ===================================================
+# CLARIFAI
+# ===================================================
+
+CLARIFAI_PAT = SecretPattern(
+    id="clarifai_pat",
+    name="Clarifai Personal Access Token",
+    description=(
+        "Clarifai Personal Access Token (PAT), a 32-character hex string."
+        " Detected when preceded by Clarifai-specific context keywords."
+        " Grants access to Clarifai computer vision and AI models."
+    ),
+    provider="clarifai",
+    severity="high",
+    # Independently authored — context-gated 32-char hex per Clarifai API documentation
+    # (https://docs.clarifai.com/clarifai-basics/authentication/authorize).
+    regex=re.compile(
+        r"(?:"
+        r"(?:CLARIFAI_PAT|CLARIFAI_API_KEY|clarifai.*token|clarifai.*key|clarifai.*pat)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-f0-9]{32})"
+        r"(?![a-f0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.80,
+    entropy_threshold=3.5,
+    context_keywords=["clarifai", "CLARIFAI_PAT", "CLARIFAI_API_KEY"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this PAT at clarifai.com under Account Settings > Security > Personal Access Tokens."
+        " Generate a new token with minimal required scopes."
+    ),
+    tags=["ai", "clarifai", "vision"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -677,4 +746,6 @@ register(
     AWS_BEDROCK_SHORT_LIVED_KEY,
     VERCEL_AI_GATEWAY_KEY,
     WEIGHTS_AND_BIASES_V1_KEY,
+    LANGSMITH_API_KEY,
+    CLARIFAI_PAT,
 )

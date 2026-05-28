@@ -14,7 +14,17 @@ ClassiFinder's secret-detection pattern library has multiple lineages. Each patt
 
 **Project:** https://github.com/betterleaks/betterleaks
 **License:** MIT
-**Use in ClassiFinder:** Approximately 44 detection patterns in ClassiFinder were ported from or modeled on rules in `betterleaks.toml` (v1.0.0). Each ported pattern carries an inline comment citing the source TOML line.
+**Use in ClassiFinder:** Approximately 49 detection patterns in ClassiFinder were ported from or modeled on rules in `betterleaks.toml` (v1.0.0) and `cmd/generate/config/rules/*.go`. Each ported pattern carries an inline comment citing the source file.
+
+**Batch 5 additions (2026-05-28):** The following 5 patterns were added citing Betterleaks Go rule files:
+
+| ClassiFinder Pattern | Betterleaks Source |
+|---|---|
+| `flutterwave_secret_key` | `cmd/generate/config/rules/flutterwave.go` |
+| `gocardless_access_token` | `cmd/generate/config/rules/gocardless.go` |
+| `intercom_access_token` | `cmd/generate/config/rules/intercom.go` |
+| `messagebird_api_key` | `cmd/generate/config/rules/messagebird.go` |
+| `sendbird_token` | `cmd/generate/config/rules/sendbird.go` |
 
 > MIT License
 >
@@ -129,4 +139,4 @@ Run `pip-licenses` against any subproject's lockfile for the exhaustive list.
 
 ---
 
-*Last updated: 2026-05-15* (SAFE-MCP attribution added in [2026-05-15-safe-mcp-incorporation-decisions.md](../classifinder-knowledge/2026-05-15-safe-mcp-incorporation-decisions.md))
+*Last updated: 2026-05-28* (Batch 5: 5 Betterleaks Go rule sources added)

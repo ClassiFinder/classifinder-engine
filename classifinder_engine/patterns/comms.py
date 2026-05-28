@@ -1154,6 +1154,150 @@ MATTERMOST_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# INTERCOM
+# ===================================================
+
+INTERCOM_ACCESS_TOKEN = SecretPattern(
+    id="intercom_access_token",
+    name="Intercom Access Token",
+    description=(
+        "Intercom access token (60 alphanumeric/special chars)."
+        " Detected when preceded by Intercom-specific context keywords."
+        " Grants access to Intercom customer messaging APIs."
+    ),
+    provider="intercom",
+    severity="high",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/intercom.go) —
+    # context-gated 60-char alphanumeric-ext format.
+    regex=re.compile(
+        r"(?:"
+        r"(?:INTERCOM_ACCESS_TOKEN|intercom.*token|intercom.*key|INTERCOM_API_KEY)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-zA-Z0-9=_\-]{60})"
+        r"(?![a-zA-Z0-9=_\-])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=3.5,
+    context_keywords=["intercom", "INTERCOM_ACCESS_TOKEN", "INTERCOM_API_KEY"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token at app.intercom.com under Settings > Integrations > Access Tokens."
+    ),
+    tags=["comms", "intercom", "crm"],
+)
+
+
+# ===================================================
+# MESSAGEBIRD
+# ===================================================
+
+MESSAGEBIRD_API_KEY = SecretPattern(
+    id="messagebird_api_key",
+    name="MessageBird API Key",
+    description=(
+        "MessageBird API key, a 25-character lowercase alphanumeric string."
+        " Detected when preceded by MessageBird context keywords."
+        " Grants access to SMS, voice, and messaging APIs."
+    ),
+    provider="messagebird",
+    severity="high",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/messagebird.go) —
+    # context-gated 25-char lowercase alphanumeric format.
+    regex=re.compile(
+        r"(?:"
+        r"(?:MESSAGEBIRD_API_KEY|message[_-]?bird.*key|message[_-]?bird.*token)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-z0-9]{25})"
+        r"(?![a-z0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=3.5,
+    context_keywords=["messagebird", "MESSAGEBIRD_API_KEY", "bird"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the MessageBird Dashboard under Developers > API access keys."
+    ),
+    tags=["comms", "messagebird", "sms"],
+)
+
+
+# ===================================================
+# SENDBIRD
+# ===================================================
+
+SENDBIRD_TOKEN = SecretPattern(
+    id="sendbird_token",
+    name="SendBird Access Token",
+    description=(
+        "SendBird access token, a 40-character hex string."
+        " Detected when preceded by SendBird-specific context keywords."
+        " Grants access to SendBird in-app messaging APIs."
+    ),
+    provider="sendbird",
+    severity="high",
+    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/sendbird.go) —
+    # context-gated 40-char hex format (sendbird-access-token rule).
+    regex=re.compile(
+        r"(?:"
+        r"(?:SENDBIRD_ACCESS_TOKEN|SENDBIRD_API_TOKEN|sendbird.*token|sendbird.*key)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-f0-9]{40})"
+        r"(?![a-f0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=3.5,
+    context_keywords=["sendbird", "SENDBIRD_ACCESS_TOKEN", "SENDBIRD_API_TOKEN"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in the SendBird Dashboard under Settings > API Tokens."
+    ),
+    tags=["comms", "sendbird", "messaging"],
+)
+
+
+# ===================================================
+# FRESHDESK
+# ===================================================
+
+FRESHDESK_API_KEY = SecretPattern(
+    id="freshdesk_api_key",
+    name="Freshdesk API Key",
+    description=(
+        "Freshdesk API key, a 16-24 character alphanumeric string."
+        " Detected when preceded by Freshdesk-specific context keywords."
+        " Grants access to Freshdesk customer support APIs."
+    ),
+    provider="freshdesk",
+    severity="high",
+    # Independently authored — context-gated 16-24 char alphanumeric per
+    # Freshdesk API documentation (https://developers.freshdesk.com/api/#authentication).
+    regex=re.compile(
+        r"(?:"
+        r"(?:FRESHDESK_API_KEY|freshdesk.*key|freshdesk.*token)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-zA-Z0-9]{16,24})"
+        r"(?![a-zA-Z0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=3.5,
+    context_keywords=["freshdesk", "FRESHDESK_API_KEY", "freshdesk.com"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key at your-domain.freshdesk.com under Profile Settings > API Key."
+    ),
+    tags=["comms", "freshdesk", "support"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -1189,4 +1333,8 @@ register(
     DISCORD_WEBHOOK_URL,
     TEAMS_WEBHOOK_URL,
     MATTERMOST_TOKEN,
+    INTERCOM_ACCESS_TOKEN,
+    MESSAGEBIRD_API_KEY,
+    SENDBIRD_TOKEN,
+    FRESHDESK_API_KEY,
 )
