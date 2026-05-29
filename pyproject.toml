@@ -1,7 +1,7 @@
 [project]
 name = "classifinder-engine"
 version = "0.1.2"
-description = "Standalone secret + prompt-injection detection engine — 196 detection patterns, zero dependencies"
+description = "Standalone secret + prompt-injection detection engine — 204 detection patterns, zero dependencies"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"

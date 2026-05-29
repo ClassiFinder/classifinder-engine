@@ -295,6 +295,104 @@ CONTENTFUL_DELIVERY_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# PINECONE
+# ===================================================
+
+PINECONE_API_KEY = SecretPattern(
+    id="pinecone_api_key",
+    name="Pinecone API Key",
+    description=(
+        "Pinecone API key with pcsk_ prefix. Grants access to Pinecone vector"
+        " database indexes."
+    ),
+    provider="pinecone",
+    severity="high",
+    # Independently authored — pcsk_ vendor-published prefix per Pinecone CLI
+    # command reference (https://docs.pinecone.io/reference/cli/command-reference).
+    regex=re.compile(
+        r"(?P<secret>pcsk_[A-Za-z0-9_-]{20,})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["pinecone", "PINECONE_API_KEY", "pcsk"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the Pinecone console under API Keys."
+        " Generate a new key and update your configuration."
+    ),
+    tags=["data", "pinecone", "vector-db"],
+)
+
+
+# ===================================================
+# TURBOPUFFER
+# ===================================================
+
+TURBOPUFFER_API_KEY = SecretPattern(
+    id="turbopuffer_api_key",
+    name="Turbopuffer API Key",
+    description=(
+        "Turbopuffer API key with tpuf_ prefix. Grants access to Turbopuffer"
+        " serverless vector database."
+    ),
+    provider="turbopuffer",
+    severity="high",
+    # Independently authored — tpuf_ vendor-published prefix per Turbopuffer
+    # authentication docs (https://turbopuffer.com/docs/auth).
+    regex=re.compile(
+        r"(?P<secret>tpuf_[A-Za-z0-9]{20,})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["turbopuffer", "TURBOPUFFER_API_KEY", "tpuf"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the Turbopuffer dashboard."
+        " Generate a new key and update your configuration."
+    ),
+    tags=["data", "turbopuffer", "vector-db"],
+)
+
+
+# ===================================================
+# CHROMA
+# ===================================================
+
+CHROMA_API_KEY = SecretPattern(
+    id="chroma_api_key",
+    name="Chroma Cloud API Key",
+    description=(
+        "Chroma Cloud API key with ck- prefix. Grants access to Chroma Cloud"
+        " vector database collections."
+    ),
+    provider="chroma",
+    severity="high",
+    # Independently authored — ck- vendor-published prefix per Chroma CLI login
+    # docs (https://docs.trychroma.com/docs/cli/login). Short prefix is boundary-
+    # and entropy-gated to avoid matching words like "lock-"/"buck-".
+    regex=re.compile(
+        r"(?<![A-Za-z0-9])"
+        r"(?P<secret>ck-[A-Za-z0-9]{32,})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=3.5,
+    context_keywords=["chroma", "CHROMA_API_KEY", "trychroma"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the Chroma Cloud dashboard under API Keys."
+        " Generate a new key and update your configuration."
+    ),
+    tags=["data", "chroma", "vector-db"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -305,4 +403,7 @@ register(
     POSTMAN_API_TOKEN,
     ALGOLIA_API_KEY,
     CONTENTFUL_DELIVERY_API_TOKEN,
+    PINECONE_API_KEY,
+    TURBOPUFFER_API_KEY,
+    CHROMA_API_KEY,
 )

@@ -782,6 +782,7 @@ NOTION_API_KEY = SecretPattern(
     #   https://github.com/mazen160/secrets-patterns-db
     # See ATTRIBUTION.md for full license notice.
     regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
         r"(?P<secret>secret_[A-Za-z0-9]{43})"
         r"(?![A-Za-z0-9])",
         re.ASCII,

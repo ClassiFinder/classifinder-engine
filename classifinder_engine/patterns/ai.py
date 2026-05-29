@@ -726,6 +726,169 @@ CLARIFAI_PAT = SecretPattern(
 )
 
 
+# ===================================================
+# OPENROUTER
+# ===================================================
+
+OPENROUTER_API_KEY = SecretPattern(
+    id="openrouter_api_key",
+    name="OpenRouter API Key",
+    description=(
+        "OpenRouter API key with sk-or-v1- prefix. Grants access to OpenRouter's"
+        " unified inference API spanning 100+ models — leaked keys incur usage charges."
+    ),
+    provider="openrouter",
+    severity="high",
+    # Independently authored — sk-or-v1- vendor-published prefix per OpenRouter
+    # authentication docs (https://openrouter.ai/docs/api/reference/authentication).
+    # The hyphenated infix keeps it disjoint from openai_api_key (alphanumeric body).
+    regex=re.compile(
+        r"(?P<secret>sk-or-v1-[a-zA-Z0-9]{32,})"
+        r"(?![a-zA-Z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["openrouter", "OPENROUTER_API_KEY", "sk-or-v1"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the OpenRouter dashboard under Keys."
+        " Generate a new key and update your configuration."
+    ),
+    tags=["ai", "openrouter", "inference"],
+)
+
+
+# ===================================================
+# PERPLEXITY
+# ===================================================
+
+PERPLEXITY_API_KEY = SecretPattern(
+    id="perplexity_api_key",
+    name="Perplexity API Key",
+    description=(
+        "Perplexity API key with pplx- prefix. Grants access to Perplexity's"
+        " search-augmented LLM API."
+    ),
+    provider="perplexity",
+    severity="high",
+    # Independently authored — pplx- vendor-published prefix per Perplexity
+    # API key management docs (https://docs.perplexity.ai/docs/admin/api-key-management).
+    regex=re.compile(
+        r"(?P<secret>pplx-[a-zA-Z0-9]{32,})"
+        r"(?![a-zA-Z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["perplexity", "PERPLEXITY_API_KEY", "pplx"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the Perplexity API settings."
+        " Generate a new key and update your configuration."
+    ),
+    tags=["ai", "perplexity", "inference"],
+)
+
+
+# ===================================================
+# ANYSCALE
+# ===================================================
+
+ANYSCALE_API_KEY = SecretPattern(
+    id="anyscale_api_key",
+    name="Anyscale API Key",
+    description=(
+        "Anyscale API key with esecret_ prefix. Grants access to Anyscale"
+        " inference and compute services."
+    ),
+    provider="anyscale",
+    severity="high",
+    # Independently authored — esecret_ vendor-published prefix per Anyscale
+    # authentication docs (https://docs.anyscale.com/endpoints/text-generation/authenticate/).
+    # Distinct from notion_api_key (secret_ prefix; Notion regex carries a left boundary).
+    regex=re.compile(
+        r"(?P<secret>esecret_[a-zA-Z0-9]{16,})"
+        r"(?![a-zA-Z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["anyscale", "ANYSCALE_API_KEY", "esecret"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the Anyscale console under API Keys."
+        " Generate a new key and update your configuration."
+    ),
+    tags=["ai", "anyscale", "inference"],
+)
+
+
+# ===================================================
+# BRAINTRUST
+# ===================================================
+
+BRAINTRUST_API_KEY = SecretPattern(
+    id="braintrust_api_key",
+    name="Braintrust Service Token",
+    description=(
+        "Braintrust service token with bt-st- prefix. Grants programmatic access"
+        " to Braintrust LLM eval and observability. (User keys use the generic sk-"
+        " prefix and surface as openai_api_key; only service tokens are matched here.)"
+    ),
+    provider="braintrust",
+    severity="high",
+    # Independently authored — bt-st- vendor-published service-token prefix per Braintrust
+    # authentication docs (https://www.braintrust.dev/docs/reference/platform/authentication).
+    regex=re.compile(
+        r"(?P<secret>bt-st-[a-zA-Z0-9]{16,})"
+        r"(?![a-zA-Z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["braintrust", "BRAINTRUST_API_KEY", "bt-st"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this service token in the Braintrust settings under API Keys."
+        " Generate a new token and update your configuration."
+    ),
+    tags=["ai", "braintrust", "observability"],
+)
+
+
+# ===================================================
+# RUNPOD
+# ===================================================
+
+RUNPOD_API_KEY = SecretPattern(
+    id="runpod_api_key",
+    name="RunPod API Key",
+    description=(
+        "RunPod API key with rpa_ prefix. Grants access to RunPod GPU cloud"
+        " resources — leaked keys can incur compute charges."
+    ),
+    provider="runpod",
+    severity="high",
+    # Independently authored — rpa_ vendor-published prefix per RunPod scoped-API-keys
+    # announcement (https://www.runpod.io/blog/scoped-api-keys-runpod).
+    regex=re.compile(
+        r"(?P<secret>rpa_[A-Za-z0-9]{20,})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["runpod", "RUNPOD_API_KEY", "rpa_"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the RunPod console under Settings > API Keys."
+        " Generate a new key and update your configuration."
+    ),
+    tags=["ai", "runpod", "inference"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -748,4 +911,9 @@ register(
     WEIGHTS_AND_BIASES_V1_KEY,
     LANGSMITH_API_KEY,
     CLARIFAI_PAT,
+    OPENROUTER_API_KEY,
+    PERPLEXITY_API_KEY,
+    ANYSCALE_API_KEY,
+    BRAINTRUST_API_KEY,
+    RUNPOD_API_KEY,
 )
