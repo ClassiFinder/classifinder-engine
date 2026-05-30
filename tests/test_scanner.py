@@ -124,6 +124,33 @@ def test_generic_api_key_env_short_high_entropy_stays_midband():
     )
 
 
+def test_generic_api_key_env_doc_band_entropy_stays_midband():
+    """Long values with mid-band entropy (4.5 ≤ H < 5.0) — the canonical
+    doc-example shape — must NOT be promoted to high-band. The 2026-05-29
+    benchmark spot-check (benchmark-results-2026-05-19.md §"Post-batch
+    spot-check") found that 4 of 7 findings in this entropy band were docs
+    (.md / .txt / .ipynb README placeholders). Raising the bonus floor from
+    4.5 → 5.0 demotes them while preserving the ≥5.0 cohort that contains
+    the more random-looking real-key candidates.
+
+    See classifinder-knowledge/tasks/Finished Tasks/
+    2026-05-29-doc-context-tuning-for-generic-api-key-env.md."""
+    # 40 chars, entropy ~4.82: 20 letters (a-t, each 1x) + 10 digits (each 2x).
+    # Representative of README-style synthetic placeholder tokens.
+    text = "API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
+    findings = scan(text, min_confidence=0.01)
+    gk = [f for f in findings if f.type == "generic_api_key_env"]
+    assert len(gk) == 1
+    assert gk[0].confidence < 0.80, (
+        f"Doc-band-entropy generic finding (length≥32, 4.5≤H<5.0) must NOT "
+        f"receive the length+entropy bonus, got {gk[0].confidence}"
+    )
+    assert gk[0].confidence >= 0.50, (
+        f"Doc-band-entropy finding should still be mid-band-visible to default "
+        f"min_confidence=0.5 users, got {gk[0].confidence}"
+    )
+
+
 def test_length_entropy_bonus_is_opt_in_per_pattern():
     """Patterns that don't set length_entropy_bonus_threshold must not receive
     the bonus, even on long+high-entropy matches. Confirms the bonus is

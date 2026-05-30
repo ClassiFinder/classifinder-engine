@@ -197,14 +197,26 @@ GENERIC_API_KEY_ENV = SecretPattern(
     # is a stronger structural signal than the keyword-context anchor).
     # See tasks/Finished Tasks/2026-05-20-tune-generic-api-key-env-entropy-threshold.md.
     entropy_threshold=4.0,  # must have reasonable entropy
-    # Promote real-looking findings: length ≥32 AND entropy ≥4.5 adds +0.15,
+    # Promote real-looking findings: length ≥32 AND entropy ≥5.0 adds +0.15,
     # pushing 0.69 → 0.84 so strict-threshold users (min_confidence=0.8)
     # surface them. Closes the recall gap surfaced in
     # benchmark-results-2026-05-19.md (208 long+high-entropy matches sat at
     # 0.65-0.79 despite looking like real keys). See
     # classifinder-knowledge/tasks/Finished Tasks/
     # 2026-05-20-add-length-entropy-bonus-for-generic-patterns.md.
-    length_entropy_bonus_threshold=(32, 4.5),
+    #
+    # Tuned 2026-05-29 from (32, 4.5) → (32, 5.0). The original 4.5 floor
+    # over-promoted documentation placeholders: the 2026-05-29 benchmark
+    # spot-check found 17 newly-high-conf findings, of which 11 were in
+    # docs (.md/.txt/.ipynb) and 7 sat in the 4.5–5.0 entropy band —
+    # the canonical README quickstart shape (32-50 chars, 25-30 distinct
+    # alphanumerics, entropy ~4.7-4.9). Real random base64/alnum keys
+    # cluster at entropy ≥5.5, so the ≥5.0 floor preserves the promotion
+    # of genuinely high-entropy candidates while demoting the doc cohort.
+    # See classifinder-knowledge/tasks/Finished Tasks/
+    # 2026-05-29-doc-context-tuning-for-generic-api-key-env.md and
+    # benchmark-results-2026-05-19.md §"Post-batch spot-check ... 2026-05-29".
+    length_entropy_bonus_threshold=(32, 5.0),
     context_keywords=[
         "api",
         "key",
