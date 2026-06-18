@@ -553,6 +553,110 @@ KUBERNETES_SECRET_YAML = SecretPattern(
 )
 
 
+# ===================================================
+# TAILSCALE
+# ===================================================
+
+TAILSCALE_API_KEY = SecretPattern(
+    id="tailscale_api_key",
+    name="Tailscale API Key",
+    description=(
+        "Tailscale key with the 'tskey-' prefix and a typed segment"
+        " (e.g. 'tskey-api-', 'tskey-auth-') followed by an id and secret part."
+        " Grants programmatic control over a Tailscale tailnet."
+    ),
+    provider="tailscale",
+    severity="high",
+    # Format per Tailscale key-prefix reference (tskey-<type>-<id>-<secret>):
+    #   https://tailscale.com/kb/1277/key-prefixes
+    # Independently authored from the documented 'tskey-' prefix structure.
+    regex=re.compile(
+        r"(?P<secret>tskey-[a-z]+-[0-9A-Za-z_]+-[0-9A-Za-z_]+)"
+        r"(?![0-9A-Za-z_])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,
+    context_keywords=["tailscale", "tskey", "tailnet", "TS_API_KEY"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the Tailscale admin console under Settings > Keys."
+    ),
+    tags=["devops", "tailscale", "networking"],
+)
+
+
+# ===================================================
+# README (readme.com)
+# ===================================================
+
+README_API_KEY = SecretPattern(
+    id="readme_api_key",
+    name="ReadMe API Key",
+    description=(
+        "ReadMe (readme.com) API key with the 'rdme_' prefix followed by 70"
+        " lowercase-hex-style characters. Grants access to ReadMe's developer"
+        " documentation management API."
+    ),
+    provider="readme",
+    severity="medium",
+    # Format per ReadMe API authentication docs ('rdme_' prefix + fixed body):
+    #   https://docs.readme.com/main/reference/intro/authentication
+    # Independently authored from the documented 'rdme_' prefix + 70-char body.
+    regex=re.compile(
+        r"(?P<secret>rdme_[a-z0-9]{70})(?![a-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=0.0,
+    context_keywords=["readme", "rdme", "README_API_KEY"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the ReadMe dashboard under Configuration > API Keys."
+    ),
+    tags=["devops", "readme", "docs"],
+)
+
+
+# ===================================================
+# TELNYX
+# ===================================================
+
+TELNYX_API_KEY = SecretPattern(
+    id="telnyx_api_key",
+    name="Telnyx API Key",
+    description=(
+        "Telnyx API v2 key beginning with 'KEY' followed by 55 token characters."
+        " The bare 'KEY' prefix is weakly distinctive, so this pattern is"
+        " context-gated: it only fires when a Telnyx keyword precedes the value."
+        " Grants access to Telnyx voice, messaging, and number APIs."
+    ),
+    provider="telnyx",
+    severity="high",
+    # Format per Telnyx API authentication docs (v2 keys begin with 'KEY'):
+    #   https://developers.telnyx.com/docs/api/v2/overview
+    # Independently authored — context-gated because the bare 'KEY' prefix is
+    # low-entropy and high-FP without a nearby telnyx keyword.
+    regex=re.compile(
+        r"(?:"
+        r"(?:TELNYX[_-]?(?:API[_-]?KEY|KEY|TOKEN)|telnyx.*key|telnyx.*token)"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>KEY[0-9A-Za-z_-]{55})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.80,
+    entropy_threshold=3.5,
+    context_keywords=["telnyx", "TELNYX_API_KEY", "messaging", "voice"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the Telnyx portal under Auth > API Keys and rotate it."
+    ),
+    tags=["devops", "telnyx", "comms"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -573,4 +677,8 @@ register(
     SOURCEGRAPH_ACCESS_TOKEN,
     # Part 2.1 follow-up — multi-line context detector
     KUBERNETES_SECRET_YAML,
+    # Batch 7 — networking / dev tooling / comms infra (2026-06-18)
+    TAILSCALE_API_KEY,
+    README_API_KEY,
+    TELNYX_API_KEY,
 )

@@ -1299,6 +1299,103 @@ FRESHDESK_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# MAILCHIMP
+# ===================================================
+
+MAILCHIMP_API_KEY = SecretPattern(
+    id="mailchimp_api_key",
+    name="Mailchimp API Key",
+    description=(
+        "Mailchimp API key: 32 hex characters followed by a '-usNN' datacenter"
+        " suffix (e.g. '-us21'). The datacenter suffix is the distinctive anchor."
+        " Grants access to Mailchimp marketing and audience APIs."
+    ),
+    provider="mailchimp",
+    severity="high",
+    # Format per Mailchimp Marketing API docs (key = 32 hex + '-' + datacenter id):
+    #   https://mailchimp.com/developer/marketing/guides/quick-start/
+    # Independently authored from the documented '<hex>-us<dc>' structure.
+    regex=re.compile(
+        r"(?P<secret>[0-9a-f]{32}-us[0-9]{1,2})(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=["mailchimp", "MAILCHIMP_API_KEY", "api_key", "audience"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the Mailchimp dashboard under Account > Extras >"
+        " API keys, then issue a replacement."
+    ),
+    tags=["comms", "mailchimp", "email"],
+)
+
+
+# ===================================================
+# RESEND
+# ===================================================
+
+RESEND_API_KEY = SecretPattern(
+    id="resend_api_key",
+    name="Resend API Key",
+    description=(
+        "Resend transactional-email API key with the 're_' prefix followed by"
+        " a base62/underscore body. Grants permission to send email and manage"
+        " domains via the Resend API."
+    ),
+    provider="resend",
+    severity="high",
+    # Format per Resend API reference (keys are prefixed 're_'):
+    #   https://resend.com/docs/api-reference/introduction
+    # Independently authored from the documented 're_' prefix + token body.
+    regex=re.compile(
+        r"(?P<secret>re_[A-Za-z0-9_]{20,})(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=["resend", "RESEND_API_KEY", "api_key", "email"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the Resend dashboard under API Keys and rotate it."
+    ),
+    tags=["comms", "resend", "email"],
+)
+
+
+# ===================================================
+# BREVO (formerly Sendinblue)
+# ===================================================
+
+BREVO_API_KEY = SecretPattern(
+    id="brevo_api_key",
+    name="Brevo API Key",
+    description=(
+        "Brevo (formerly Sendinblue) API key with the 'xkeysib-' prefix followed"
+        " by an 81-character token body. Grants access to Brevo's transactional"
+        " email, SMS, and marketing-automation APIs."
+    ),
+    provider="brevo",
+    severity="high",
+    # Format per Brevo API docs (keys prefixed 'xkeysib-'):
+    #   https://developers.brevo.com/docs/getting-started
+    # Independently authored from the documented 'xkeysib-' prefix + token body.
+    regex=re.compile(
+        r"(?P<secret>xkeysib-[A-Za-z0-9_-]{81})(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,
+    context_keywords=["brevo", "sendinblue", "BREVO_API_KEY", "api_key"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the Brevo dashboard under SMTP & API > API Keys."
+    ),
+    tags=["comms", "brevo", "sendinblue", "email"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -1338,4 +1435,8 @@ register(
     MESSAGEBIRD_API_KEY,
     SENDBIRD_TOKEN,
     FRESHDESK_API_KEY,
+    # Batch 7 — email providers (2026-06-18)
+    MAILCHIMP_API_KEY,
+    RESEND_API_KEY,
+    BREVO_API_KEY,
 )
