@@ -453,20 +453,28 @@ ENCODED_PAYLOAD_MARKER = SecretPattern(
     id="pi_encoded_payload_marker",
     name="Encoded Payload with Decode Hint",
     description=(
-        "Base64-shaped string adjacent to a 'decode' or 'base64' keyword."
-        " Common pattern in indirect injections that smuggle instructions"
-        " through encoding."
+        "Base64-shaped string adjacent to a decode/execute DIRECTIVE"
+        " (e.g. 'decode this', 'base64 payload follows', 'run this b64"
+        " string'). Common in indirect injections that smuggle instructions"
+        " through encoding and ask the model to decode and execute them."
     ),
     provider="prompt_injection",
     severity="medium",
-    # Independently authored — pattern observed in indirect injection
-    # samples where the attacker base64-encodes the malicious instruction
-    # and asks the model to decode and execute. Heuristic: 40+ chars of
-    # base64 within ~100 chars of "decode"/"base64". Entropy gate 4.0
-    # filters out non-base64 strings that happen to look base64-shaped.
+    # Heuristic: a base64/decode DIRECTIVE ("decode this", "base64 payload
+    # follows", "run this b64 string", "execute the following") within ~100
+    # chars of a 40+ char base64 blob. Requiring the directive — not a bare
+    # "base64" mention — keeps it off benign base64-handling code/docs where
+    # identifiers (PIXEL_PNG_B64) or comments ("encoded as base64") sit next
+    # to image/JSON/SVG data. Entropy gate 4.0 filters non-base64 look-alikes.
+    # Independently authored — observed in indirect injections that base64-
+    # encode a malicious instruction and ask the model to decode and execute.
     regex=re.compile(
-        r"(?:decode|base64|b64|decrypt|deobfuscate)"
-        r"(?:[^.\n]{0,100})"
+        r"(?:"
+        r"(?:decode|decrypt|deobfuscate)\s+(?:this|it|and\b[^.\n]{0,20}|the\s+following)"
+        r"|(?:base64|b64)\b[^.\n]{0,30}?(?:payload|string|follows|below)"
+        r"|(?:run|execute|eval|interpret)\b[^.\n]{0,30}?(?:b64|base64|encoded|following)"
+        r")"
+        r"[^.\n]{0,100}?"
         r"(?P<secret>[A-Za-z0-9+/]{40,}={0,2})",
         re.IGNORECASE,
     ),
@@ -475,13 +483,13 @@ ENCODED_PAYLOAD_MARKER = SecretPattern(
     context_keywords=["execute", "run", "eval", "instructions"],
     known_test_values=set(),
     recommendation=(
-        "Decode the payload and rescan. Known FP class: legitimate technical"
-        " content explaining base64 ('here's how to base64-encode a string:"
-        " ...' followed by an example). The execute/run/eval context keyword"
-        " filter helps but won't eliminate. Note: overlaps with the engine's"
-        " base64 decoder for secret detection — both can fire on the same"
-        " span without double-counting because the scanner deduplicates"
-        " overlapping findings."
+        "Decode the payload and rescan. The directive requirement (decode/run"
+        " 'this'/'the following', 'base64 payload follows') suppresses the main"
+        " benign FP class — code and docs that merely mention base64 next to"
+        " image/JSON/SVG data (e.g. PIXEL_PNG_B64 = '...'). Note: overlaps with"
+        " the engine's base64 decoder for secret detection — both can fire on"
+        " the same span without double-counting because the scanner"
+        " deduplicates overlapping findings."
     ),
     tags=["prompt-injection", "encoding-attack", "phase-2"],
     safe_mcp_ids=["SAFE-T1402"],
