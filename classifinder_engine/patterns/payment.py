@@ -730,6 +730,102 @@ WISE_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# EASYPOST (shipping / logistics)
+# ===================================================
+
+EASYPOST_API_KEY = SecretPattern(
+    id="easypost_api_key",
+    name="EasyPost API Key",
+    description=(
+        "EasyPost shipping API key. Production/test keys begin with 'EZAK'/'EZTK'"
+        " and partner keys with 'EZPK', followed by a long alphanumeric body."
+        " Grants access to purchase shipping labels and read address/tracking data."
+    ),
+    provider="easypost",
+    severity="high",
+    # Format per EasyPost API key documentation (keys prefixed EZAK/EZTK/EZPK):
+    #   https://support.easypost.com/hc/en-us/articles/360051341434-Where-Can-I-Find-My-API-Keys
+    # Independently authored from the documented prefix + alphanumeric body.
+    regex=re.compile(
+        r"(?P<secret>(?:EZAK|EZTK|EZPK)[A-Za-z0-9]{50,})(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=["easypost", "EASYPOST_API_KEY", "shipping", "label"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in the EasyPost dashboard under Account > API Keys."
+    ),
+    tags=["payment", "easypost", "shipping"],
+)
+
+
+# ===================================================
+# DUFFEL (travel / flights)
+# ===================================================
+
+DUFFEL_ACCESS_TOKEN = SecretPattern(
+    id="duffel_access_token",
+    name="Duffel Access Token",
+    description=(
+        "Duffel travel API access token with a 'duffel_test_' or 'duffel_live_'"
+        " prefix followed by a token body. Grants access to search and book"
+        " flights and manage orders via the Duffel API."
+    ),
+    provider="duffel",
+    severity="high",
+    # Format per Duffel API docs (tokens prefixed duffel_test_ / duffel_live_):
+    #   https://duffel.com/docs/guides/getting-started-with-flights
+    # Independently authored from the documented 'duffel_<env>_' prefix.
+    regex=re.compile(
+        r"(?P<secret>duffel_(?:test|live)_[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,
+    context_keywords=["duffel", "DUFFEL_ACCESS_TOKEN", "flight", "travel"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in the Duffel dashboard under Developers > Access tokens."
+    ),
+    tags=["payment", "duffel", "travel"],
+)
+
+
+# ===================================================
+# SHIPPO (shipping / logistics)
+# ===================================================
+
+SHIPPO_API_TOKEN = SecretPattern(
+    id="shippo_api_token",
+    name="Shippo API Token",
+    description=(
+        "Shippo shipping API token with a 'shippo_live_' or 'shippo_test_'"
+        " prefix followed by 40 hex characters. Grants access to create"
+        " shipping labels and read tracking data via the Shippo API."
+    ),
+    provider="shippo",
+    severity="high",
+    # Format per Shippo API authentication docs (shippo_<env>_ + 40 hex):
+    #   https://docs.goshippo.com/docs/guides_general/authentication/
+    # Independently authored from the documented 'shippo_<env>_' prefix + hex body.
+    regex=re.compile(
+        r"(?P<secret>shippo_(?:live|test)_[0-9a-f]{40})(?![0-9a-f])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,
+    context_keywords=["shippo", "SHIPPO_API_TOKEN", "shipping", "label"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token in the Shippo dashboard under Settings > API and rotate it."
+    ),
+    tags=["payment", "shippo", "shipping"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -750,4 +846,8 @@ register(
     ETHERSCAN_API_KEY,
     GOCARDLESS_ACCESS_TOKEN,
     WISE_API_TOKEN,
+    # Batch 7 — shipping / travel / logistics (2026-06-18)
+    EASYPOST_API_KEY,
+    DUFFEL_ACCESS_TOKEN,
+    SHIPPO_API_TOKEN,
 )
