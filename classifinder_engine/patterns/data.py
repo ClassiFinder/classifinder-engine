@@ -393,6 +393,39 @@ CHROMA_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# TYPEFORM (Batch 8 — 2026-06-22)
+# ===================================================
+
+TYPEFORM_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="typeform_personal_access_token",
+    name="Typeform Personal Access Token",
+    description=(
+        "Typeform personal access token with the 'tfp_' prefix followed by the"
+        " token body. Grants access to a Typeform account's forms and responses."
+    ),
+    provider="typeform",
+    severity="high",
+    # Source: https://www.typeform.com/developers/get-started/personal-access-token/
+    regex=re.compile(
+        r"(?P<secret>tfp_[A-Za-z0-9]{40,60})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=["typeform", "TYPEFORM_TOKEN", "personal_access_token", "tfp"],
+    known_test_values={
+        "tfp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+    },
+    recommendation=(
+        "Revoke this token in Typeform under Settings > Personal tokens and"
+        " generate a replacement."
+    ),
+    tags=["data", "typeform"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -406,4 +439,6 @@ register(
     PINECONE_API_KEY,
     TURBOPUFFER_API_KEY,
     CHROMA_API_KEY,
+    # Batch 8 — vendor-sourced patterns (2026-06-22)
+    TYPEFORM_PERSONAL_ACCESS_TOKEN,
 )

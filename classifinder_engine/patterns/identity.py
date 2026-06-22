@@ -390,6 +390,40 @@ CLICKUP_PAT = SecretPattern(
 )
 
 
+# ===================================================
+# ONFIDO (Batch 8 — 2026-06-22)
+# ===================================================
+
+ONFIDO_API_TOKEN = SecretPattern(
+    id="onfido_api_token",
+    name="Onfido API Token",
+    description=(
+        "Onfido identity-verification API token with an 'api_live.' or"
+        " 'api_sandbox.' prefix followed by the token body. Grants access to"
+        " Onfido's KYC / identity-check APIs."
+    ),
+    provider="onfido",
+    severity="high",
+    # Source: https://documentation.onfido.com/api/3.6.0/
+    regex=re.compile(
+        r"(?P<secret>api_(?:live|sandbox)\.[A-Za-z0-9_\-]{20,})"
+        r"(?![A-Za-z0-9_\-])",
+        re.ASCII,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=0.0,
+    context_keywords=["onfido", "ONFIDO_API_TOKEN", "api_token", "identity"],
+    known_test_values={
+        "api_live.AbCdEfGhIjKlMnOpQrStUvWx",
+    },
+    recommendation=(
+        "Revoke this token in the Onfido dashboard under Settings > Tokens and"
+        " issue a replacement."
+    ),
+    tags=["identity", "onfido", "kyc"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -402,4 +436,6 @@ register(
     HASURA_ADMIN_SECRET,
     JUMPCLOUD_API_KEY,
     CLICKUP_PAT,
+    # Batch 8 — vendor-sourced patterns (2026-06-22)
+    ONFIDO_API_TOKEN,
 )
