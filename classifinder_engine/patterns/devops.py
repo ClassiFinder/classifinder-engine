@@ -657,6 +657,40 @@ TELNYX_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# DEFINED NETWORKING (Batch 8 — 2026-06-22)
+# ===================================================
+
+DEFINED_NETWORKING_API_TOKEN = SecretPattern(
+    id="defined_networking_api_token",
+    name="Defined Networking API Token",
+    description=(
+        "Defined Networking API token with the 'dnkey-' prefix followed by the"
+        " token body. Grants programmatic control over a Defined Networking"
+        " (Nebula-based) network."
+    ),
+    provider="defined_networking",
+    severity="high",
+    # Source: https://docs.defined.net/guides/rotating-api-keys/
+    regex=re.compile(
+        r"(?P<secret>dnkey-[A-Za-z0-9]{20,60})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,
+    context_keywords=["defined", "dnkey", "DN_API_TOKEN", "defined.net"],
+    known_test_values={
+        "dnkey-AbCdEfGhIjKlMnOpQrStUvWx",
+    },
+    recommendation=(
+        "Revoke this token in the Defined Networking admin panel under API Keys"
+        " and rotate it."
+    ),
+    tags=["devops", "defined_networking", "networking"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -681,4 +715,6 @@ register(
     TAILSCALE_API_KEY,
     README_API_KEY,
     TELNYX_API_KEY,
+    # Batch 8 — vendor-sourced patterns (2026-06-22)
+    DEFINED_NETWORKING_API_TOKEN,
 )

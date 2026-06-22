@@ -42,7 +42,7 @@ classifinder-engine/
         └── prompt_injection.py # Role-hijack tokens, jailbreak personas, instruction-override phrases — 4 phase-1 + 6 phase-2 (10 patterns) <!-- pattern-count-ignore -->
 ```
 
-**213 detection patterns** — 199 secret types across 10 categories + 14 prompt-injection markers (4 phase-1 high-precision + 6 phase-2 medium-precision + 4 phase-3 SAFE-MCP-derived). Each pattern includes a regex, base confidence score, entropy threshold, context keywords, known test values, and remediation guidance.
+**223 detection patterns** — 209 secret types across 10 categories + 14 prompt-injection markers (4 phase-1 high-precision + 6 phase-2 medium-precision + 4 phase-3 SAFE-MCP-derived). Each pattern includes a regex, base confidence score, entropy threshold, context keywords, known test values, and remediation guidance.
 
 ## How It Works
 
@@ -59,7 +59,7 @@ redacted_text, redaction_map = redact(text, findings, style="label")
 ```
 
 The `scan()` function:
-1. Runs all 199 regex patterns against the input
+1. Runs all 209 regex patterns against the input
 2. Calculates confidence: `base + context_boost (+0.02/keyword, max +0.10) - entropy_penalty (-0.50 if below threshold) → override to 0.15 if test value → clamp [0.05, 0.99]`
 3. Deduplicates overlapping findings (highest confidence wins)
 4. Returns structured findings sorted by position

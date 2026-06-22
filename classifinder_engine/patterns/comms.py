@@ -1396,6 +1396,73 @@ BREVO_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# SENTRY DSN (Batch 8 — 2026-06-22)
+# ===================================================
+
+SENTRY_DSN = SecretPattern(
+    id="sentry_dsn",
+    name="Sentry DSN",
+    description=(
+        "Sentry Data Source Name (DSN) — a client key embedded in an ingest URL."
+        " Contains the public key, organization ingest host, and project ID;"
+        " allows submitting (and, with the secret variant, reading) events."
+    ),
+    provider="sentry",
+    severity="high",
+    # Source: https://docs.sentry.io/product/sentry-basics/dsn-explainer/
+    regex=re.compile(
+        r"(?P<secret>https://[0-9a-f]{32}@o\d+\.ingest(?:\.[a-z]{2})?\.sentry\.io/\d+)",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=["sentry", "dsn", "SENTRY_DSN", "ingest"],
+    known_test_values={
+        "https://abcdef0123456789abcdef0123456789@o123456.ingest.us.sentry.io/7891011",
+    },
+    recommendation=(
+        "Rotate this DSN's client key at sentry.io under Settings > Projects >"
+        " Client Keys (DSN). A leaked DSN lets attackers spoof or flood events."
+    ),
+    tags=["monitoring", "sentry", "dsn"],
+)
+
+
+# ===================================================
+# TWILIO API KEY (Batch 8 — 2026-06-22)
+# ===================================================
+
+TWILIO_API_KEY = SecretPattern(
+    id="twilio_api_key",
+    name="Twilio API Key SID",
+    description=(
+        "Twilio API Key SID with the 'SK' prefix followed by 32 hex characters."
+        " Paired with an API Key secret to authenticate Twilio REST API calls."
+    ),
+    provider="twilio",
+    severity="high",
+    # Vendor-published format — SK prefix is Twilio's documented API Key SID format
+    # Source: https://www.twilio.com/docs/iam/api-keys
+    regex=re.compile(
+        r"(?P<secret>SK[0-9a-f]{32})"
+        r"(?![0-9a-f])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=["twilio", "TWILIO_API_KEY", "api_key", "api_sid"],
+    known_test_values={
+        "SK" + "0" * 32,  # synthetic; concatenated so no scannable Twilio SK secret literal exists in source
+    },
+    recommendation=(
+        "Delete this API Key in the Twilio Console under Account > API keys & tokens"
+        " and issue a replacement. Rotate the paired API Key secret as well."
+    ),
+    tags=["comms", "twilio"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -1439,4 +1506,7 @@ register(
     MAILCHIMP_API_KEY,
     RESEND_API_KEY,
     BREVO_API_KEY,
+    # Batch 8 — vendor-sourced patterns (2026-06-22)
+    SENTRY_DSN,
+    TWILIO_API_KEY,
 )

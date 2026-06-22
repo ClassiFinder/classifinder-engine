@@ -826,6 +826,74 @@ SHIPPO_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# PADDLE (Batch 8 — 2026-06-22)
+# ===================================================
+
+PADDLE_API_KEY = SecretPattern(
+    id="paddle_api_key",
+    name="Paddle API Key",
+    description=(
+        "Paddle Billing API key with a 'pdl_live_apikey_' or 'pdl_sdbx_apikey_'"
+        " prefix followed by the key body. Grants access to Paddle's billing and"
+        " subscription APIs."
+    ),
+    provider="paddle",
+    severity="high",
+    # Source: https://developer.paddle.com/api-reference/about/api-keys
+    regex=re.compile(
+        r"(?P<secret>pdl_(?:live|sdbx)_apikey_[A-Za-z0-9_]{40,60})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["paddle", "PADDLE_API_KEY", "api_key", "billing"],
+    known_test_values={
+        "pdl_live_apikey_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+    },
+    recommendation=(
+        "Revoke this key in the Paddle dashboard under Developer Tools >"
+        " Authentication and issue a replacement."
+    ),
+    tags=["payment", "paddle"],
+)
+
+
+# ===================================================
+# ASAAS (Batch 8 — 2026-06-22)
+# ===================================================
+
+ASAAS_API_TOKEN = SecretPattern(
+    id="asaas_api_token",
+    name="Asaas API Token",
+    description=(
+        "Asaas API token with a literal '$aact_' prefix (production '$aact_prod_'"
+        " or sandbox '$aact_hmlg_') followed by the token body. Grants access to"
+        " the Asaas payments platform."
+    ),
+    provider="asaas",
+    severity="high",
+    # Source: https://docs.asaas.com/docs/authentication-2
+    regex=re.compile(
+        r"(?P<secret>\$aact_(?:prod|hmlg)_[A-Za-z0-9+/=:_\-]{40,})"
+        r"(?![A-Za-z0-9+/=:_\-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["asaas", "ASAAS_API_KEY", "api_token", "aact"],
+    known_test_values={
+        "$aact_prod_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEf",
+    },
+    recommendation=(
+        "Revoke this token in the Asaas dashboard under Integrations > API Key"
+        " and generate a new one."
+    ),
+    tags=["payment", "asaas"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -850,4 +918,7 @@ register(
     EASYPOST_API_KEY,
     DUFFEL_ACCESS_TOKEN,
     SHIPPO_API_TOKEN,
+    # Batch 8 — vendor-sourced patterns (2026-06-22)
+    PADDLE_API_KEY,
+    ASAAS_API_TOKEN,
 )

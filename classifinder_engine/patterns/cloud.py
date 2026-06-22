@@ -1104,6 +1104,77 @@ RAILWAY_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# GOOGLE OAUTH (Batch 8 — 2026-06-22)
+# ===================================================
+
+GOOGLE_OAUTH_ACCESS_TOKEN = SecretPattern(
+    id="google_oauth_access_token",
+    name="Google OAuth 2.0 Access Token",
+    description=(
+        "Google OAuth 2.0 access token with the documented 'ya29.' prefix."
+        " Grants delegated access to Google APIs on behalf of a user or"
+        " service account until expiry."
+    ),
+    provider="google",
+    severity="high",
+    # Vendor-published format — ya29. is Google's documented OAuth 2.0 access-token prefix
+    # Source: https://cloud.google.com/docs/authentication/token-types#access
+    regex=re.compile(
+        r"(?P<secret>ya29\.[0-9A-Za-z._\-]{50,})"
+        r"(?![0-9A-Za-z._\-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=["google", "oauth", "access_token", "ya29", "googleapis"],
+    known_test_values={
+        "ya29.AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOp",
+    },
+    recommendation=(
+        "Revoke this access token via the Google OAuth token revocation endpoint"
+        " (https://oauth2.googleapis.com/revoke) and rotate the refresh token or"
+        " service-account key that minted it."
+    ),
+    tags=["cloud", "google", "oauth"],
+)
+
+
+# ===================================================
+# TENCENT CLOUD (Batch 8 — 2026-06-22)
+# ===================================================
+
+TENCENT_CLOUD_SECRET_ID = SecretPattern(
+    id="tencent_cloud_secret_id",
+    name="Tencent Cloud Secret ID",
+    description=(
+        "Tencent Cloud API SecretId with the 'AKID' prefix followed by 32"
+        " alphanumeric characters. The SecretId is an identifier paired with a"
+        " SecretKey — medium severity because it is not sufficient alone."
+    ),
+    provider="tencent",
+    severity="medium",
+    # Vendor-published format — AKID prefix is Tencent Cloud's documented SecretId format
+    # Source: https://www.tencentcloud.com/document/product/845/32207
+    regex=re.compile(
+        r"(?P<secret>AKID[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=0.0,
+    context_keywords=["tencent", "tencentcloud", "secret_id", "AKID", "qcloud"],
+    known_test_values={
+        "AKID" + "0" * 32,  # synthetic; concatenated so no scannable AKID secret literal exists in source
+    },
+    recommendation=(
+        "Rotate this SecretId together with its paired SecretKey in the Tencent"
+        " Cloud console under Access Management > API Keys."
+    ),
+    tags=["cloud", "tencent"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -1136,4 +1207,7 @@ register(
     OKTA_API_TOKEN,
     BUILDKITE_TOKEN,
     RAILWAY_TOKEN,
+    # Batch 8 — vendor-sourced patterns (2026-06-22)
+    GOOGLE_OAUTH_ACCESS_TOKEN,
+    TENCENT_CLOUD_SECRET_ID,
 )

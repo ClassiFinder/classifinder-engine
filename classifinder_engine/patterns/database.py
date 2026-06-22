@@ -323,6 +323,40 @@ SSH_PRIVATE_KEY = SecretPattern(
 )
 
 
+PGP_PRIVATE_KEY = SecretPattern(
+    id="pgp_private_key",
+    name="PGP Private Key Block",
+    description=(
+        "OpenPGP private key block delimited by the ASCII-armor"
+        " '-----BEGIN PGP PRIVATE KEY BLOCK-----' / '-----END ...-----' markers."
+        " A leaked PGP private key allows decryption and signing as its owner."
+    ),
+    provider="pgp",
+    severity="critical",
+    # Source: https://www.rfc-editor.org/rfc/rfc4880  (OpenPGP armor headers, RFC 4880 §6.2)
+    regex=re.compile(
+        r"(?P<secret>-----BEGIN PGP PRIVATE KEY BLOCK-----"
+        r"[\s\S]{50,}?"
+        r"-----END PGP PRIVATE KEY BLOCK-----)",
+        re.DOTALL,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # structural match, no entropy check needed
+    context_keywords=["pgp", "gpg", "private", "key", "openpgp"],
+    known_test_values={
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\n"
+        "AbCdEfGhIjKlMnOp\nAbCdEfGhIjKlMnOp\nAbCdEfGhIjKlMnOp\n"
+        "AbCdEfGhIjKlMnOp\nAbCdEfGhIjKlMnOp\n"
+        "-----END PGP PRIVATE KEY BLOCK-----",
+    },
+    recommendation=(
+        "Revoke this PGP key by publishing a revocation certificate, then generate"
+        " a new key pair and distribute the new public key to your correspondents."
+    ),
+    tags=["infrastructure", "pgp", "key"],
+)
+
+
 # ===================================================
 # SUPABASE
 # ===================================================
@@ -501,6 +535,8 @@ register(
     PASSWORD_IN_URL,
     ENV_DATABASE_PASSWORD,
     SSH_PRIVATE_KEY,
+    # Batch 8 — vendor-sourced patterns (2026-06-22)
+    PGP_PRIVATE_KEY,
     SUPABASE_SERVICE_KEY,
     RABBITMQ_CONNECTION_STRING,
     JDBC_CONNECTION_STRING,
