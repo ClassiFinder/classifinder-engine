@@ -431,6 +431,46 @@ SENDGRID_API_KEY = SecretPattern(
 
 
 # ===================================================
+# ONESIGNAL
+# ===================================================
+
+ONESIGNAL_REST_API_KEY = SecretPattern(
+    id="onesignal_rest_api_key",
+    name="OneSignal REST API Key",
+    description=(
+        "Modern OneSignal REST API key (App API Key) with the os_v2_app_ prefix"
+        " followed by 80-140 lowercase alphanumeric characters. Grants server-side"
+        " access to send push notifications and manage a OneSignal app."
+    ),
+    provider="onesignal",
+    severity="high",
+    # Vendor-published format: OneSignal Keys & IDs docs
+    # (https://documentation.onesignal.com/docs/en/keys-and-ids) state the App
+    # API Key value "starts with os_v2_app_ and is shown only once". The
+    # quick-start API guide shows a 103-char [a-z0-9] body. Prefix-anchored;
+    # negative lookahead bounds the upper length, modern os_v2_app_ form.
+    # Independently authored from OneSignal vendor docs only (not TruffleHog).
+    regex=re.compile(
+        r"(?P<secret>os_v2_app_[a-z0-9]{80,140})"
+        r"(?![a-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # os_v2_app_ prefix is distinctive and vendor-anchored
+    entropy_threshold=0.0,
+    context_keywords=["onesignal", "rest", "api_key", "ONESIGNAL_REST_API_KEY", "os_v2_app"],
+    known_test_values={
+        "os_v2_app_ujzde8gxd6ncf10epf91dhodzdoc9is0j8ht9lgmxg9edn"
+        "581u33xtplpft75v2seh60kvj50ce9uvw53efr4edt2sywb3wk",
+    },
+    recommendation=(
+        "Rotate this key in the OneSignal dashboard under Settings > Keys & IDs."
+        " An attacker can send push notifications to all your app's subscribers."
+    ),
+    tags=["comms", "onesignal", "push", "notifications"],
+)
+
+
+# ===================================================
 # MAILGUN
 # ===================================================
 
@@ -1477,6 +1517,7 @@ register(
     TWILIO_ACCOUNT_SID,
     TWILIO_AUTH_TOKEN,
     SENDGRID_API_KEY,
+    ONESIGNAL_REST_API_KEY,
     MAILGUN_API_KEY,
     MAILGUN_PUB_KEY,
     MAILGUN_SIGNING_KEY,

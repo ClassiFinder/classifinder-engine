@@ -103,6 +103,7 @@ The following patterns were independently derived from official vendor documenta
 | `mongodb_connection_string` | https://www.mongodb.com/docs/manual/reference/connection-string-formats/ |
 | `redis_connection_string` | https://www.iana.org/assignments/uri-schemes/prov/redis, https://www.iana.org/assignments/uri-schemes/prov/rediss |
 | `discord_bot_token` | https://docs.discord.com/developers/reference |
+| `onesignal_rest_api_key` | https://documentation.onesignal.com/docs/en/keys-and-ids, https://documentation.onesignal.com/reference/quick-start-api-guide |
 
 Vendor-published token formats (e.g. `AKIA...`, `sk_live_...`, `AIza...`, PEM markers, JWT structure, Bitcoin WIF, credit-card IINs) are facts and not subject to copyright.
 
