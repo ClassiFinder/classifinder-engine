@@ -691,6 +691,62 @@ DEFINED_NETWORKING_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# ADAFRUIT IO (Batch 9 — 2026-06-29; regex corrected from invented 'aio_' prefix)
+# ===================================================
+
+ADAFRUIT_IO_KEY = SecretPattern(
+    id="adafruit_io_key",
+    name="Adafruit IO Key",
+    description=(
+        "Adafruit IO (AIO) API key — a 32-character lowercase-hex string (a"
+        " UUIDv4 with dashes stripped) presented via the 'X-AIO-Key' HTTP header,"
+        " 'x-aio-key' query param, or an 'AIO_KEY' env var. The value carries no"
+        " distinctive prefix, so this detector is context-gated: it only fires"
+        " when an Adafruit IO key label sits immediately before the value. Grants"
+        " full read/write access to an account's feeds, dashboards, and connected"
+        " IoT devices."
+    ),
+    provider="adafruit_io",
+    severity="high",
+    # Format per https://io.adafruit.com/api/docs/ and the 2016 key-length
+    # changelog https://io.adafruit.com/blog/changelog/2016/03/22/key-length/ :
+    # AIO keys are 32-char lowercase hex (UUIDv4 with dashes stripped), supplied
+    # via the X-AIO-Key header / x-aio-key query param — there is no 'aio_'
+    # prefix. A bare 32-hex string is MD5-shaped and high-FP on its own, so the
+    # regex requires an adjacent AIO / X-AIO-Key / ADAFRUIT key label.
+    # Format per io.adafruit.com docs (URLs above); confidence_base 0.60.
+    regex=re.compile(
+        r"(?:"
+        r"(?:X-AIO-Key|AIO[_-]?KEY|ADAFRUIT[_-]?(?:IO[_-]?)?(?:KEY|TOKEN))"
+        r"[\s]*[=:\"'\s]+"
+        r")"
+        r"(?P<secret>[a-f0-9]{32})"
+        r"(?![a-f0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.60,  # format-only — value has no distinctive prefix
+    entropy_threshold=3.0,  # penalize low-entropy 32-hex (e.g. all-zeros)
+    context_keywords=[
+        "adafruit",
+        "aio",
+        "x-aio-key",
+        "AIO_KEY",
+        "adafruit.io",
+        "io.adafruit.com",
+    ],
+    known_test_values={
+        # Synthetic, sequential hex — not a live key.
+        "00112233445566778899aabbccddeeff",
+    },
+    recommendation=(
+        "Revoke this key in Adafruit IO under My Key (regenerate) and rotate it"
+        " in any connected devices. Compromised AIO keys grant full account access."
+    ),
+    tags=["devops", "adafruit_io", "iot"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -717,4 +773,6 @@ register(
     TELNYX_API_KEY,
     # Batch 8 — vendor-sourced patterns (2026-06-22)
     DEFINED_NETWORKING_API_TOKEN,
+    # Batch 9 — vendor-sourced patterns (2026-06-29)
+    ADAFRUIT_IO_KEY,
 )
