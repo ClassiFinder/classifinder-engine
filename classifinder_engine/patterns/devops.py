@@ -747,6 +747,143 @@ ADAFRUIT_IO_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# NGROK (Batch 10 — 2026-07-06; context-gated)
+# ===================================================
+
+NGROK_AUTHTOKEN = SecretPattern(
+    id="ngrok_authtoken",
+    name="ngrok Authtoken",
+    description=(
+        "ngrok agent authtoken — two base62 segments joined by a single"
+        " underscore (~27 + 1 + ~21 chars). The value carries no reliable"
+        " leading anchor, so this detector is context-gated: it only fires when"
+        " an ngrok / authtoken label sits immediately before the value (e.g."
+        " 'ngrok config add-authtoken <token>', 'NGROK_AUTHTOKEN=<token>', or"
+        " 'authtoken: <token>'). Grants control of the account's tunnels."
+    ),
+    provider="ngrok",
+    severity="high",
+    # Format per https://ngrok.com/docs/agent/ : the authtoken is two base62
+    # segments joined by a single underscore. There is no documented stable
+    # leading anchor, so a bare token is high-FP; the regex requires an adjacent
+    # ngrok / add-authtoken / NGROK_AUTHTOKEN / authtoken label. confidence_base
+    # 0.60 (format-only, context-gated).
+    # Format per https://ngrok.com/docs/agent/
+    regex=re.compile(
+        r"(?:"
+        r"NGROK[_-]?AUTHTOKEN|add-authtoken|authtoken|ngrok"
+        r")"
+        r"[\s]*[=:\"'\s]+"
+        r"(?P<secret>[0-9A-Za-z]{22,27}_[0-9A-Za-z]{18,24})"
+        r"(?![0-9A-Za-z_])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.60,  # format-only — value has no distinctive prefix
+    entropy_threshold=3.0,
+    context_keywords=["ngrok", "authtoken", "NGROK_AUTHTOKEN", "add-authtoken"],
+    known_test_values={
+        # Synthetic, sequential base62 — not a live token.
+        "AbCdEfGhIjKlMnOpQrStUvWxYz" + "_" + "0123456789AbCdEfGhIj",
+    },
+    recommendation=(
+        "Revoke this authtoken in the ngrok dashboard under Your Authtoken and"
+        " rotate it in every agent config / CI environment that used it."
+    ),
+    tags=["devops", "ngrok", "networking"],
+)
+
+
+# ===================================================
+# OPSGENIE (Batch 10 — 2026-07-06; context-gated UUID)
+# ===================================================
+
+OPSGENIE_API_KEY = SecretPattern(
+    id="opsgenie_api_key",
+    name="Opsgenie API Key",
+    description=(
+        "Atlassian Opsgenie API key — a canonical hex UUID v4. A bare UUID is"
+        " extremely high-FP, so this detector is context-gated: it only fires"
+        " when the 'GenieKey' auth-scheme label (the Authorization header prefix)"
+        " or an opsgenie API host sits immediately before the value. Grants"
+        " access to Opsgenie alerts, schedules, and incident data."
+    ),
+    provider="opsgenie",
+    severity="high",
+    # Format per https://support.atlassian.com/opsgenie/docs/api-key-management/ :
+    # the API key is a hex UUID passed via 'Authorization: GenieKey <uuid>'. A
+    # bare UUID is high-FP, so the regex requires the GenieKey auth-scheme label
+    # (primary) or an opsgenie API host. confidence_base 0.60 (context-gated).
+    # Format per https://support.atlassian.com/opsgenie/docs/api-key-management/
+    regex=re.compile(
+        r"(?:"
+        r"GenieKey|opsgenie|api\.opsgenie\.com|api\.eu\.opsgenie\.com"
+        r")"
+        r"[\s]*[=:\"'/\s]+"
+        r"(?P<secret>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+        r"(?![0-9a-f])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.60,  # context-gated bare UUID
+    entropy_threshold=0.0,
+    context_keywords=[
+        "GenieKey",
+        "opsgenie",
+        "api.opsgenie.com",
+        "api.eu.opsgenie.com",
+    ],
+    known_test_values={
+        # Synthetic UUID — not a live key.
+        "00112233-4455-6677-8899-aabbccddeeff",
+    },
+    recommendation=(
+        "Revoke this API key in Opsgenie under Settings > API key management and"
+        " issue a replacement for the integration that used it."
+    ),
+    tags=["devops", "opsgenie", "incident"],
+)
+
+
+# ===================================================
+# CLOJARS (Batch 10 — 2026-07-06; prefix-anchored)
+# ===================================================
+
+CLOJARS_DEPLOY_TOKEN = SecretPattern(
+    id="clojars_deploy_token",
+    name="Clojars Deploy Token",
+    description=(
+        "Clojars deploy token — the 'CLOJARS_' prefix followed by exactly 60"
+        " lowercase-hex characters. Used to publish (deploy) Clojure/Java"
+        " artifacts to the Clojars repository. Prefix-anchored; leaking one"
+        " lets an attacker push malicious releases under the owner's groups."
+    ),
+    provider="clojars",
+    severity="high",
+    # Format per https://github.com/clojars/clojars-web/blob/main/src/clojars/db.clj
+    # (vendor source; validation regex ^CLOJARS_[0-9a-f]{60}$). Independently
+    # authored — 'CLOJARS_' prefix + exactly 60 lowercase-hex chars, bounded so
+    # it does not over-capture. confidence_base 0.95 (prefix-anchored).
+    # Format per https://github.com/clojars/clojars-web/blob/main/src/clojars/db.clj
+    regex=re.compile(
+        r"CLOJARS_(?P<secret>[0-9a-f]{60})(?![0-9a-f])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["clojars", "deploy", "CLOJARS_", "lein", "deps.edn"],
+    known_test_values={
+        # The captured secret is the 60 hex chars after the 'CLOJARS_' prefix.
+        # Synthetic, sequential hex — not a live token.
+        "0123456789abcdef" * 3 + "0123456789ab",
+    },
+    recommendation=(
+        "Revoke this deploy token in Clojars under Dashboard > Deploy Tokens and"
+        " generate a new one for the affected CI / publishing pipeline."
+    ),
+    tags=["devops", "clojars", "package"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -775,4 +912,8 @@ register(
     DEFINED_NETWORKING_API_TOKEN,
     # Batch 9 — vendor-sourced patterns (2026-06-29)
     ADAFRUIT_IO_KEY,
+    # Batch 10 — vendor-sourced patterns (2026-07-06)
+    NGROK_AUTHTOKEN,
+    OPSGENIE_API_KEY,
+    CLOJARS_DEPLOY_TOKEN,
 )

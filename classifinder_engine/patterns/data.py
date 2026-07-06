@@ -426,6 +426,51 @@ TYPEFORM_PERSONAL_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# CLOUDINARY (Batch 10 — 2026-07-06)
+# ===================================================
+
+CLOUDINARY_URL = SecretPattern(
+    id="cloudinary_url",
+    name="Cloudinary URL (with API secret)",
+    description=(
+        "Cloudinary connection URL — the CLOUDINARY_URL environment-variable"
+        " format: cloudinary://<api_key>:<api_secret>@<cloud_name>. The api_key"
+        " is a 15-digit numeric string, the api_secret is a ~27-char base64url"
+        " token, and cloud_name is the account slug. Prefix-anchored on the"
+        " 'cloudinary://' scheme; the api_secret (the captured value) grants full"
+        " Admin + Upload API access to the media account (upload, delete, admin)."
+    ),
+    provider="cloudinary",
+    severity="high",
+    # Format per https://cloudinary.com/documentation/node_quickstart
+    # (cloudinary://<api_key>:<api_secret>@<cloud_name>): api_key = 15 digits,
+    # api_secret = base64url token, cloud_name = account slug. Only the
+    # api_secret (between ':' and '@') is captured so redaction masks the secret
+    # and not the whole URL. Regex independently authored from the vendor spec.
+    # Format per https://cloudinary.com/documentation/node_quickstart
+    regex=re.compile(
+        r"cloudinary://[0-9]{15}:"
+        r"(?P<secret>[A-Za-z0-9_-]{20,40})"
+        r"@[a-zA-Z0-9][a-zA-Z0-9_-]{1,40}",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=["cloudinary", "CLOUDINARY_URL", "cloud_name", "api_secret"],
+    known_test_values={
+        # The captured secret is the api_secret only (between ':' and '@').
+        # Synthetic; concatenated so no scannable secret literal exists in source.
+        "A" * 27,
+    },
+    recommendation=(
+        "Rotate the API secret in the Cloudinary console under Settings > Access"
+        " Keys, then update the CLOUDINARY_URL in every environment that used it."
+    ),
+    tags=["data", "cloudinary", "media"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -441,4 +486,6 @@ register(
     CHROMA_API_KEY,
     # Batch 8 — vendor-sourced patterns (2026-06-22)
     TYPEFORM_PERSONAL_ACCESS_TOKEN,
+    # Batch 10 — vendor-sourced patterns (2026-07-06)
+    CLOUDINARY_URL,
 )

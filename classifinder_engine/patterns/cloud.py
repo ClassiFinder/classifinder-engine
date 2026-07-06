@@ -1175,6 +1175,47 @@ TENCENT_CLOUD_SECRET_ID = SecretPattern(
 )
 
 
+# ===================================================
+# YANDEX CLOUD (Batch 10 — 2026-07-06)
+# ===================================================
+
+YANDEX_CLOUD_IAM_TOKEN = SecretPattern(
+    id="yandex_cloud_iam_token",
+    name="Yandex Cloud IAM Token",
+    description=(
+        "Yandex Cloud IAM token — a 't1.' prefix, a base64url middle segment,"
+        " and a fixed 86-char base64url signature tail. These are short-lived"
+        " bearer tokens (roughly a 12-hour TTL), so severity is medium: a leaked"
+        " token grants Yandex Cloud API access only until it expires, but that is"
+        " still ample time for abuse."
+    ),
+    provider="yandex_cloud",
+    severity="medium",
+    # Format per https://yandex.cloud/en/docs/security/standard/authentication :
+    # IAM tokens are 't1.' + base64url payload + '.' + a fixed 86-char base64url
+    # signature. Prefix + fixed-length tail make this structural. Only the
+    # signature tail is captured as the secret. Regex independently authored.
+    # Format per https://yandex.cloud/en/docs/security/standard/authentication
+    regex=re.compile(
+        r"t1\.[A-Za-z0-9_-]+={0,2}\."
+        r"(?P<secret>[A-Za-z0-9_-]{86}={0,2})",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=["yandex", "yandexcloud", "iam_token", "IAM-Token", "yc"],
+    known_test_values={
+        # The captured secret is the 86-char signature tail only.
+        # Synthetic; concatenated so no scannable token literal exists in source.
+        "B" * 86,
+    },
+    recommendation=(
+        "IAM tokens are ephemeral (~12h TTL) but still exploitable while valid."
+        " Stop logging tokens; issue fresh ones per request via the yc CLI or"
+        " metadata service rather than storing them."
+    ),
+    tags=["cloud", "yandex_cloud"],
+)
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -1210,4 +1251,6 @@ register(
     # Batch 8 — vendor-sourced patterns (2026-06-22)
     GOOGLE_OAUTH_ACCESS_TOKEN,
     TENCENT_CLOUD_SECRET_ID,
+    # Batch 10 — vendor-sourced patterns (2026-07-06)
+    YANDEX_CLOUD_IAM_TOKEN,
 )
