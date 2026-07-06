@@ -527,6 +527,49 @@ COUCHBASE_CONNECTION_STRING = SecretPattern(
 )
 
 
+# ===================================================
+# NEON (Batch 10 — 2026-07-06)
+# ===================================================
+
+NEON_API_KEY = SecretPattern(
+    id="neon_api_key",
+    name="Neon API Key",
+    description=(
+        "Neon (serverless Postgres) API key. Neon issues account, organization,"
+        " and project-scoped keys with 'neon_api_key_', 'neon_org_key_', and"
+        " 'neon_project_key_' prefixes followed by an alphanumeric body. Prefix-"
+        " anchored; grants management access to Neon projects, branches, and"
+        " connection details."
+    ),
+    provider="neon",
+    severity="high",
+    # Format per https://neon.com/docs/manage/api-keys : keys use documented,
+    # example-backed prefixes neon_api_key_ / neon_org_key_ / neon_project_key_
+    # followed by an alphanumeric body (example body ~32 chars). Regex
+    # independently authored from the vendor docs. confidence_base 0.90.
+    # Format per https://neon.com/docs/manage/api-keys
+    regex=re.compile(
+        r"neon_(?:api_key|org_key|project_key)_"
+        r"(?P<secret>[A-Za-z0-9]{24,64})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=["neon", "neon.tech", "NEON_API_KEY", "serverless"],
+    known_test_values={
+        # The captured secret is the body after the neon_<scope>_key_ prefix.
+        # Synthetic; concatenated so no scannable secret literal exists in source.
+        "AbCdEfGhIjKlMnOpQrStUvWx" + "0123456789",
+    },
+    recommendation=(
+        "Revoke this key in the Neon console under Account Settings > API keys"
+        " and issue a replacement for the integration that used it."
+    ),
+    tags=["database", "neon", "postgres"],
+)
+
+
 register(
     POSTGRES_CONNECTION_STRING,
     MYSQL_CONNECTION_STRING,
@@ -541,4 +584,6 @@ register(
     RABBITMQ_CONNECTION_STRING,
     JDBC_CONNECTION_STRING,
     COUCHBASE_CONNECTION_STRING,
+    # Batch 10 — vendor-sourced patterns (2026-07-06)
+    NEON_API_KEY,
 )

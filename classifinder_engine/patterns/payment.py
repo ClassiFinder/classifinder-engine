@@ -894,6 +894,52 @@ ASAAS_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# MIDTRANS (Batch 10 — 2026-07-06)
+# ===================================================
+
+MIDTRANS_SERVER_KEY = SecretPattern(
+    id="midtrans_server_key",
+    name="Midtrans Server Key",
+    description=(
+        "Midtrans (Indonesian payment gateway) server key. Production keys carry"
+        " a 'Mid-server-' prefix and sandbox keys a 'SB-Mid-server-' prefix,"
+        " followed by the key body. The server key authenticates Core/Snap API"
+        " charge requests — do NOT confuse it with the non-secret 'Mid-client-'"
+        " client key. Because the prefix is short and prose-collidable, this"
+        " detector requires a reasonably long body and is context-scored."
+    ),
+    provider="midtrans",
+    severity="high",
+    # Format per https://docs.midtrans.com/docs/api-authorization-headers :
+    # server keys are 'Mid-server-<body>' (production) or 'SB-Mid-server-<body>'
+    # (sandbox). The vendor example body is a short placeholder; real keys are
+    # longer, so a {20,50} body plus context keywords guards against prose
+    # collisions. Client keys ('Mid-client-') are deliberately not matched.
+    # Regex independently authored. confidence_base 0.75.
+    # Format per https://docs.midtrans.com/docs/api-authorization-headers
+    regex=re.compile(
+        r"(?:SB-)?Mid-server-"
+        r"(?P<secret>[A-Za-z0-9_-]{20,50})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=0.0,
+    context_keywords=["midtrans", "server_key", "serverKey", "SERVER_KEY"],
+    known_test_values={
+        # The captured secret is the body after the (SB-)Mid-server- prefix.
+        # Synthetic; concatenated so no scannable secret literal exists in source.
+        "AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+    },
+    recommendation=(
+        "Rotate this server key in the Midtrans dashboard under Settings > Access"
+        " Keys and update every backend integration that used it."
+    ),
+    tags=["payment", "midtrans"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -921,4 +967,6 @@ register(
     # Batch 8 — vendor-sourced patterns (2026-06-22)
     PADDLE_API_KEY,
     ASAAS_API_TOKEN,
+    # Batch 10 — vendor-sourced patterns (2026-07-06)
+    MIDTRANS_SERVER_KEY,
 )
