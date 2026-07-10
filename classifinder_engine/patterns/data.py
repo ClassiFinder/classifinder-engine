@@ -471,6 +471,56 @@ CLOUDINARY_URL = SecretPattern(
 )
 
 
+# ===================================================
+# FRAME.IO DEVELOPER TOKEN
+# ===================================================
+# Legacy v2 (api.frame.io) developer tokens carry the distinctive 'fio-u-'
+# prefix. The prefix is the citable anchor: Frame.io's official Python SDK
+# (Frameio/python-frameio-client) documents `fioctl --token fio-u-...`, and
+# GitGuardian independently ships a prefixed "Frame IO Token" detector. Only the
+# exact body length/charset are documented by other scanners, so this pattern is
+# deliberately PREFIX-ANCHORED on the public 'fio-u-' spec with a generous body
+# range rather than a hardcoded length. Frame.io v4 (Adobe Developer Console) has
+# migrated to OAuth bearer tokens, but v2 fio-u- tokens are real and still exist.
+
+FRAMEIO_DEVELOPER_TOKEN = SecretPattern(
+    id="frameio_developer_token",
+    name="Frame.io Developer Token",
+    description=(
+        "Frame.io legacy v2 developer token, anchored on the public 'fio-u-'"
+        " prefix followed by a URL-safe token body. Grants API access to the"
+        " Frame.io video-review account (assets, comments, projects). The prefix"
+        " is documented by Frame.io's official Python SDK; v4 has since migrated"
+        " to OAuth bearer tokens, but v2 fio-u- tokens remain valid where issued."
+    ),
+    provider="frameio",
+    severity="high",
+    # Source: https://github.com/Frameio/python-frameio-client
+    # (official Frame.io Python SDK README documents the fio-u- developer-token
+    # prefix: `fioctl --token fio-u-YOUR_TOKEN_HERE`). Prefix-anchored and
+    # independently authored from the vendor-published prefix; body is a
+    # bounded URL-safe charset, not a copied fixed length.
+    regex=re.compile(
+        r"(?P<secret>fio-u-[0-9A-Za-z_-]{20,100})(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,
+    context_keywords=["frame.io", "frameio", "fio-u-", "FRAME_IO", "fioctl"],
+    known_test_values={
+        # Synthetic — clearly-fake all-'A' body, kept out of git as a real token
+        # shape. Registered so the documented example down-scores to ~0.15.
+        "fio-u-" + "A" * 64,
+    },
+    recommendation=(
+        "Revoke this token in the Frame.io developer settings and issue a"
+        " replacement; migrate to OAuth bearer tokens on Frame.io v4 where"
+        " available."
+    ),
+    tags=["data", "frameio", "media"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -488,4 +538,6 @@ register(
     TYPEFORM_PERSONAL_ACCESS_TOKEN,
     # Batch 10 — vendor-sourced patterns (2026-07-06)
     CLOUDINARY_URL,
+    # 2026-07-10 — Frame.io developer token (prefix-anchored, vendor SDK sourced)
+    FRAMEIO_DEVELOPER_TOKEN,
 )
