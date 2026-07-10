@@ -111,6 +111,7 @@ The following patterns were independently derived from official vendor documenta
 | `clojars_deploy_token` | https://github.com/clojars/clojars-web/blob/main/src/clojars/db.clj |
 | `neon_api_key` | https://neon.com/docs/manage/api-keys |
 | `midtrans_server_key` | https://docs.midtrans.com/docs/api-authorization-headers |
+| `frameio_developer_token` | https://github.com/Frameio/python-frameio-client (official Frame.io Python SDK — documents the `fio-u-` developer-token prefix) |
 
 Vendor-published token formats (e.g. `AKIA...`, `sk_live_...`, `AIza...`, PEM markers, JWT structure, Bitcoin WIF, credit-card IINs) are facts and not subject to copyright.
 
