@@ -1503,6 +1503,51 @@ TWILIO_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# PLIVO (Batch 12 — 2026-07-13; context-gated)
+# ===================================================
+
+PLIVO_AUTH_ID = SecretPattern(
+    id="plivo_auth_id",
+    name="Plivo Auth ID",
+    description=(
+        "Plivo Auth ID — a 20-character token that begins with 'MA' (account) or"
+        " 'SA' (subaccount) followed by 18 uppercase-alphanumeric characters. A"
+        " bare 20-char uppercase token is very FP-prone, so this detector is"
+        " context-gated: it only fires when a plivo / auth_id label sits"
+        " immediately before the value. Paired with the Auth Token to"
+        " authenticate Plivo voice/SMS API calls."
+    ),
+    provider="plivo",
+    severity="high",
+    # Source: https://www.plivo.com/docs/sms/api/message (Plivo API auth — the
+    # Auth ID begins with 'MA' or 'SA' and is 20 characters); cross-referenced with
+    # the gitleaks 'plivo-auth-id' rule. Independently authored — a bare 20-char
+    # uppercase token is high-FP, so the regex requires an adjacent plivo /
+    # auth_id label. confidence_base 0.60 (context-gated, format-only).
+    regex=re.compile(
+        r"(?i:PLIVO_AUTH_ID|plivo|auth_id)"
+        r"[\s]*[=:\"'\s]+"
+        r"(?P<secret>(?:MA|SA)[A-Z0-9]{18})"
+        r"(?![A-Z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.60,  # context-gated bare token — no distinctive body charset
+    entropy_threshold=3.0,
+    context_keywords=["plivo", "PLIVO_AUTH_ID", "auth_id"],
+    known_test_values={
+        # The captured secret is the 20-char Auth ID. Synthetic sequential body,
+        # concatenated so no scannable literal exists in source. Down-scores ~0.15.
+        "MA" + "ABCDEFGHIJKLMNOPQR",
+    },
+    recommendation=(
+        "Rotate the Auth ID / Auth Token pair in the Plivo console under Account >"
+        " Keys & Credentials and update every integration that used them."
+    ),
+    tags=["comms", "plivo", "telephony"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -1550,4 +1595,6 @@ register(
     # Batch 8 — vendor-sourced patterns (2026-06-22)
     SENTRY_DSN,
     TWILIO_API_KEY,
+    # Batch 12 — vendor-sourced patterns (2026-07-13)
+    PLIVO_AUTH_ID,
 )

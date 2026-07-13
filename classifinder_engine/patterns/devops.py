@@ -884,6 +884,86 @@ CLOJARS_DEPLOY_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# DOCKER (Batch 12 — 2026-07-13; prefix-anchored)
+# ===================================================
+
+DOCKER_ACCESS_TOKEN = SecretPattern(
+    id="docker_access_token",
+    name="Docker Personal / Org Access Token",
+    description=(
+        "Docker Hub access token — a personal access token ('dckr_pat_' prefix)"
+        " or organization access token ('dckr_oat_' prefix) followed by a"
+        " URL-safe token body. Used with 'docker login' and the Docker Hub API in"
+        " place of a password. Prefix-anchored; leaking one grants push/pull"
+        " access to the account's or organization's repositories."
+    ),
+    provider="docker",
+    severity="high",
+    # Source: https://docs.docker.com/security/for-developers/access-tokens/
+    # (Docker's own access-token docs document the 'dckr_pat_' personal-access-token
+    # prefix; organization access tokens use the parallel 'dckr_oat_' prefix).
+    # Independently authored — prefix-anchored on the vendor-published 'dckr_pat_'
+    # / 'dckr_oat_' spec with a bounded URL-safe body, not a copied fixed length.
+    regex=re.compile(
+        r"(?P<secret>dckr_(?:pat|oat)_[A-Za-z0-9_-]{20,40})(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,
+    context_keywords=["docker", "dckr_pat_", "dckr_oat_", "DOCKER_TOKEN", "docker login"],
+    known_test_values={
+        # Synthetic — clearly-fake all-'A' body, concatenated so the source
+        # literal is never a real-looking token. Down-scores to ~0.15.
+        "dckr_pat_" + "A" * 27,
+    },
+    recommendation=(
+        "Revoke this token in Docker Hub under Account Settings > Personal access"
+        " tokens (or Organization > Access tokens) and issue a replacement for the"
+        " client or CI pipeline that used it."
+    ),
+    tags=["devops", "docker", "registry"],
+)
+
+
+# ===================================================
+# ROOTLY (Batch 12 — 2026-07-13; prefix-anchored)
+# ===================================================
+
+ROOTLY_API_KEY = SecretPattern(
+    id="rootly_api_key",
+    name="Rootly API Key",
+    description=(
+        "Rootly (incident-management platform) API key — the literal 'rootly_'"
+        " prefix followed by exactly 64 lowercase-hex characters. Sent as a"
+        " bearer token to the Rootly API. Prefix-anchored; grants access to the"
+        " organization's incidents, on-call schedules, and workflows."
+    ),
+    provider="rootly",
+    severity="high",
+    # Source: https://docs.rootly.com/api-reference/overview
+    # (Rootly API docs — keys are issued with the 'rootly_' prefix and used as a
+    # bearer token). Independently authored — 'rootly_' prefix + exactly 64
+    # lowercase-hex chars, bounded so it does not over-capture.
+    regex=re.compile(
+        r"(?P<secret>rootly_[a-f0-9]{64})(?![a-f0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,
+    context_keywords=["rootly", "rootly_", "ROOTLY_API_KEY", "incident"],
+    known_test_values={
+        # Synthetic, sequential hex — not a live key. Down-scores to ~0.15.
+        "rootly_" + "0123456789abcdef" * 4,
+    },
+    recommendation=(
+        "Revoke this key in Rootly under Organization Settings > API Keys and"
+        " rotate it in every integration / CI environment that used it."
+    ),
+    tags=["devops", "rootly", "incident"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -916,4 +996,7 @@ register(
     NGROK_AUTHTOKEN,
     OPSGENIE_API_KEY,
     CLOJARS_DEPLOY_TOKEN,
+    # Batch 12 — vendor-sourced patterns (2026-07-13)
+    DOCKER_ACCESS_TOKEN,
+    ROOTLY_API_KEY,
 )

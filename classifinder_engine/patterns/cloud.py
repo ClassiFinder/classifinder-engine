@@ -1216,6 +1216,46 @@ YANDEX_CLOUD_IAM_TOKEN = SecretPattern(
     ),
     tags=["cloud", "yandex_cloud"],
 )
+
+
+# ===================================================
+# ELASTIC CLOUD (Batch 12 — 2026-07-13; prefix-anchored)
+# ===================================================
+
+ELASTIC_CLOUD_API_KEY = SecretPattern(
+    id="elastic_cloud_api_key",
+    name="Elastic Cloud API Key",
+    description=(
+        "Elastic Cloud (serverless) API key — the literal 'essu_' prefix followed"
+        " by a base64 body (variable length, roughly 100 characters, optionally"
+        " padded with '='). Grants API access to the Elastic Cloud project."
+        " Prefix-anchored on 'essu_'."
+    ),
+    provider="elastic",
+    severity="critical",
+    # Source: https://www.elastic.co/guide/en/serverless/current/api-keys.html
+    # (Elastic Cloud serverless API keys carry the 'essu_' prefix followed by a
+    # base64-encoded body). Independently authored — anchored on 'essu_' with a
+    # base64 charset and a min-length floor rather than a hardcoded length.
+    regex=re.compile(
+        r"(?P<secret>essu_[A-Za-z0-9+/=]{50,})(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,
+    context_keywords=["elastic", "essu_", "elasticsearch", "ELASTIC_API_KEY", "elastic.co"],
+    known_test_values={
+        # Synthetic — clearly-fake all-'A' base64 body, concatenated. ~0.15.
+        "essu_" + "A" * 90,
+    },
+    recommendation=(
+        "Revoke this key in the Elastic Cloud console under Project > API keys"
+        " (or via the API-key management API) and issue a replacement."
+    ),
+    tags=["cloud", "elastic", "search"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -1253,4 +1293,6 @@ register(
     TENCENT_CLOUD_SECRET_ID,
     # Batch 10 — vendor-sourced patterns (2026-07-06)
     YANDEX_CLOUD_IAM_TOKEN,
+    # Batch 12 — vendor-sourced patterns (2026-07-13)
+    ELASTIC_CLOUD_API_KEY,
 )

@@ -424,6 +424,87 @@ ONFIDO_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# SALESFORCE (Batch 12 — 2026-07-13; structural, '!'-anchored)
+# ===================================================
+
+SALESFORCE_ACCESS_TOKEN = SecretPattern(
+    id="salesforce_access_token",
+    name="Salesforce Access Token",
+    description=(
+        "Salesforce OAuth access token / session ID — a 15-character org/session"
+        " prefix (starting with '00'), a literal '!' delimiter at index 15, and a"
+        " long signed tail. The '!' delimiter is the structural anchor and is what"
+        " distinguishes it from other '00'-prefixed identifiers. Grants API access"
+        " to the Salesforce org for the token's session scope."
+    ),
+    provider="salesforce",
+    severity="high",
+    # Salesforce OAuth token / session-ID format: a '00'-prefixed org/session id,
+    # a '!' separator, then a signed tail. Deliberately does NOT overlap the
+    # keyword-gated Okta '00' token (okta_api_token), which lacks the '!' and
+    # matches a 40-char [A-Za-z0-9_-] body — this pattern anchors on the '!'.
+    # Source: https://help.salesforce.com/s/articleView?id=sf.remoteaccess_oauth_tokens.htm
+    # Independently authored — anchored on the '!' delimiter at index 15 + 96+ tail.
+    regex=re.compile(
+        r"(?P<secret>00[A-Za-z0-9]{13}![A-Za-z0-9._]{96,})(?![A-Za-z0-9._])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=3.0,
+    context_keywords=["salesforce", "sfdc", "access_token", "instance_url", "force.com"],
+    known_test_values={
+        # Synthetic — fixed 'D'*13 prefix body + 'A'*96 tail, concatenated so the
+        # source literal is never a real-looking token. Down-scores to ~0.15.
+        "00" + "D" * 13 + "!" + "A" * 96,
+    },
+    recommendation=(
+        "Revoke this token / session in Salesforce Setup under Session Management"
+        " (or the connected app's OAuth usage) and re-authenticate the integration."
+    ),
+    tags=["identity", "salesforce", "crm"],
+)
+
+
+# ===================================================
+# ADOBE (Batch 12 — 2026-07-13; prefix-anchored)
+# ===================================================
+
+ADOBE_OAUTH_CLIENT_SECRET = SecretPattern(
+    id="adobe_oauth_client_secret",
+    name="Adobe OAuth Server-to-Server Client Secret",
+    description=(
+        "Adobe OAuth Server-to-Server (and Adobe I/O) client secret — the literal"
+        " 'p8e-' prefix followed by a 32-character body. Paired with a client ID"
+        " to obtain access tokens for Adobe APIs (Creative Cloud, Document"
+        " Services, etc.). Prefix-anchored on 'p8e-'; leaking one lets an attacker"
+        " mint access tokens for the integration."
+    ),
+    provider="adobe",
+    severity="high",
+    # Source: https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/
+    # (Adobe Developer Console — OAuth Server-to-Server client secrets carry the
+    # 'p8e-' prefix). Independently authored — anchored on the 'p8e-' prefix so it
+    # does not collide with any Adobe detector matching a bare 32-hex value.
+    regex=re.compile(
+        r"(?P<secret>p8e-[A-Za-z0-9-]{32})(?![A-Za-z0-9-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,
+    context_keywords=["adobe", "p8e-", "client_secret", "ims-na1", "adobe.io"],
+    known_test_values={
+        # Synthetic — clearly-fake all-'A' body, concatenated. Down-scores to ~0.15.
+        "p8e-" + "A" * 32,
+    },
+    recommendation=(
+        "Revoke this secret in the Adobe Developer Console under your project's"
+        " OAuth Server-to-Server credential and generate a new client secret."
+    ),
+    tags=["identity", "adobe", "oauth"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -438,4 +519,7 @@ register(
     CLICKUP_PAT,
     # Batch 8 — vendor-sourced patterns (2026-06-22)
     ONFIDO_API_TOKEN,
+    # Batch 12 — vendor-sourced patterns (2026-07-13)
+    SALESFORCE_ACCESS_TOKEN,
+    ADOBE_OAUTH_CLIENT_SECRET,
 )
