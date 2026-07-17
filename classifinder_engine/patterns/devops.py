@@ -1096,6 +1096,45 @@ INNGEST_SIGNING_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# WAKATIME
+# ===================================================
+
+WAKATIME_API_KEY = SecretPattern(
+    id="wakatime_api_key",
+    name="WakaTime API Key",
+    description=(
+        "WakaTime API key — the literal 'waka_' prefix followed by a strict UUID v4."
+        " Stored in ~/.wakatime.cfg ([settings] api_key) and sent via HTTP Basic Auth;"
+        " grants read/write access to a developer's coding-activity account and"
+        " dashboards. Anchored on the 'waka_' prefix because a bare UUID v4 is"
+        " indistinguishable from any generic UUID and would be extremely high-FP."
+    ),
+    provider="wakatime",
+    severity="high",
+    # Format confirmed against WakaTime's own CLI, which validates keys with
+    # ^(waka_)?[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$.
+    # The prefix is optional in the wild but required here as the anti-FP anchor.
+    # Independently authored from the vendor source (BSD 3-Clause).
+    # Format per https://github.com/wakatime/wakatime-cli/blob/develop/pkg/params/params.go
+    regex=re.compile(
+        r"(?P<secret>waka_[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})"
+        r"(?![a-f0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["wakatime", "WAKATIME_API_KEY", "waka_", ".wakatime.cfg"],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this key in WakaTime under Settings > Account > Secret API Key"
+        " (use the reset action). Audit recent API activity — the key exposes"
+        " your full coding-activity history and heartbeat data."
+    ),
+    tags=["devops", "wakatime", "developer-tools"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -1135,4 +1174,6 @@ register(
     CISCO_MERAKI_API_KEY,
     # 2026-07-15 — Inngest signing key (prefix-anchored, vendor sourced)
     INNGEST_SIGNING_KEY,
+    # Batch 13 — vendor-sourced pattern (2026-07-17)
+    WAKATIME_API_KEY,
 )
