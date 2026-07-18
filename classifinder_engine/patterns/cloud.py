@@ -1256,6 +1256,56 @@ ELASTIC_CLOUD_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# RENDER (2026-07-16)
+# ===================================================
+# Render (render.com) API keys carry the distinctive 'rnd_' prefix. The prefix
+# is the citable anchor: Render's official API docs (render.com/docs/api,
+# api-docs.render.com) reference the rnd_-prefixed key, and OpenAI's curated
+# render-deploy skill shows `export RENDER_API_KEY="rnd_xxxxx"`. The vendor
+# publishes only a `rnd_xxxxx` placeholder (no full literal, as expected for a
+# live secret), so this pattern is deliberately PREFIX-ANCHORED on the public
+# 'rnd_' spec with a generous URL-unsafe-free body range rather than a hardcoded
+# length. Exact body length is community-corroborated ({20,} / {32}); {20,}
+# chosen conservatively.
+
+RENDER_API_KEY = SecretPattern(
+    id="render_api_key",
+    name="Render API Key",
+    description=(
+        "Render (render.com) API key, anchored on the public 'rnd_' prefix"
+        " followed by an alphanumeric token body. Grants API access to the"
+        " Render account (services, deploys, environment variables, custom"
+        " domains). The prefix is vendor-confirmed via Render's official API"
+        " docs and OpenAI's curated render-deploy skill."
+    ),
+    provider="render",
+    severity="high",
+    # Source: https://github.com/openai/skills/blob/main/skills/.curated/render-deploy/SKILL.md
+    #   (OpenAI curated render-deploy skill: `export RENDER_API_KEY="rnd_xxxxx"`)
+    #   cross-referenced with Render's official API docs (render.com/docs/api,
+    #   api-docs.render.com), which reference the rnd_-prefixed key.
+    # Independently authored — prefix-anchored on the vendor-published 'rnd_'
+    # spec; body is a bounded alphanumeric charset, not a copied fixed length.
+    regex=re.compile(
+        r"(?P<secret>rnd_[0-9A-Za-z]{20,100})(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,
+    context_keywords=["render", "render.com", "RENDER_API_KEY", "rnd_"],
+    known_test_values={
+        # Synthetic — clearly-fake all-'A' body, kept out of git as a real token
+        # shape. Registered so the documented example down-scores to ~0.15.
+        "rnd_" + "A" * 32,
+    },
+    recommendation=(
+        "Revoke this key in the Render dashboard (Account Settings → API Keys)"
+        " and issue a replacement. Store it in Render's secret/env management"
+        " rather than in code or logs."
+    ),
+    tags=["cloud", "render"],
+)
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -1295,4 +1345,6 @@ register(
     YANDEX_CLOUD_IAM_TOKEN,
     # Batch 12 — vendor-sourced patterns (2026-07-13)
     ELASTIC_CLOUD_API_KEY,
+    # 2026-07-16 — Render API key (prefix-anchored, vendor + OpenAI-skill sourced)
+    RENDER_API_KEY,
 )
