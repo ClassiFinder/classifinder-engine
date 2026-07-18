@@ -113,6 +113,7 @@ The following patterns were independently derived from official vendor documenta
 | `midtrans_server_key` | https://docs.midtrans.com/docs/api-authorization-headers |
 | `frameio_developer_token` | https://github.com/Frameio/python-frameio-client (official Frame.io Python SDK — documents the `fio-u-` developer-token prefix) |
 | `cisco_meraki_api_key` | https://developer.cisco.com/meraki/api-v1/authorization/ (Meraki Dashboard API — 40-char hex key via `X-Cisco-Meraki-API-Key` / `Authorization: Bearer`) |
+| `inngest_signing_key` | https://github.com/inngest/inngest/blob/main/pkg/authn/signing_key_strategy.go (Inngest server — defines the `signkey-` prefix set and the `^signkey-\\w+-` validation regex), https://github.com/inngest/inngest-js/blob/main/packages/inngest/src/helpers/strings.ts (JS SDK — decodes the post-prefix body as hex), https://github.com/inngest/inngest-py/blob/main/.env.example (64-hex example key) |
 
 Vendor-published token formats (e.g. `AKIA...`, `sk_live_...`, `AIza...`, PEM markers, JWT structure, Bitcoin WIF, credit-card IINs) are facts and not subject to copyright.
 

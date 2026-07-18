@@ -1024,6 +1024,78 @@ CISCO_MERAKI_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# INNGEST SIGNING KEY
+# ===================================================
+# Inngest signing keys authenticate the Inngest platform to a user's serve
+# endpoint: the value is the HMAC secret used to sign (and verify) inbound
+# function-invocation requests, so a leak lets an attacker forge webhook
+# signatures and invoke functions directly.
+#
+# Shape is fully vendor-defined. Inngest's Go server declares the prefix set
+# (SigningKeyPrefix "signkey-", plus the -test-/-branch-/-prod- environment
+# segments) and validates keys with `^signkey-\w+-`; the JS SDK strips the same
+# `^signkey-[\w]+-` prefix and then consumes the remainder AS HEX
+# (sha256().update(key, "hex")). Because the body is a hex-encoded SHA256 hash,
+# its 64-char length is structurally forced, not merely observed.
+#
+# The {64} bound is this pattern's ONLY FP-control mechanism and must not be
+# loosened: Inngest's own SDK tests ship short toy keys (signkey-prod-12345678,
+# signkey-test-abc123, signkey-prod-abc) that the length bound excludes. The
+# environment segment is left as `\w+` -- matching the vendor's own regex --
+# rather than a prod|test|branch alternation, so future environment names stay
+# covered without inventing segments the vendor never defined.
+
+INNGEST_SIGNING_KEY = SecretPattern(
+    id="inngest_signing_key",
+    name="Inngest Signing Key",
+    description=(
+        "Inngest signing key — the 'signkey-' prefix, an environment segment"
+        " (prod / test / branch), and a hex-encoded SHA256 hash (64 hex chars)."
+        " Used as the HMAC secret that signs requests between Inngest and a"
+        " serve endpoint; a leaked key allows forging webhook signatures and"
+        " invoking functions. Anchored on the vendor prefix with the"
+        " structurally-forced 64-hex body as the false-positive control."
+    ),
+    provider="inngest",
+    severity="high",
+    # Corroborating vendor sources, each checked directly:
+    #   inngest-js packages/inngest/src/helpers/strings.ts — strips
+    #     /^signkey-[\w]+-/ then decodes the remainder as hex.
+    #   inngest-py .env.example — signkey-prod- + exactly 64 hex chars.
+    # Independently authored from those vendor sources; no detector catalog used.
+    # Source: https://github.com/inngest/inngest/blob/main/pkg/authn/signing_key_strategy.go
+    regex=re.compile(
+        r"(?P<secret>signkey-\w+-[0-9a-f]{64})(?![0-9a-f])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,
+    context_keywords=["inngest", "signkey", "INNGEST_SIGNING_KEY", "signing_key", "signingKey"],
+    known_test_values={
+        # Vendor-published sample keys. Built by concatenation so the literal
+        # key shape never appears in the source of the public engine repo
+        # (GitHub Push Protection scans for provider-prefixed keys).
+        # inngest-py/.env.example — all-zeros placeholder.
+        "signkey-" + "prod-" + "0" * 64,
+        # inngest-rs/inngest/src/handler.rs — all-ones placeholder.
+        "signkey-" + "test-" + "1" * 64,
+        # inngest-rs/inngest/src/signature.rs — signature round-trip fixtures.
+        "signkey-" + "test-" + "8ee2262a15e8d3c42d6a840db7af3de2aab08ef632b32a37a687f24b34dba3ff",
+        "signkey-" + "test-" + "e4bf4a2e7f55c7eb954b6e72f8f69628fbc409fe7da6d0f6958770987dcf0e02",
+        # inngest-kt BearerTokenKtTest.kt — same hash under both env segments.
+        "signkey-" + "prod-" + "b2ed992186a5cb19f6668aade821f502c1d00970dfd0e35128d51bac4649916c",
+        "signkey-" + "test-" + "b2ed992186a5cb19f6668aade821f502c1d00970dfd0e35128d51bac4649916c",
+    },
+    recommendation=(
+        "Rotate this signing key in the Inngest dashboard (Manage > Signing Key)"
+        " and roll it out to every serve endpoint; until rotated, an attacker"
+        " holding it can forge signed requests to your Inngest functions."
+    ),
+    tags=["devops", "inngest", "webhook", "signing"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -1061,4 +1133,6 @@ register(
     ROOTLY_API_KEY,
     # Batch 13 — vendor-sourced patterns (2026-07-18)
     CISCO_MERAKI_API_KEY,
+    # 2026-07-15 — Inngest signing key (prefix-anchored, vendor sourced)
+    INNGEST_SIGNING_KEY,
 )
