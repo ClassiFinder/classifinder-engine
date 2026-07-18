@@ -115,6 +115,7 @@ The following patterns were independently derived from official vendor documenta
 | `cisco_meraki_api_key` | https://developer.cisco.com/meraki/api-v1/authorization/ (Meraki Dashboard API — 40-char hex key via `X-Cisco-Meraki-API-Key` / `Authorization: Bearer`) |
 | `inngest_signing_key` | https://github.com/inngest/inngest/blob/main/pkg/authn/signing_key_strategy.go (Inngest server — defines the `signkey-` prefix set and the `^signkey-\\w+-` validation regex), https://github.com/inngest/inngest-js/blob/main/packages/inngest/src/helpers/strings.ts (JS SDK — decodes the post-prefix body as hex), https://github.com/inngest/inngest-py/blob/main/.env.example (64-hex example key) |
 | `render_api_key` | https://github.com/openai/skills/blob/main/skills/.curated/render-deploy/SKILL.md (OpenAI curated render-deploy skill — `export RENDER_API_KEY="rnd_xxxxx"`), cross-referenced with Render's official API docs (render.com/docs/api, api-docs.render.com) |
+| `wakatime_api_key` | https://github.com/wakatime/wakatime-cli/blob/develop/pkg/params/params.go (official WakaTime CLI, BSD 3-Clause — validates keys with `^(waka_)?[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$`; the `waka_` prefix, optional in the vendor regex, is made required here as the anti-FP anchor) |
 
 Vendor-published token formats (e.g. `AKIA...`, `sk_live_...`, `AIza...`, PEM markers, JWT structure, Bitcoin WIF, credit-card IINs) are facts and not subject to copyright.
 
