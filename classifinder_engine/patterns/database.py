@@ -570,6 +570,52 @@ NEON_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# DATASTAX ASTRA DB (Batch 12 — 2026-07-13; prefix-anchored)
+# ===================================================
+
+ASTRA_DB_APPLICATION_TOKEN = SecretPattern(
+    id="astra_db_application_token",
+    name="DataStax Astra DB Application Token",
+    description=(
+        "DataStax Astra DB application token — the literal 'AstraCS:' prefix, a"
+        " 24-character client-id segment, a ':' separator, and a 64-character"
+        " lowercase-hex secret. Grants database and administration access to the"
+        " Astra DB organization at the token's role scope. Prefix-anchored on"
+        " 'AstraCS:'."
+    ),
+    provider="datastax",
+    severity="critical",
+    # Source: https://docs.datastax.com/en/astra-db-serverless/administration/manage-application-tokens.html
+    # (DataStax Astra DB docs — application tokens have the form
+    # 'AstraCS:<clientId>:<secret>', with a concrete example in the doc).
+    # Independently authored — 'AstraCS:' prefix + 24-char id + ':' + 64 hex.
+    regex=re.compile(
+        r"(?P<secret>AstraCS:[A-Za-z0-9]{24}:[a-f0-9]{64})(?![a-f0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,
+    context_keywords=[
+        "astra",
+        "AstraCS",
+        "datastax",
+        "astra_db",
+        "ASTRA_DB_APPLICATION_TOKEN",
+    ],
+    known_test_values={
+        # Synthetic — fixed 'A'*24 id + sequential-hex secret, concatenated.
+        # Down-scores to ~0.15.
+        "AstraCS:" + "A" * 24 + ":" + "0123456789abcdef" * 4,
+    },
+    recommendation=(
+        "Revoke this token in the Astra DB console under Settings > Token"
+        " Management and issue a replacement for the application that used it."
+    ),
+    tags=["database", "datastax", "cassandra"],
+)
+
+
 register(
     POSTGRES_CONNECTION_STRING,
     MYSQL_CONNECTION_STRING,
@@ -586,4 +632,6 @@ register(
     COUCHBASE_CONNECTION_STRING,
     # Batch 10 — vendor-sourced patterns (2026-07-06)
     NEON_API_KEY,
+    # Batch 12 — vendor-sourced patterns (2026-07-13)
+    ASTRA_DB_APPLICATION_TOKEN,
 )

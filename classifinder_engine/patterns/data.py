@@ -521,6 +521,46 @@ FRAMEIO_DEVELOPER_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# APIFY (Batch 12 — 2026-07-13; prefix-anchored)
+# ===================================================
+
+APIFY_API_TOKEN = SecretPattern(
+    id="apify_api_token",
+    name="Apify API Token",
+    description=(
+        "Apify (web-scraping / automation platform) API token — the literal"
+        " 'apify_api_' prefix followed by a 36-character alphanumeric body. Used"
+        " to authenticate against the Apify API and run/manage actors."
+        " Prefix-anchored; grants full access to the account's actors, datasets,"
+        " and storage."
+    ),
+    provider="apify",
+    severity="high",
+    # Source: https://docs.apify.com/platform/integrations/api
+    # (Apify API docs — personal API tokens carry the 'apify_api_' prefix followed
+    # by a fixed alphanumeric body). Independently authored — prefix anchor plus a
+    # 36-char [A-Za-z0-9] body (no hyphen in the token body per the vendor spec).
+    regex=re.compile(
+        r"(?P<secret>apify_api_[A-Za-z0-9]{36})(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,
+    context_keywords=["apify", "apify_api_", "APIFY_TOKEN", "APIFY_API_TOKEN"],
+    known_test_values={
+        # Synthetic — clearly-fake all-'A' body, concatenated to avoid a
+        # real-looking literal. Down-scores to ~0.15.
+        "apify_api_" + "A" * 36,
+    },
+    recommendation=(
+        "Revoke this token in the Apify Console under Settings > Integrations >"
+        " API tokens and rotate it in every integration that used it."
+    ),
+    tags=["data", "apify", "automation"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -540,4 +580,6 @@ register(
     CLOUDINARY_URL,
     # 2026-07-10 — Frame.io developer token (prefix-anchored, vendor SDK sourced)
     FRAMEIO_DEVELOPER_TOKEN,
+    # Batch 12 — vendor-sourced patterns (2026-07-13)
+    APIFY_API_TOKEN,
 )
