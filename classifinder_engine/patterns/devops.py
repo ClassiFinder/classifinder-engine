@@ -964,6 +964,66 @@ ROOTLY_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# CISCO MERAKI (Batch 13 — 2026-07-18; context-gated 40-hex)
+# ===================================================
+
+CISCO_MERAKI_API_KEY = SecretPattern(
+    id="cisco_meraki_api_key",
+    name="Cisco Meraki API Key",
+    description=(
+        "Cisco Meraki Dashboard API key — a 40-character lowercase-hex string with"
+        " no distinctive prefix, supplied via the 'X-Cisco-Meraki-API-Key' HTTP"
+        " header (Dashboard API v0) or an 'Authorization: Bearer' header (v1). A"
+        " bare 40-hex value collides with SHA-1 digests and git object hashes, so"
+        " this detector is context-gated: it only fires when a Meraki key label"
+        " (X-Cisco-Meraki-API-Key / MERAKI_DASHBOARD_API_KEY / meraki) sits"
+        " immediately before the value. Grants full read/write control over the"
+        " organization's networks, devices, and clients."
+    ),
+    provider="cisco_meraki",
+    severity="high",
+    # Format per https://developer.cisco.com/meraki/api-v1/authorization/ :
+    # Dashboard API keys are 40-char lowercase hex, passed via the
+    # 'X-Cisco-Meraki-API-Key' header (v0) or 'Authorization: Bearer <key>' (v1).
+    # A bare 40-hex string is SHA-1 / git-hash shaped and high-FP on its own, so
+    # the regex requires an adjacent X-Cisco-Meraki-API-Key / MERAKI_DASHBOARD_API_KEY
+    # / meraki label (mirrors the adafruit_io_key context-gated approach).
+    # Format per https://developer.cisco.com/meraki/api-v1/authorization/
+    regex=re.compile(
+        r"(?:"
+        r"X-Cisco-Meraki-API-Key|MERAKI[_-]?DASHBOARD[_-]?API[_-]?KEY"
+        r"|MERAKI[_-]?API[_-]?KEY|meraki"
+        r")"
+        r"[\s]*[=:\"'\s]+"
+        r"(?P<secret>[a-f0-9]{40})"
+        r"(?![a-f0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.60,  # format-only — value has no distinctive prefix
+    entropy_threshold=3.0,  # penalize low-entropy 40-hex (e.g. all-zeros)
+    context_keywords=[
+        "meraki",
+        "cisco",
+        "x-cisco-meraki-api-key",
+        "MERAKI_DASHBOARD_API_KEY",
+        "dashboard.meraki.com",
+        "api.meraki.com",
+    ],
+    known_test_values={
+        # The concrete example printed in Cisco's public authorization docs — a
+        # documentation placeholder, not a live key. Down-scores to ~0.15.
+        "6bec40cf957de430a6f1f2baf056b99a4fac9ea0",
+    },
+    recommendation=(
+        "Revoke this key in the Meraki Dashboard under My Profile > API access"
+        " (Generate new API key) and rotate it in every integration / script that"
+        " used it. Compromised Meraki keys grant full org-wide network control."
+    ),
+    tags=["devops", "cisco_meraki", "networking"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -999,4 +1059,6 @@ register(
     # Batch 12 — vendor-sourced patterns (2026-07-13)
     DOCKER_ACCESS_TOKEN,
     ROOTLY_API_KEY,
+    # Batch 13 — vendor-sourced patterns (2026-07-18)
+    CISCO_MERAKI_API_KEY,
 )
