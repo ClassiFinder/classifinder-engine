@@ -940,6 +940,67 @@ MIDTRANS_SERVER_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# CHECKOUT.COM
+# ===================================================
+
+CHECKOUT_COM_SECRET_KEY = SecretPattern(
+    id="checkout_com_secret_key",
+    name="Checkout.com Secret Key",
+    description=(
+        "Checkout.com server-side secret API key — 'sk_' (production) or"
+        " 'sk_sbox_' (sandbox) followed by a 26-32 character lowercase"
+        " alphanumeric body. Grants full server-side access to the"
+        " Checkout.com Unified Payments API: create and capture payments,"
+        " issue refunds, and read cardholder and payout data."
+        " Deliberately excludes Stripe's sk_live_ / sk_test_ infixes and"
+        " requires a lowercase-only body so the two providers cannot"
+        " double-match; legacy 'Previous account' UUID-bodied keys are"
+        " not matched (they are low-value and share Stripe's prefix)."
+    ),
+    provider="checkout-com",
+    severity="critical",
+    # Vendor-documented format: production secret keys are 'sk_' + 26-32
+    # lowercase alphanumeric characters; sandbox keys carry an extra 'sbox_'
+    # infix (published sandbox example body is 27 chars). Corroborated by
+    # Checkout.com's own SDK READMEs, which show sk_123456ghijklm7890abcdefxyz
+    # (26) and sk_abcdef98765mnopqr4321ghijk (26). Regex independently authored:
+    # the negative lookahead on live_/test_, the lowercase-only body and the
+    # non-word boundaries are the anti-collision guards against the Stripe
+    # sk_live_ / sk_test_ patterns already in this module.
+    # Format per https://www.checkout.com/docs/resources/api-authentication/api-keys
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>sk_(?!live_|test_)(?:sbox_)?[a-z0-9]{26,32})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "checkout.com",
+        "checkout",
+        "CKO_SECRET_KEY",
+        "secret_key",
+        "payment",
+    ],
+    known_test_values={
+        # Published vendor documentation / SDK README placeholders.
+        # Built by concatenation so no scannable key literal exists in source.
+        "sk_" + "sbox_" + "wjvrysklsqjmrhn3yoexnshsl72",
+        "sk_" + "123456ghijklm7890abcdefxyz",
+        "sk_" + "nguierhg984hg4nig489gh48931",
+        "sk_" + "abcdef98765mnopqr4321ghijk",
+    },
+    recommendation=(
+        "Roll this key immediately in the Checkout.com Dashboard under"
+        " Developers > Keys, then audit recent payments, refunds and"
+        " payouts in the Dashboard activity log."
+    ),
+    tags=["payment", "checkout-com"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -969,4 +1030,6 @@ register(
     ASAAS_API_TOKEN,
     # Batch 10 — vendor-sourced patterns (2026-07-06)
     MIDTRANS_SERVER_KEY,
+    # 2026-07-20 — Checkout.com secret key (vendor sourced, Stripe-collision guarded)
+    CHECKOUT_COM_SECRET_KEY,
 )
