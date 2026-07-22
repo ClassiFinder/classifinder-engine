@@ -1306,6 +1306,57 @@ RENDER_API_KEY = SecretPattern(
     ),
     tags=["cloud", "render"],
 )
+# ===================================================
+# AMAZON MWS (2026-07-22)
+# ===================================================
+# Amazon MWS (Marketplace Web Service) auth tokens carry the fixed literal
+# 'amzn.mws.' prefix followed by a canonical UUID (8-4-4-4-12 lowercase hex
+# with hyphens). The prefix is a public, structurally rigid anchor, so this is
+# a high-precision pattern that needs no entropy gate. MWS is a legacy/deprecated
+# Amazon seller API, but auth tokens still appear in older configs and leaks.
+
+AMAZON_MWS_AUTH_TOKEN = SecretPattern(
+    id="amazon_mws_auth_token",
+    name="Amazon MWS Auth Token",
+    description=(
+        "Amazon Marketplace Web Service (MWS) auth token, anchored on the public"
+        " 'amzn.mws.' prefix followed by a canonical UUID. Grants API access to a"
+        " seller's Amazon MWS account (orders, inventory, reports, fulfillment)."
+    ),
+    provider="amazon",
+    severity="high",
+    # Prefix-anchored on the public 'amzn.mws.' literal + canonical UUID
+    # (8-4-4-4-12 lowercase hex). Fixed prefix and rigid UUID shape — no entropy
+    # gate needed. Format re-derived from the public spec below.
+    # Pattern attribution: secrets-patterns-db CC-BY-4.0 (datasets/high-confidence.yml,
+    #   "Amazon MWS Auth Token") — https://github.com/mazen160/secrets-patterns-db ; see ATTRIBUTION.md
+    regex=re.compile(
+        r"(?P<secret>amzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+        r"(?![0-9a-fA-F-])",  # negative lookahead: no trailing hex/hyphen
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # prefix-anchored + rigid UUID shape, no entropy check
+    context_keywords=[
+        "amzn.mws",
+        "mws",
+        "MWSAuthToken",
+        "mws_auth_token",
+        "amazon",
+        "marketplace",
+    ],
+    known_test_values={
+        # Synthetic all-zero UUID — clearly fake, kept out of git as a real token
+        # shape. Registered so the documented example down-scores to ~0.15.
+        "amzn.mws.00000000-0000-0000-0000-000000000000",
+    },
+    recommendation=(
+        "Revoke this MWS auth token in Amazon Seller Central (or the Amazon"
+        " developer console) and issue a replacement. Store it in a secret"
+        " manager rather than in code, configs, or logs."
+    ),
+    tags=["cloud", "amazon", "mws"],
+)
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -1347,4 +1398,6 @@ register(
     ELASTIC_CLOUD_API_KEY,
     # 2026-07-16 — Render API key (prefix-anchored, vendor + OpenAI-skill sourced)
     RENDER_API_KEY,
+    # 2026-07-22 — Amazon MWS auth token (prefix-anchored 'amzn.mws.' + UUID, SPDB CC-BY-4.0)
+    AMAZON_MWS_AUTH_TOKEN,
 )
