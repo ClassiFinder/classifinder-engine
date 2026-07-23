@@ -616,6 +616,65 @@ ASTRA_DB_APPLICATION_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# XATA (2026-07-21)
+# ===================================================
+# Xata (xata.io) API keys are prefix-anchored. Xata's own public Go source
+# (xataio/xata, internal/api/key/key.go) defines UserKeyPrefix="xau" and
+# OrganizationKeyPrefix="xao", a total MaxLength of 40, and generates the body
+# as base62(20 random bytes + 4-byte CRC32) over the alphabet
+# "0123456789abcdef...XYZ" — i.e. charset [0-9A-Za-z], 33 characters in
+# practice. The sibling key_test.go rejects a 40-char body ("too big"), a
+# non-base62 body, and a missing underscore. The catalog's `xau_` claim is
+# correct but incomplete: the organization prefix `xao_` must be covered too.
+# The published vendor doc page (xata.io/documentation/platform/api-key) does
+# not itself specify the format, so the Go source is the citable evidence.
+
+XATA_API_KEY = SecretPattern(
+    id="xata_api_key",
+    name="Xata API Key",
+    description=(
+        "Xata (xata.io) API key — the 'xau_' (personal/user) or 'xao_'"
+        " (organization) prefix followed by a base62 body of 32-36 characters"
+        " (33 in practice: 20 random bytes plus a 4-byte CRC32 checksum,"
+        " base62-encoded). Grants API access to the Xata account's databases,"
+        " branches, and workspace administration."
+    ),
+    provider="xata",
+    severity="high",
+    # Independently authored — prefix-anchored on the vendor's own published
+    # prefixes with a bounded base62 body; no third-party detector was copied.
+    # Source: https://github.com/xataio/xata/blob/main/internal/api/key/key.go
+    # (Xata's own Go source: UserKeyPrefix="xau", OrganizationKeyPrefix="xao",
+    # MaxLength=40 total, body = base62(20 random bytes + 4-byte CRC32) over
+    # the alphabet [0-9A-Za-z]).
+    regex=re.compile(
+        r"(?<![0-9A-Za-z])(?P<secret>xa[uo]_[0-9A-Za-z]{32,36})(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,
+    context_keywords=[
+        "xata",
+        "xata.io",
+        "XATA_API_KEY",
+        "xau_",
+        "xao_",
+    ],
+    known_test_values={
+        # Published fixtures from Xata's own key_test.go — built by string
+        # concatenation so no scannable token literal exists in this source.
+        "xau_" + "xoWnROvXetYNTeVzfIyA10QcC8UNZufs2",
+        "xao_" + "xoWnROvXetYNTeVzfIyA10QcC8UNZufs2",
+    },
+    recommendation=(
+        "Revoke this key in the Xata dashboard (Account Settings > API Keys, or"
+        " the organization's key settings for an 'xao_' key) and issue a"
+        " replacement. Store it in a secret manager rather than in code or logs."
+    ),
+    tags=["database", "xata"],
+)
+
 register(
     POSTGRES_CONNECTION_STRING,
     MYSQL_CONNECTION_STRING,
@@ -634,4 +693,6 @@ register(
     NEON_API_KEY,
     # Batch 12 — vendor-sourced patterns (2026-07-13)
     ASTRA_DB_APPLICATION_TOKEN,
+    # 2026-07-21 — Xata API key (prefix-anchored, vendor Go source)
+    XATA_API_KEY,
 )
