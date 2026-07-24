@@ -1001,6 +1001,61 @@ CHECKOUT_COM_SECRET_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# XENDIT (2026-07-24)
+# ===================================================
+
+XENDIT_SECRET_API_KEY = SecretPattern(
+    id="xendit_secret_api_key",
+    name="Xendit Secret API Key",
+    description=(
+        "Xendit (Southeast-Asian payment gateway) secret API key. Live keys"
+        " carry an 'xnd_production_' prefix and test keys an 'xnd_development_'"
+        " prefix, followed by a base64 key body. The secret key is used as the"
+        " Basic-Auth username on every Xendit API call, so a leak grants direct"
+        " money-movement access: create disbursements, read balances, and pull"
+        " customer payment data. The non-secret publishable key ('xnd_public_')"
+        " is deliberately not matched."
+    ),
+    provider="xendit",
+    severity="critical",
+    # Xendit secret keys are prefix-anchored: 'xnd_production_' (live) and
+    # 'xnd_development_' (test); the body is the base64 charset [A-Za-z0-9+/=]
+    # and runs 50+ chars in practice (a {30,} floor keeps prose collisions out).
+    # Publishable 'xnd_public_' keys are excluded by the alternation. Regex
+    # independently authored from the vendor's Basic-Auth documentation; no
+    # TruffleHog detector exists for this provider.
+    # Format per https://help.xendit.co/hc/en-us/articles/16516398053273-What-is-API-Key-and-How-Do-I-Create-Them
+    regex=re.compile(
+        r"(?<![A-Za-z0-9])"
+        r"(?P<secret>xnd_(?:production|development)_[A-Za-z0-9+/=]{30,})"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # prefix is unique to Xendit
+    entropy_threshold=0.0,
+    context_keywords=[
+        "xendit",
+        "XENDIT_SECRET_KEY",
+        "secret_key",
+        "xnd_",
+        "payment",
+    ],
+    known_test_values={
+        # Xendit's own Basic-Auth documentation example (a published placeholder,
+        # not a live key). Built by concatenation so no scannable secret literal
+        # exists in source.
+        "xnd_development_" + "P4qDfOss0OCpl8RtKrROHjaQYNCk9dN5lSfk+R1l9Wbe+rSiCwZ3jw==",
+    },
+    recommendation=(
+        "Roll this key immediately in the Xendit Dashboard under Settings > API"
+        " Keys, then audit recent disbursements and transactions for"
+        " unauthorized activity."
+    ),
+    tags=["payment", "xendit"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -1032,4 +1087,6 @@ register(
     MIDTRANS_SERVER_KEY,
     # 2026-07-20 — Checkout.com secret key (vendor sourced, Stripe-collision guarded)
     CHECKOUT_COM_SECRET_KEY,
+    # 2026-07-24 — Xendit secret API key (vendor sourced, prefix-anchored)
+    XENDIT_SECRET_API_KEY,
 )
