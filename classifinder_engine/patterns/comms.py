@@ -1548,6 +1548,57 @@ PLIVO_AUTH_ID = SecretPattern(
 )
 
 
+# ===================================================
+# KLAVIYO (Batch — 2026-07-25)
+# ===================================================
+
+KLAVIYO_PRIVATE_API_KEY = SecretPattern(
+    id="klaviyo_private_api_key",
+    name="Klaviyo Private API Key",
+    description=(
+        "Klaviyo private API key. Private keys carry a 'pk_' prefix followed by a"
+        " 34-character lowercase-hex body; multi-account keys insert a 6-character"
+        " company-id segment and an underscore before the hex body"
+        " (pk_<companyId>_<hex>). The private key grants full server-side access"
+        " to a Klaviyo account: read/write profiles, lists, events, and campaigns,"
+        " so a leak exposes the entire subscriber database. Distinct from"
+        " Stripe's 'pk_live_'/'pk_test_' publishable keys and ClickUp's"
+        " 'pk_<numericUserId>_<32 alnum>' tokens — the base form has no internal"
+        " underscore and a strict hex charset."
+    ),
+    provider="klaviyo",
+    severity="high",
+    # Klaviyo private keys are prefix-anchored on 'pk_' per the vendor auth docs
+    # (which document the pk_ prefix + alphanumeric body); the real body is a
+    # 34-char lowercase-hex string, with an optional 6-char company-id + '_'
+    # segment for multi-account keys. Base form has no internal underscore, so it
+    # does not collide with ClickUp (pk_<digits>_<32 alnum>) or Stripe
+    # (pk_live_/pk_test_). Independently authored from the vendor documentation.
+    # Format per https://developers.klaviyo.com/en/docs/authenticate_
+    regex=re.compile(
+        r"(?<![0-9A-Za-z])"
+        r"(?P<secret>pk_(?:[0-9a-f]{34}|[0-9A-Za-z]{6}_[0-9a-f]{34}))"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,  # pk_ + strict 34-hex body is structurally distinctive
+    entropy_threshold=0.0,
+    context_keywords=["klaviyo", "KLAVIYO_API_KEY", "KLAVIYO_PRIVATE_KEY", "private_key"],
+    known_test_values={
+        # Synthetic sequential-hex body, concatenated so no scannable literal
+        # exists in source. Down-scores to ~0.15.
+        "pk_" + "0123456789abcdef0123456789abcdef01",
+    },
+    recommendation=(
+        "Revoke this key in the Klaviyo dashboard under Settings > API Keys, then"
+        " generate a replacement and update every server-side integration that"
+        " used it. Audit recent API activity for unauthorized profile or list"
+        " access."
+    ),
+    tags=["comms", "klaviyo", "marketing"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -1597,4 +1648,6 @@ register(
     TWILIO_API_KEY,
     # Batch 12 — vendor-sourced patterns (2026-07-13)
     PLIVO_AUTH_ID,
+    # 2026-07-25 — Klaviyo private API key (vendor sourced, pk_ + 34-hex, collision-guarded)
+    KLAVIYO_PRIVATE_API_KEY,
 )
