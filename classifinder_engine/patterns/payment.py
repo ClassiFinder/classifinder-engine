@@ -1056,6 +1056,71 @@ XENDIT_SECRET_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# MERCADO PAGO (2026-07-26)
+# ===================================================
+
+MERCADOPAGO_ACCESS_TOKEN = SecretPattern(
+    id="mercadopago_access_token",
+    name="Mercado Pago Access Token",
+    description=(
+        "Mercado Pago access token — the server-side bearer credential for Latin"
+        " America's largest payment gateway. Structure is 'APP_USR-' followed by"
+        " four hyphen-separated segments: the numeric application/client id, a"
+        " 6-digit MMddHH creation stamp, a 32-character lowercase-hex body, and"
+        " the numeric seller user_id. It authenticates every Payments, Orders,"
+        " and Merchant Orders API call, so a leak allows charging customers,"
+        " issuing refunds, and reading cardholder data — severity is critical."
+        " The token type prefix is 'APP_USR' for both production and test"
+        " credentials (Mercado Pago's test Access Token also starts with"
+        " APP_USR), so there is no separate lower-severity test variant. The"
+        " Mercado Pago public key shares the 'APP_USR-' prefix but is a UUID"
+        " (8-4-4-4-12 hex) and is a non-secret frontend value; the numeric"
+        " segment-1/segment-2 and 32-hex segment-3 requirements exclude it by"
+        " construction. Refresh tokens ('TG-') are likewise not matched."
+    ),
+    provider="mercadopago",
+    severity="critical",
+    # Independently authored from Mercado Pago's own OAuth token endpoint
+    # reference, which prints both an example response body
+    # ("access_token": "APP_USR-4934588586838432-XXXXXXXX-241983636", with the
+    # sibling "user_id": 241983636) and an access_token field-format description
+    # ("APP_USR-1585551492-030918-25######3458-2880736"; the X/# runs are the
+    # vendor's own redaction of the 32-char middle segment). No third-party
+    # detector was consulted. Word boundaries on both ends prevent substring
+    # matches inside longer runs.
+    # Format per https://www.mercadopago.com.br/developers/en/reference/authentication/oauth/_oauth_token/post
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>APP_USR-\d{8,19}-\d{6}-[0-9a-f]{32}-\d{6,12})"
+        r"(?![A-Za-z0-9-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # prefix + rigid 4-segment structure is unique to Mercado Pago
+    entropy_threshold=0.0,
+    context_keywords=[
+        "mercadopago",
+        "mercado_pago",
+        "MERCADOPAGO_ACCESS_TOKEN",
+        "access_token",
+        "payment",
+    ],
+    known_test_values={
+        # Synthetic sequential placeholder in the documented shape, built by
+        # concatenation so no scannable token literal exists in source.
+        # Down-scores to ~0.15.
+        "APP_USR-" + "1234567890-010101-" + "0123456789abcdef0123456789abcdef" + "-1234567",
+    },
+    recommendation=(
+        "Revoke this token immediately from the Mercado Pago developer panel"
+        " (Your integrations > Credentials) and re-run the OAuth flow to issue"
+        " a replacement. Audit recent payments, refunds, and payouts on the"
+        " affected seller account for unauthorized activity."
+    ),
+    tags=["payment", "mercadopago"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -1089,4 +1154,6 @@ register(
     CHECKOUT_COM_SECRET_KEY,
     # 2026-07-24 — Xendit secret API key (vendor sourced, prefix-anchored)
     XENDIT_SECRET_API_KEY,
+    # 2026-07-26 — Mercado Pago access token (vendor sourced, 4-segment structure)
+    MERCADOPAGO_ACCESS_TOKEN,
 )
