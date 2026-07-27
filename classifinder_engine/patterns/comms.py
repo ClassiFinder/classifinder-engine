@@ -1599,6 +1599,69 @@ KLAVIYO_PRIVATE_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# LOB (2026-07-27)
+# ===================================================
+
+LOB_API_KEY = SecretPattern(
+    id="lob_api_key",
+    name="Lob API Key",
+    description=(
+        "Lob (lob.com) API key — the credential for the print-and-mail API that"
+        " sends physical letters, postcards, and checks. Lob's help centre"
+        " states that test API keys are always prefixed with 'test_' and"
+        " production keys with 'live_'; the prefix is followed by a"
+        " 35-character body, 40 characters in total. A leaked live key can be"
+        " used to send real physical mail (and read address and recipient"
+        " records) at the account's expense, so severity is high."
+        "\n\n"
+        "Collision guard. A bare 'live_' prefix is shared with GoCardless"
+        " access tokens, which use a 40-character body. Shipping this pattern"
+        " ungated would make it a false-positive factory, so — exactly as the"
+        " GoCardless pattern does — it is context-gated: the regex only fires"
+        " when a Lob key label ('lob' followed by key/token/secret) sits"
+        " immediately before the value. The differing body lengths (35 here vs"
+        " 40 for GoCardless) keep the two apart even inside a shared context,"
+        " and Stripe's keys ('sk_live_', 'pk_live_', 'rk_live_') cannot match"
+        " because the secret must begin at the 'live_'/'test_' prefix"
+        " immediately after the label separator. Regression tests cover all"
+        " three directions."
+    ),
+    provider="lob",
+    severity="high",
+    # Independently authored from Lob's own API-keys help article, which states
+    # that test API keys are always prefixed with 'test_' and production keys
+    # with 'live_'. The 35-character body length and the mandatory 'lob' label
+    # gate are our own anti-collision guards against GoCardless's 'live_' +
+    # 40-character token and Stripe's 'sk_live_' family. No third-party
+    # detector was consulted.
+    # Source: https://help.lob.com/account-management/api-keys
+    regex=re.compile(
+        r"(?<![0-9A-Za-z])"
+        r"(?:lob[0-9A-Za-z._-]{0,24}(?:key|token|secret))"
+        r"[\s]*[=:\"'\s]+"
+        r"(?P<secret>(?:live|test)_[0-9A-Za-z_]{35})"
+        r"(?![0-9A-Za-z_])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.85,  # bare live_/test_ prefix — the label gate carries the weight
+    entropy_threshold=3.5,
+    context_keywords=["lob", "LOB_API_KEY", "lob.com", "postcard", "letter"],
+    known_test_values={
+        # Synthetic alphabet-sequence body, assembled by concatenation.
+        # Down-scores to ~0.15.
+        "test_" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345678",
+    },
+    recommendation=(
+        "Roll this key in the Lob dashboard under Settings > API Keys and"
+        " update every integration that used it. If it was a live key, review"
+        " the account's recent mail pieces and spend for anything unrecognized"
+        " — physical mail cannot be recalled once printed."
+    ),
+    tags=["comms", "lob", "print-mail"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -1650,4 +1713,6 @@ register(
     PLIVO_AUTH_ID,
     # 2026-07-25 — Klaviyo private API key (vendor sourced, pk_ + 34-hex, collision-guarded)
     KLAVIYO_PRIVATE_API_KEY,
+    # 2026-07-27 — Lob API key (vendor sourced, label-gated against GoCardless/Stripe)
+    LOB_API_KEY,
 )
