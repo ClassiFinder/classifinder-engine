@@ -505,6 +505,74 @@ ADOBE_OAUTH_CLIENT_SECRET = SecretPattern(
 )
 
 
+# ===================================================
+# ZOHO (2026-07-27)
+# ===================================================
+
+ZOHO_OAUTH_TOKEN = SecretPattern(
+    id="zoho_oauth_token",
+    name="Zoho OAuth Token",
+    description=(
+        "Zoho OAuth token — the literal '1000.' portal segment followed by two"
+        " dot-separated 32-character lowercase-hex segments. Zoho's own OAuth"
+        " documentation publishes concrete values in this shape for the"
+        " access_token, the refresh_token, and the authorization grant code, so"
+        " one pattern covers all three. Access tokens are bearer credentials for"
+        " every Zoho API (CRM, Mail, Desk, Books, WorkDrive) and expire after an"
+        " hour; refresh tokens carry the same shape but do not expire, so a"
+        " leaked one grants indefinite access to the connected org's data until"
+        " it is revoked. The non-secret client_id shares the '1000.' lead but is"
+        " a single uppercase-alphanumeric segment with no second dot, so the"
+        " two-segment lowercase-hex requirement excludes it by construction."
+    ),
+    provider="zoho",
+    severity="high",
+    # Zoho's OAuth docs print real-shaped example tokens rather than
+    # placeholders: access_token "1000.<32 hex>.<32 hex>" and refresh_token in
+    # the identical shape. The leading segment is the literal "1000.", the
+    # charset is lowercase hex (not alphanumeric), and each segment is exactly
+    # 32 characters. Independently authored — no third-party detector was
+    # consulted. Boundaries are asymmetric on purpose: the lookbehind also
+    # rejects a preceding '.' so the pattern cannot fire on a slice of a longer
+    # dotted blob, and the lookahead rejects a following '.<word char>' for the
+    # same reason while still allowing a sentence-ending period.
+    # Format per https://www.zoho.com/accounts/protocol/oauth/web-apps/access-token-expiry.html
+    regex=re.compile(
+        r"(?<![A-Za-z0-9._-])"
+        r"(?P<secret>1000\.[a-f0-9]{32}\.[a-f0-9]{32})"
+        r"(?!\.?[A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # '1000.' lead + rigid 32/32 lowercase-hex structure
+    entropy_threshold=0.0,
+    context_keywords=[
+        "zoho",
+        "zohoapis",
+        "ZOHO_REFRESH_TOKEN",
+        "access_token",
+        "refresh_token",
+    ],
+    known_test_values={
+        # Zoho's own published documentation examples — the most-copied values
+        # of this shape, so they are registered as test values and down-score to
+        # ~0.15. Built by concatenation so no scannable token literal exists in
+        # source.
+        "1000." + "2deaf8d0c268e3c85daa2a013a843b10" + "." + "703adef2bb337b8ca36cfc5d7b83cf24",
+        "1000." + "86a03ca5dbfccb7445b1889b8215efb0" + "." + "cad9e1ae4989a1196fe05aa729fcb4e1",
+        "1000." + "18e983526f0ca8575ea9c53b0cd5bb58" + "." + "1bd83a6f2e22c3a7e1309d96ae439cc1",
+        # Synthetic all-zero placeholder in the documented shape.
+        "1000." + "0" * 32 + "." + "0" * 32,
+    },
+    recommendation=(
+        "Revoke this token from the Zoho API Console (Self Client / connected"
+        " app > revoke) or by calling the OAuth revoke endpoint, then re-run the"
+        " authorization flow to issue a replacement. Audit recent API activity on"
+        " the affected Zoho org for unauthorized record or mailbox access."
+    ),
+    tags=["identity", "zoho", "oauth"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -522,4 +590,6 @@ register(
     # Batch 12 — vendor-sourced patterns (2026-07-13)
     SALESFORCE_ACCESS_TOKEN,
     ADOBE_OAUTH_CLIENT_SECRET,
+    # 2026-07-27 — Zoho OAuth token (vendor sourced, '1000.' + 32/32 lowercase hex)
+    ZOHO_OAUTH_TOKEN,
 )
