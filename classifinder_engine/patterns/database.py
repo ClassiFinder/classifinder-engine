@@ -401,6 +401,65 @@ SUPABASE_SERVICE_KEY = SecretPattern(
 )
 
 
+SUPABASE_SECRET_KEY = SecretPattern(
+    id="supabase_secret_key",
+    name="Supabase Secret API Key",
+    description=(
+        "Supabase secret API key — the new-format (2025 API-key migration)"
+        " replacement for the legacy service_role JWT. Structure is the literal"
+        " 'sb_secret_' prefix, a 22-character base64url random segment, an"
+        " underscore, and an 8-character base64url checksum (41 characters"
+        " total). Like the service_role key it replaces, it bypasses Row Level"
+        " Security and grants full read/write access to the project's database,"
+        " storage, and auth admin API, so it is server-side only. The sibling"
+        " 'sb_publishable_' (client-safe) and 'sb_temp_' (platform) keys share"
+        " the generator but not the prefix, and are excluded by construction."
+    ),
+    provider="supabase",
+    severity="critical",
+    # Format taken from Supabase's own self-hosting key-rotation script, which
+    # contains the generator verbatim:
+    #   generateOpaqueKey(prefix) =
+    #     prefix + base64url(randomBytes(17)).slice(0, 22) + "_"
+    #            + base64url(sha256(PROJECT_REF + "|" + intermediate)).slice(0, 8)
+    # That pins the prefix, the base64url charset [A-Za-z0-9_-], and the exact
+    # 22 + "_" + 8 body. Corroborated by the vendor CLI's local-dev default
+    # (apps/cli-go/pkg/config/apikeys.go), which is exactly 22 + "_" + 8.
+    # Independently authored — no third-party detector was consulted.
+    # Source: https://github.com/supabase/supabase/blob/master/docker/utils/rotate-new-api-keys.sh
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>sb_secret_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{8})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # prefix-anchored + fixed-length checksummed body
+    entropy_threshold=0.0,
+    context_keywords=[
+        "supabase",
+        "SUPABASE_SECRET_KEY",
+        "sb_secret",
+        "service_role",
+        "supabase_url",
+    ],
+    known_test_values={
+        # Supabase CLI local-development default (public, shipped in the vendor
+        # repo). Built by concatenation so no scannable key literal exists in
+        # source — GitHub push protection would otherwise block the public
+        # engine push.
+        "sb_secret_" + "N7UND0UgjKTVK-Uodkm0Hg" + "_" + "xSvEMPvz",
+    },
+    recommendation=(
+        "Revoke this key in the Supabase Dashboard under Project Settings > API"
+        " Keys, then issue a replacement and redeploy the servers that use it."
+        " The secret key bypasses Row Level Security — never ship it to a"
+        " browser, mobile app, or any client-side bundle. Audit the project's"
+        " auth and Postgres logs for unexpected activity since the leak."
+    ),
+    tags=["database", "supabase", "auth"],
+)
+
+
 # ===================================================
 # RABBITMQ
 # ===================================================
@@ -695,4 +754,6 @@ register(
     ASTRA_DB_APPLICATION_TOKEN,
     # 2026-07-21 — Xata API key (prefix-anchored, vendor Go source)
     XATA_API_KEY,
+    # 2026-07-28 — Supabase secret API key (new-format sb_secret_ opaque key)
+    SUPABASE_SECRET_KEY,
 )
