@@ -573,6 +573,70 @@ ZOHO_OAUTH_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# AUTHRESS (2026-07-27)
+# ===================================================
+
+AUTHRESS_SERVICE_CLIENT_ACCESS_KEY = SecretPattern(
+    id="authress_service_client_access_key",
+    name="Authress Service Client Access Key",
+    description=(
+        "Authress (authress.io) service client access key — a single opaque"
+        " string that packs four dot-separated segments: the 'sc_' service"
+        " client id, a short key id, an account id beginning with the literal"
+        " 'acc' and a separator, and finally a base64-encoded PKCS#8 private"
+        " key. That last segment is the actual signing material: whoever holds"
+        " it can mint Authress access tokens for any user or role in the"
+        " account, which makes this a full authorization-system compromise —"
+        " severity is critical."
+        " The 'sc_' prefix on its own is far too generic to detect safely, so"
+        " this pattern requires the entire four-segment structure including the"
+        " literal 'acc' marker in segment three. Do not relax it to a bare"
+        " 'sc_' plus alphanumerics; that shape is a false-positive factory."
+    ),
+    provider="authress",
+    severity="critical",
+    # Independently authored from Authress's own service-client access-key
+    # documentation, which describes the access key as the concatenation of the
+    # service client id ('sc_' prefixed), the key id, the account id ('acc'
+    # prefixed), and the base64 PKCS#8 private key, joined with '.' separators.
+    # The full four-segment structure is required on purpose — 'sc_' alone
+    # matches far too much ordinary text. No third-party detector was consulted.
+    # Source: https://authress.io/knowledge-base/docs/authorization/service-clients/access-keys
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])"
+        r"(?P<secret>sc_[0-9A-Za-z]{5,30}\.[0-9A-Za-z]{4,6}\."
+        r"acc[_-][0-9a-z-]{10,32}\.[0-9A-Za-z+/_=-]{30,120})"
+        r"(?![0-9A-Za-z+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # four-segment structure with two literal markers is unique
+    entropy_threshold=0.0,  # structure is the anchor; the key segment is base64
+    context_keywords=[
+        "authress",
+        "AUTHRESS_ACCESS_KEY",
+        "serviceClientAccessKey",
+        "accessKey",
+        "authorization",
+    ],
+    known_test_values={
+        # Synthetic four-segment placeholder in the documented shape, assembled
+        # by concatenation. Down-scores to ~0.15.
+        "sc_" + "AbCdEfGhIjKlMnOp" + "." + "xY3z" + "."
+        + "acc_" + "a1b2c3d4e5f6g7h8" + "."
+        + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+    },
+    recommendation=(
+        "Delete this service client's access key in the Authress management"
+        " portal (Clients > the affected service client > Access keys) and"
+        " generate a new one — the leaked segment is a private signing key, so"
+        " rotating it is the only remediation. Then review Authress audit logs"
+        " for tokens minted by this client and confirm none were unexpected."
+    ),
+    tags=["identity", "authress", "authorization"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -592,4 +656,6 @@ register(
     ADOBE_OAUTH_CLIENT_SECRET,
     # 2026-07-27 — Zoho OAuth token (vendor sourced, '1000.' + 32/32 lowercase hex)
     ZOHO_OAUTH_TOKEN,
+    # 2026-07-27 — Authress service client access key (four-segment structure)
+    AUTHRESS_SERVICE_CLIENT_ACCESS_KEY,
 )

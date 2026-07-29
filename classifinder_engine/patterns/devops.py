@@ -1135,6 +1135,121 @@ WAKATIME_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# ZUPLO (2026-07-27)
+# ===================================================
+
+ZUPLO_CONSUMER_API_KEY = SecretPattern(
+    id="zuplo_consumer_api_key",
+    name="Zuplo Consumer API Key",
+    description=(
+        "Zuplo (zuplo.com) consumer API key — the credential Zuplo's API Key"
+        " Service issues to a consumer of a gateway-fronted API. The format is"
+        " the literal 'zpka_' prefix, a 32-character alphanumeric body, an"
+        " underscore, and an 8-character lowercase-hex CRC32 checksum, for"
+        " exactly 46 characters. Zuplo publishes this shape precisely so that"
+        " leak-detection services can recognize it, and the trailing checksum"
+        " means a well-formed match is almost certainly a real key rather than"
+        " a random string. A leaked key lets an attacker call the protected API"
+        " as that consumer, consuming their quota and reaching whatever"
+        " upstream data their policy permits. Severity is high."
+    ),
+    provider="zuplo",
+    severity="high",
+    # Independently authored from Zuplo's own API-key leak-detection article,
+    # which publishes the key shape for exactly this purpose: the 'zpka_'
+    # prefix, a 32-character alphanumeric body, and an 8-character CRC32
+    # checksum suffix separated by an underscore (46 characters total). No
+    # third-party detector was consulted.
+    # Source: https://zuplo.com/docs/articles/api-key-leak-detection
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])(?P<secret>zpka_[0-9A-Za-z]{32}_[0-9a-f]{8})(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # unique prefix + fixed length + CRC32 checksum tail
+    entropy_threshold=0.0,  # the checksum suffix is the anchor, not randomness
+    context_keywords=[
+        "zuplo",
+        "zpka_",
+        "ZUPLO_API_KEY",
+        "api-key",
+        "Authorization",
+    ],
+    known_test_values={
+        # Synthetic alphabet-sequence body plus a sequential hex checksum,
+        # assembled by concatenation. Down-scores to ~0.15.
+        "zpka_" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345" + "_" + "0123abcd",
+    },
+    recommendation=(
+        "Revoke this key in the Zuplo portal under the affected project's API"
+        " Key Consumers and issue a fresh key to the consumer. Review the"
+        " gateway's request logs for calls made with the leaked key before"
+        " rotation."
+    ),
+    tags=["devops", "zuplo", "api-gateway"],
+)
+
+
+# ===================================================
+# CFX.RE (2026-07-27)
+# ===================================================
+
+CFXRE_SERVER_KEY = SecretPattern(
+    id="cfxre_server_key",
+    name="Cfx.re Server Key",
+    description=(
+        "Cfx.re server key (FiveM / RedM server license key) in the newer"
+        " 'cfxk_' format: the literal 'cfxk_' prefix, an alphanumeric body that"
+        " may contain underscores, an underscore separator, and a short base62"
+        " CRC32B checksum. The key authorizes a game server to register with"
+        " the Cfx.re platform under its owner's account; a leak lets a third"
+        " party impersonate the server, which typically costs the owner their"
+        " server listing rather than exposing data — so severity is medium."
+        " The vendor's own validation regex uses very loose bounds"
+        " ('{1,60}_{1,20}') which would happily match a string as short as"
+        " 'cfxk_a_b'; this pattern deliberately tightens the body to 20-40"
+        " characters and the checksum to 4-10 characters to stay out of"
+        " false-positive territory."
+    ),
+    provider="cfxre",
+    severity="medium",
+    # Independently authored from txAdmin's regexSvLicenseNew (Cfx.re's own
+    # first-party server admin tool) and the Cfx.re forum announcement of the
+    # new server-key format, which describes the 'cfxk_' prefix and the
+    # trailing base62 CRC32B checksum segment. The vendor bounds are
+    # deliberately tightened here; see the description. No third-party detector
+    # was consulted.
+    # Source: https://github.com/citizenfx/txAdmin/blob/master/shared/consts.ts
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])"
+        r"(?P<secret>cfxk_[0-9A-Za-z_]{20,40}_[0-9A-Za-z]{4,10})"
+        r"(?![0-9A-Za-z_])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,  # distinctive prefix + checksum tail, but loose body charset
+    entropy_threshold=3.0,
+    context_keywords=[
+        "cfx",
+        "cfxk_",
+        "sv_licenseKey",
+        "fivem",
+        "txadmin",
+    ],
+    known_test_values={
+        # Synthetic alphabet-sequence body plus a sequential checksum,
+        # assembled by concatenation. Down-scores to ~0.15.
+        "cfxk_" + "AbCdEfGhIjKlMnOpQrStUvWx" + "_" + "0a1b2c",
+    },
+    recommendation=(
+        "Revoke this key at keymaster.fivem.net and generate a replacement,"
+        " then update sv_licenseKey in the server's server.cfg. Do not commit"
+        " server.cfg to version control — load the key from an environment"
+        " variable or an untracked include file instead."
+    ),
+    tags=["devops", "cfxre", "fivem", "gaming"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -1176,4 +1291,8 @@ register(
     INNGEST_SIGNING_KEY,
     # Batch 13 — vendor-sourced pattern (2026-07-17)
     WAKATIME_API_KEY,
+    # 2026-07-27 — Zuplo consumer API key (vendor sourced, CRC32-checksummed)
+    ZUPLO_CONSUMER_API_KEY,
+    # 2026-07-27 — Cfx.re server key (vendor sourced, bounds tightened)
+    CFXRE_SERVER_KEY,
 )

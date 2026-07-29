@@ -1121,6 +1121,180 @@ MERCADOPAGO_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# POLAR (2026-07-27)
+# ===================================================
+
+POLAR_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="polar_personal_access_token",
+    name="Polar Personal Access Token",
+    description=(
+        "Polar (polar.sh) personal access token — a user-scoped API credential"
+        " for the developer monetization / merchant-of-record platform. Polar's"
+        " server generates it as the literal 'polar_pat_' prefix followed by a"
+        " fixed 43-character base62 body: 37 random alphanumeric characters plus"
+        " a 6-character base62 CRC32 checksum, for 53 characters total. The token"
+        " acts on behalf of the user across every Polar API scope it was issued"
+        " with — reading customers and orders, issuing refunds, and managing"
+        " products and benefits — so severity is high. Note that widely-copied"
+        " third-party catalog entries describe the body as"
+        " '[a-zA-Z0-9_-]{20,60}'; that charset and length are wrong. The"
+        " generator emits base62 only (no underscore, no hyphen) at a fixed"
+        " length, so this pattern implements the vendor's own generator shape."
+    ),
+    provider="polar",
+    severity="high",
+    # Independently authored from Polar's own server source: the personal access
+    # token service defines TOKEN_PREFIX = "polar_pat_", and the shared token
+    # helper in server/polar/kit/crypto.py generates the body as 37 random
+    # base62 characters plus a 6-character base62 CRC32 checksum (43 total).
+    # No third-party detector was consulted; the catalog-published
+    # "[a-zA-Z0-9_-]{20,60}" body is contradicted by that generator.
+    # Source: https://github.com/polarsource/polar/blob/main/server/polar/personal_access_token/service.py
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])(?P<secret>polar_pat_[0-9A-Za-z]{43})(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # unique prefix + fixed-length checksummed base62 body
+    entropy_threshold=3.0,
+    context_keywords=[
+        "polar",
+        "polar.sh",
+        "POLAR_ACCESS_TOKEN",
+        "polar_pat_",
+        "Authorization",
+    ],
+    known_test_values={
+        # Synthetic alphabet-sequence body, assembled by concatenation so no
+        # scannable token literal exists in source. Down-scores to ~0.15.
+        "polar_pat_" + "AbCdEfGhIj" + "KlMnOpQrSt" + "UvWxYz0123" + "456789AbCd" + "EfG",
+    },
+    recommendation=(
+        "Revoke this token in the Polar dashboard under Settings > Developers >"
+        " Personal access tokens and issue a replacement with the narrowest"
+        " scope set required. Review recent orders, refunds, and benefit grants"
+        " on the account for unauthorized activity."
+    ),
+    tags=["payment", "polar", "saas"],
+)
+
+
+POLAR_ORGANIZATION_ACCESS_TOKEN = SecretPattern(
+    id="polar_organization_access_token",
+    name="Polar Organization Access Token",
+    description=(
+        "Polar (polar.sh) organization access token — the organization-scoped"
+        " counterpart to the personal access token, and the credential Polar's"
+        " API reference tells server integrations to use. It shares the same"
+        " generator as the personal token: the literal 'polar_oat_' prefix"
+        " followed by a fixed 43-character base62 body (37 random characters"
+        " plus a 6-character base62 CRC32 checksum), 53 characters total. It is"
+        " not tied to a single user, so revoking a departing employee's account"
+        " does not revoke it — a leaked organization token keeps full API access"
+        " to the organization's customers, orders, and payouts until explicitly"
+        " rotated. Severity is high."
+    ),
+    provider="polar",
+    severity="high",
+    # Independently authored from Polar's own server source: the organization
+    # access token service defines the "polar_oat_" prefix and reuses the same
+    # generate_token helper as the personal access token (37 random base62
+    # characters + a 6-character base62 CRC32 checksum). The vendor's API
+    # reference documents this token as the server-integration credential.
+    # Source: https://github.com/polarsource/polar/blob/main/server/polar/organization_access_token/service.py
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])(?P<secret>polar_oat_[0-9A-Za-z]{43})(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # unique prefix + fixed-length checksummed base62 body
+    entropy_threshold=3.0,
+    context_keywords=[
+        "polar",
+        "polar.sh",
+        "POLAR_ORGANIZATION_TOKEN",
+        "polar_oat_",
+        "Authorization",
+    ],
+    known_test_values={
+        # Synthetic reverse-alphabet body, assembled by concatenation. ~0.15.
+        "polar_oat_" + "ZyXwVuTsRq" + "PoNmLkJiHg" + "FeDcBa9876" + "543210ZyXw" + "VuT",
+    },
+    recommendation=(
+        "Revoke this token in the Polar dashboard under the organization's"
+        " Settings > Developers > Organization access tokens, then issue a"
+        " replacement scoped to only the endpoints the integration calls."
+        " Organization tokens survive user offboarding, so audit which"
+        " integrations held this value before rotating."
+    ),
+    tags=["payment", "polar", "saas"],
+)
+
+
+# ===================================================
+# MERCURY (2026-07-27)
+# ===================================================
+
+MERCURY_PRODUCTION_API_TOKEN = SecretPattern(
+    id="mercury_production_api_token",
+    name="Mercury Production API Token",
+    description=(
+        "Mercury (mercury.com) production API token — the bearer credential for"
+        " a live business bank account. Mercury's API reference shows it"
+        " transported as 'secret-token:mercury_production_...' in the"
+        " Authorization header. The structure is the literal"
+        " 'mercury_production_' prefix, a short lowercase sub-tag, an"
+        " underscore, a 40-50 character alphanumeric body, and the literal"
+        " terminator '_yrucrem' ('mercury' reversed). That terminator is the"
+        " reliable structural anchor and is required by this pattern, which"
+        " makes a false positive on unrelated text effectively impossible."
+        " Because the token reads balances and transactions and can move money"
+        " out of a real bank account, severity is critical — this is the"
+        " highest-impact credential class in the library."
+    ),
+    provider="mercury",
+    severity="critical",
+    # Independently authored from Mercury's own "Getting started with your API"
+    # reference, whose curl examples print a full production token verbatim
+    # three times in the 'secret-token:' Authorization header. The prefix, the
+    # lowercase sub-tag segment, the alphanumeric body and the trailing
+    # '_yrucrem' terminator are all read directly off those vendor examples.
+    # No third-party detector was consulted.
+    # Source: https://docs.mercury.com/reference/getting-started-with-your-api
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])"
+        r"(?P<secret>mercury_production_[a-z]{3,6}_[0-9A-Za-z]{40,50}_yrucrem)"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # prefix AND literal terminator — no realistic FP surface
+    entropy_threshold=0.0,  # the '_yrucrem' terminator is the anchor, not randomness
+    context_keywords=[
+        "mercury",
+        "secret-token",
+        "MERCURY_API_TOKEN",
+        "Authorization",
+        "banking",
+    ],
+    known_test_values={
+        # Mercury's own documentation example, repeated verbatim three times on
+        # the "Getting started with your API" page. Assembled by concatenation
+        # so no contiguous token literal exists in source. Down-scores to ~0.15.
+        "mercury_production_"
+        + "wma_"
+        + "24SCp4G81X3yHL4Wq8FgzuaP9ye3VKf2mgTDctXyRg5HY"
+        + "_yrucrem",
+    },
+    recommendation=(
+        "Treat this as a live banking credential. Revoke it immediately in the"
+        " Mercury dashboard under Settings > Developers > API tokens, then"
+        " review the account's transactions, recipients, and pending payments"
+        " for unauthorized activity and notify Mercury support if anything is"
+        " unrecognized."
+    ),
+    tags=["payment", "mercury", "banking", "fintech"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -1156,4 +1330,9 @@ register(
     XENDIT_SECRET_API_KEY,
     # 2026-07-26 — Mercado Pago access token (vendor sourced, 4-segment structure)
     MERCADOPAGO_ACCESS_TOKEN,
+    # 2026-07-27 — Polar access tokens (vendor generator sourced, fixed 43-char body)
+    POLAR_PERSONAL_ACCESS_TOKEN,
+    POLAR_ORGANIZATION_ACCESS_TOKEN,
+    # 2026-07-27 — Mercury production API token (vendor sourced, '_yrucrem' anchor)
+    MERCURY_PRODUCTION_API_TOKEN,
 )

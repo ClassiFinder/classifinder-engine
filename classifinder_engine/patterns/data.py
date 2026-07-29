@@ -561,6 +561,61 @@ APIFY_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# DATABENTO (2026-07-27)
+# ===================================================
+
+DATABENTO_API_KEY = SecretPattern(
+    id="databento_api_key",
+    name="Databento API Key",
+    description=(
+        "Databento (databento.com) API key — the credential for a paid market"
+        " data subscription. The format is the literal 'db-' prefix followed by"
+        " exactly 29 alphanumeric characters, 32 characters in total. That"
+        " length is not a convention but a hard invariant: Databento's own"
+        " client libraries reject any key whose length is not 32, so a"
+        " well-formed match is a real key shape. Because Databento bills per"
+        " byte of data delivered, a leaked key is a direct financial liability"
+        " on top of the data access it grants. Severity is high."
+        " The 'db-' prefix is short, so the pattern pins the body length"
+        " exactly and requires hard non-word boundaries on both sides rather"
+        " than accepting an open-ended body."
+    ),
+    provider="databento",
+    severity="high",
+    # Independently authored from Databento's own Rust client, whose ApiKey
+    # constructor rejects any key whose length is not 32 with the message
+    # "expected to be 32-characters long", and which documents the 'db-'
+    # prefix. That fixes the body at exactly 29 characters after the prefix.
+    # No third-party detector was consulted.
+    # Source: https://github.com/databento/databento-rs/blob/main/src/lib.rs
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])(?P<secret>db-[0-9A-Za-z]{29})(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.85,  # short prefix, but the exact 32-char total is vendor-enforced
+    entropy_threshold=3.5,  # short prefix means the body must actually look random
+    context_keywords=[
+        "databento",
+        "DATABENTO_API_KEY",
+        "db-",
+        "market data",
+        "Authorization",
+    ],
+    known_test_values={
+        # Synthetic alphabet-sequence body, assembled by concatenation.
+        # Down-scores to ~0.15.
+        "db-" + "AbCdEfGhIj" + "KlMnOpQrSt" + "UvWxYz012",
+    },
+    recommendation=(
+        "Delete this key in the Databento portal under Settings > API keys and"
+        " create a replacement. Check the account's usage and billing pages for"
+        " unexpected data downloads charged while the key was exposed."
+    ),
+    tags=["data", "databento", "market-data"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -582,4 +637,6 @@ register(
     FRAMEIO_DEVELOPER_TOKEN,
     # Batch 12 — vendor-sourced patterns (2026-07-13)
     APIFY_API_TOKEN,
+    # 2026-07-27 — Databento API key (vendor SDK enforces the exact 32-char length)
+    DATABENTO_API_KEY,
 )
