@@ -734,6 +734,68 @@ XATA_API_KEY = SecretPattern(
     tags=["database", "xata"],
 )
 
+COCKROACHDB_CLOUD_API_KEY = SecretPattern(
+    id="cockroachdb_cloud_api_key",
+    name="CockroachDB Cloud Service Account API Key",
+    description=(
+        "CockroachDB Cloud service-account API key — the credential the"
+        " CockroachDB Cloud API (cockroachlabs.cloud/api/v1), the ccloud CLI,"
+        " and the Terraform provider authenticate with. Structure is the"
+        " literal 'CCDB1_' version prefix, a 22-character alphanumeric segment,"
+        " an underscore, and a 40-character alphanumeric secret (69 characters"
+        " total). It carries whatever role the service account holds on the"
+        " organization, up to creating and deleting clusters."
+    ),
+    provider="cockroachdb",
+    severity="high",
+    # Format measured from the full-length example key published in
+    # CockroachDB's own Terraform provider repository
+    # (examples/resources/cockroach_api_key/import.sh, repeated in
+    # docs/resources/api_key.md): 'CCDB1_' + 22 [A-Za-z0-9] + '_' + 40
+    # [A-Za-z0-9], 69 characters total. The CCDB1_ prefix is confirmed
+    # independently by cockroachdb/docs
+    # (src/current/cockroachcloud/ccloud-reference.md), which shows
+    # `ccloud service-account api-key create` emitting 'Secret: CCDB1_...'.
+    # No entropy threshold: the 6-character vendor-unique prefix plus the fixed
+    # 69-character length carry the signal, and a gate would only add FN risk.
+    # Independently authored — no third-party detector was consulted.
+    # Source: https://github.com/cockroachdb/terraform-provider-cockroach/blob/main/examples/resources/cockroach_api_key/import.sh
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>CCDB1_[A-Za-z0-9]{22}_[A-Za-z0-9]{40})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # prefix-anchored + fixed 69-character length
+    entropy_threshold=0.0,
+    context_keywords=[
+        "cockroach",
+        "cockroachdb",
+        "cockroachlabs",
+        "ccloud",
+        "COCKROACH_API_KEY",
+        "service_account",
+    ],
+    known_test_values={
+        # The example key published in CockroachDB's own Terraform provider
+        # repo (examples/resources/cockroach_api_key/import.sh) — built by
+        # string concatenation so no scannable key literal exists in source,
+        # which GitHub push protection would otherwise block on the public
+        # engine repo.
+        "CCDB1_" + "D4zMI3pZTmk5rGrzYqMhbc" + "_" + "NkcXLI8d81Mtx3djD45iwPfgtnaRv0XCh0Z9047K",
+    },
+    recommendation=(
+        "Delete the API key in the CockroachDB Cloud Console under Access"
+        " Management > Service Accounts (or with `ccloud service-account"
+        " api-key delete`), then issue a replacement and update the ccloud"
+        " CLI, Terraform, and CI configurations that use it. Review the"
+        " organization's Cloud API audit logs for unexpected cluster, SQL user,"
+        " or network-authorization changes since the leak."
+    ),
+    tags=["database", "cockroachdb", "cloud-api"],
+)
+
+
 register(
     POSTGRES_CONNECTION_STRING,
     MYSQL_CONNECTION_STRING,
@@ -756,4 +818,6 @@ register(
     XATA_API_KEY,
     # 2026-07-28 — Supabase secret API key (new-format sb_secret_ opaque key)
     SUPABASE_SECRET_KEY,
+    # 2026-07-29 — CockroachDB Cloud service-account API key (CCDB1_ prefix)
+    COCKROACHDB_CLOUD_API_KEY,
 )
