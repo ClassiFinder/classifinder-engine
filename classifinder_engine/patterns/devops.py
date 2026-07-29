@@ -1250,6 +1250,87 @@ CFXRE_SERVER_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# TRIGGER.DEV (2026-07-29)
+# ===================================================
+# Trigger.dev is fully open source, so the key format is not inferred from
+# examples — it is read directly off the generator. apps/webapp/app/utils/
+# apiKeys.ts declares
+#     const apiKeyId = customAlphabet("1234567890abcdef...XYZ", 24)
+# (the full 62-character alphanumeric alphabet, length 24), and apiKeyPrefix()
+# returns exactly one of 'tr_dev_' / 'tr_stg_' / 'tr_prod_' / 'tr_preview_'.
+# generateRootApiKey() emits `${prefix}${id}`; generateAdditionalApiKey() emits
+# `${prefix}sk_${id}` — hence the optional 'sk_' segment.
+#
+# Deliberately NOT matched: the sibling 'pk_dev_' / 'pk_prod_' publishable keys
+# (packages/cli-v3/src/utilities/getApiKeyType.ts types tr_* as "server" and
+# pk_* as "public"), and the 'tr_pat_' personal access token, which is a
+# different credential with a hex body.
+
+TRIGGER_DEV_SECRET_KEY = SecretPattern(
+    id="trigger_dev_secret_key",
+    name="Trigger.dev Secret Key",
+    description=(
+        "Trigger.dev secret (server) API key — the environment prefix"
+        " 'tr_dev_', 'tr_stg_', 'tr_prod_' or 'tr_preview_', an optional 'sk_'"
+        " segment marking a non-root key, and exactly 24 alphanumeric"
+        " characters from the vendor generator's 62-character alphabet. Sent as"
+        " TRIGGER_SECRET_KEY; it authenticates writes to the environment it"
+        " belongs to — triggering tasks, cancelling runs, and reading run"
+        " payloads, which routinely carry customer data. The publishable"
+        " 'pk_dev_' / 'pk_prod_' keys are client-side by design and are"
+        " excluded."
+    ),
+    provider="trigger-dev",
+    severity="high",
+    # Format read off the vendor's own key generator rather than an example:
+    # apps/webapp/app/utils/apiKeys.ts uses customAlphabet(<62-char alnum>, 24)
+    # and apiKeyPrefix() returns tr_dev_ / tr_stg_ / tr_prod_ / tr_preview_,
+    # with generateAdditionalApiKey() inserting a literal 'sk_'. Corroborated by
+    # the vendor's own unit test apps/webapp/app/utils/apiKeys.test.ts, which
+    # asserts ^{prefix}[A-Za-z0-9]{24}$ and ^{prefix}sk_[A-Za-z0-9]{24}$ for all
+    # four environments. No entropy threshold: the multi-segment vendor prefix
+    # and the fixed 24-character body carry the signal, and the body is
+    # generator-random over a full alphanumeric alphabet, so a gate would only
+    # add false-negative risk. Independently authored — no detector catalog used.
+    # Source: https://github.com/triggerdotdev/trigger.dev/blob/main/apps/webapp/app/utils/apiKeys.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>tr_(?:dev|stg|prod|preview)_(?:sk_)?[A-Za-z0-9]{24})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # prefix-anchored + generator-fixed 24-character body
+    entropy_threshold=0.0,
+    context_keywords=[
+        "trigger.dev",
+        "triggerdotdev",
+        "TRIGGER_SECRET_KEY",
+        "secretKey",
+        "trigger",
+    ],
+    known_test_values={
+        # Placeholder published in Trigger.dev's own docs
+        # (docs/guides/example-projects/clickhouse-chat-agent.mdx) — it happens
+        # to be exactly 24 characters, so it matches the real shape. Built by
+        # string concatenation so no scannable key literal exists in source,
+        # which GitHub push protection would otherwise block on the public
+        # engine repo.
+        "tr_" + "dev_" + "x" * 24,
+    },
+    recommendation=(
+        "Revoke this key in the Trigger.dev dashboard under the project's"
+        " Environments / API keys page (regenerating the environment key"
+        " invalidates it), then update TRIGGER_SECRET_KEY everywhere it is"
+        " configured — CI, deploy targets, and local .env files. Review the"
+        " environment's run history for tasks triggered or cancelled while the"
+        " key was exposed; a production key can read the payloads of every run"
+        " in that environment."
+    ),
+    tags=["devops", "trigger-dev", "background-jobs"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -1295,4 +1376,6 @@ register(
     ZUPLO_CONSUMER_API_KEY,
     # 2026-07-27 — Cfx.re server key (vendor sourced, bounds tightened)
     CFXRE_SERVER_KEY,
+    # 2026-07-29 — Trigger.dev secret key (tr_<env>_ prefix, generator-sourced)
+    TRIGGER_DEV_SECRET_KEY,
 )
