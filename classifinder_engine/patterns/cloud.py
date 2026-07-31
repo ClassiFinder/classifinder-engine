@@ -1357,6 +1357,103 @@ AMAZON_MWS_AUTH_TOKEN = SecretPattern(
     ),
     tags=["cloud", "amazon", "mws"],
 )
+
+
+# ===================================================
+# INFISICAL (2026-07-30)
+# ===================================================
+# Infisical is open source, so this format is read off the vendor's own key
+# generator rather than inferred from a published example.
+#
+#   backend/src/services/service-token/service-token-service.ts
+#       const secret = crypto.randomBytes(16).toString("hex");
+#       const token  = `st.${serviceToken.id.toString()}.${secret}`;
+#
+# 16 bytes hex-encoded is exactly 32 lowercase characters, which pins the third
+# segment. The middle segment is the service-token row id, and the table DDL in
+# backend/src/db/migrations/20231225072545_service-token.ts declares
+#
+#       t.string("id", 36).primary().defaultTo(knex.fn.uuid());
+#
+# — a 36-character column defaulting to a generated UUID, i.e. canonical
+# 8-4-4-4-12 lowercase hex. The vendor's own Go test fixture builds tokens as
+# "st." + uuid.New().String() + "." + <secret>, agreeing with the DDL.
+#
+# 'st.' alone would be a far too weak anchor; what makes this low-FP is the
+# fixed UUID plus fixed 32-hex structure, so neither segment is relaxed to a
+# generic charset. No entropy threshold either: both variable segments are pure
+# lowercase hex, whose maximum Shannon entropy is 4.0 bits per character, so any
+# meaningful gate would make the pattern unmatchable in practice. Confidence
+# comes from the structure, not from entropy.
+#
+# docs/internals/service-tokens.mdx documents the full user-facing token as
+# "st.abc.def.ghi": "st.abc.def" is what applications send as the Bearer
+# credential, and the trailing hex segment decrypts the project key. The
+# server-side parser uses token.split(".", 3) and ignores that 4th segment, so
+# pasted tokens occur in both shapes — hence the optional trailing hex group.
+#
+# Scope is service tokens only. backend-go/internal/services/auth/apiauth/
+# classify.go returns AuthModeServiceToken for the 'st.' prefix and routes every
+# other three-part dotted token to AuthModeJWT, so the literal anchor already
+# excludes JWT bearer tokens and Infisical's other credential families.
+
+INFISICAL_SERVICE_TOKEN = SecretPattern(
+    id="infisical_service_token",
+    name="Infisical Service Token",
+    description=(
+        "Infisical service token — the literal 'st.' prefix, the service-token"
+        " id (a canonical lowercase UUID), and a 32-character lowercase hex"
+        " secret, with an optional trailing hex segment carrying the"
+        " project-key decryption material. Applications send the first three"
+        " segments as a Bearer credential; the token reads every secret in the"
+        " project environment it is scoped to."
+    ),
+    provider="infisical",
+    severity="critical",
+    # Format read off the vendor's own generator rather than an example:
+    # crypto.randomBytes(16).toString("hex") fixes the secret segment at exactly
+    # 32 lowercase hex characters, and the service-token id column is
+    # t.string("id", 36) defaulting to knex.fn.uuid(), i.e. a canonical UUID.
+    # The optional 4th segment is the project-key decryption material documented
+    # in docs/internals/service-tokens.mdx and ignored by the server's
+    # token.split(".", 3). Independently authored from those vendor sources; no
+    # third-party detector was consulted. No entropy threshold — both variable
+    # segments are lowercase hex (max 4.0 bits/char), so a gate would only add
+    # false negatives; the UUID + fixed-32-hex structure carries the signal.
+    # Source: https://github.com/Infisical/infisical/blob/main/backend/src/services/service-token/service-token-service.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9._-])"
+        r"(?P<secret>st\."
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        r"\.[0-9a-f]{32}(?:\.[0-9a-f]+)?)"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # prefix-anchored + fixed UUID and 32-hex structure
+    entropy_threshold=0.0,
+    context_keywords=[
+        "infisical",
+        "INFISICAL_TOKEN",
+        "service token",
+        "serviceToken",
+        "INFISICAL_API_URL",
+    ],
+    known_test_values={
+        # All-zero UUID with an all-zero secret — the canonical placeholder
+        # shape for this token and definitionally not a live credential. Built
+        # by concatenation so no scannable token literal exists in source.
+        "st." + "00000000-0000-0000-0000-000000000000" + "." + "0" * 32,
+    },
+    recommendation=(
+        "Revoke this service token in the Infisical dashboard under the"
+        " project's Access Control > Service Tokens, then issue a replacement"
+        " and update it everywhere it is configured — CI, deploy targets, and"
+        " local .env files. Because the token reads every secret in the"
+        " environment it is scoped to, treat every secret in that environment"
+        " as exposed and rotate them too."
+    ),
+    tags=["cloud", "infisical", "secrets"],
+)
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -1400,4 +1497,6 @@ register(
     RENDER_API_KEY,
     # 2026-07-22 — Amazon MWS auth token (prefix-anchored 'amzn.mws.' + UUID, SPDB CC-BY-4.0)
     AMAZON_MWS_AUTH_TOKEN,
+    # 2026-07-30 — Infisical service token ('st.' + UUID + 32 hex, generator-sourced)
+    INFISICAL_SERVICE_TOKEN,
 )
