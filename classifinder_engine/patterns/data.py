@@ -616,6 +616,118 @@ DATABENTO_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# CONTENTFUL — MANAGEMENT PERSONAL ACCESS TOKEN (2026-08-01)
+# ===================================================
+# A second, distinct Contentful credential. CONTENTFUL_DELIVERY_API_TOKEN above
+# is a context-gated, read-only 43-character DELIVERY token with no prefix. This
+# one is the Content Management API personal access token: prefix-anchored on
+# the literal CFPAT-, and it authenticates writes — creating, updating,
+# publishing and deleting entries, assets and content types across every space
+# the issuing user can reach, and managing those spaces' own API keys. Hence
+# severity critical, where the delivery token stays high.
+#
+# The prefix and the body charset come from Contentful's own redaction regex,
+# which the vendor applies to its CLI debug output:
+#
+#   contentful/experience-design-system-sdk-public
+#     packages/experience-design-system-cli/src/lib/debug-logger.ts
+#       /CFPAT-[A-Za-z0-9_-]{20,}/
+#
+# That pins the prefix and the base64url charset but is far too loose to ship as
+# a detector, so the body length is pinned separately. There are two real shapes:
+#
+#   * CURRENT — 43 characters of [A-Za-z0-9_-]. That is 32 random bytes in
+#     unpadded base64url, exactly the shape Contentful already uses for its
+#     delivery token. Confirmed empirically: every CFPAT- occurrence harvested
+#     across 60 public repositories has a 43-character body (length histogram
+#     43:15, 42:2, 20:1 — the short ones being truncated placeholders).
+#   * LEGACY — 64 lowercase hex characters. Confirmed by a real token captured
+#     in Contentful's own PHP SDK end-to-end HTTP recording,
+#     tests/Recordings/e2e_personal_access_token_create_get_revoke.json, whose
+#     payload timestamps are 2018-04-16. No 64-hex body occurs anywhere in the
+#     public corpus outside that recording, so it is treated as the older format
+#     and kept only so historical leaks still resolve.
+#
+# The alternation is ordered 43-then-64 and closed by a negative lookahead, so a
+# 64-hex body can never be mis-reported as a 43-character match: the first
+# alternative consumes 43 characters, the lookahead sees hex still to come and
+# fails, and the engine backtracks into the 64-hex alternative. An off-by-one on
+# either body therefore matches nothing at all rather than matching short.
+#
+# No entropy threshold — the six-character vendor prefix plus the two fixed body
+# lengths carry the signal, and gating a lowercase-hex body (max 4.0 bits per
+# character) on entropy would only add false negatives.
+#
+# Additive, not a duplicate of contentful_delivery_api_token. That pattern is
+# gated on a CONTENTFUL…TOKEN context word followed by exactly 43 characters
+# closed by (?![A-Za-z0-9_-]); a CFPAT- token puts six extra characters of the
+# same class in front of its body, so that 43-character window can never close
+# on its trailing boundary and the delivery pattern cannot fire on a management
+# token. Asserted in test_contentful_management_pat_does_not_collide_with_
+# delivery_token, with a companion recall guard for the delivery token itself.
+#
+# The 2018 recording holds a real (long-since-revoked) token and is deliberately
+# NOT registered as a known_test_value; the registered placeholders are all-zero
+# bodies, assembled by concatenation so no scannable token literal exists in
+# this file (GitHub push protection scans the public engine repo).
+
+CONTENTFUL_MANAGEMENT_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="contentful_management_personal_access_token",
+    name="Contentful Management Personal Access Token",
+    description=(
+        "Contentful Content Management API personal access token — the literal"
+        " CFPAT- prefix followed by either 43 base64url characters (current"
+        " format) or 64 lowercase hex characters (legacy format). Unlike the"
+        " read-only delivery token, this credential writes: it creates,"
+        " updates, publishes and deletes content and content types, and manages"
+        " API keys, across every space the issuing user can reach."
+    ),
+    provider="contentful",
+    severity="critical",
+    # Prefix and body charset per Contentful's own CLI debug-output redaction
+    # regex /CFPAT-[A-Za-z0-9_-]{20,}/ in experience-design-system-sdk-public
+    # (packages/experience-design-system-cli/src/lib/debug-logger.ts). The
+    # 43-character current body is the vendor's 32-byte base64url token shape,
+    # corroborated by every CFPAT- occurrence in the public corpus; the 64-hex
+    # legacy body is a real token recorded in the vendor's own PHP SDK
+    # end-to-end HTTP fixture. Independently authored from those vendor
+    # sources; no third-party detector code was consulted or ported.
+    # Source: https://github.com/contentful/contentful-management.php/blob/master/tests/Recordings/e2e_personal_access_token_create_get_revoke.json
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>CFPAT-(?:[A-Za-z0-9_-]{43}|[0-9a-f]{64}))"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # vendor-unique prefix + two generator-fixed lengths
+    entropy_threshold=0.0,
+    context_keywords=[
+        "contentful",
+        "CONTENTFUL_MANAGEMENT_TOKEN",
+        "CONTENTFUL_MANAGEMENT_API_ACCESS_TOKEN",
+        "management-token",
+        "personal access token",
+    ],
+    known_test_values={
+        # All-zero bodies in both shapes — the canonical placeholder form for
+        # this token and definitionally not live credentials. Built by
+        # concatenation so no scannable token literal exists in source.
+        "CFPAT-" + "0" * 43,
+        "CFPAT-" + "0" * 64,
+    },
+    recommendation=(
+        "Revoke this personal access token in Contentful under Account"
+        " Settings > CMA tokens, then issue a replacement and update it"
+        " everywhere it is configured — CI, the contentful CLI, migration"
+        " scripts, and local .env files. Because a CMA personal access token"
+        " carries the full permissions of the user who created it, review the"
+        " audit log for every space that user can reach for unexpected"
+        " content, content-type or API-key changes while the token was exposed."
+    ),
+    tags=["data", "contentful", "cms"],
+)
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -639,4 +751,7 @@ register(
     APIFY_API_TOKEN,
     # 2026-07-27 — Databento API key (vendor SDK enforces the exact 32-char length)
     DATABENTO_API_KEY,
+    # 2026-08-01 — Contentful Management personal access token (CFPAT- prefix,
+    # distinct from the context-gated read-only delivery token above)
+    CONTENTFUL_MANAGEMENT_PERSONAL_ACCESS_TOKEN,
 )
