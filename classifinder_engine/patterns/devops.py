@@ -1331,6 +1331,49 @@ TRIGGER_DEV_SECRET_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# THUNDERSTORE
+# ===================================================
+
+THUNDERSTORE_API_TOKEN = SecretPattern(
+    id="thunderstore_api_token",
+    name="Thunderstore API Token",
+    description=(
+        "Thunderstore (thunderstore.io) service account API token — the literal 'tss_'"
+        " prefix followed by a deterministic 36-character body (30 random alphanumerics"
+        " plus a 6-character base62 CRC32 checksum), 40 characters in total. Scope is"
+        " narrow: publishing mod packages under the owning team. Severity medium."
+    ),
+    provider="thunderstore",
+    severity="medium",
+    # Body shape read off Thunderstore's own token generator: a 30-character
+    # random alphanumeric run followed by a 6-character base62 CRC32 checksum,
+    # emitted behind the literal 'tss_' prefix — 36 body characters, always.
+    # Source: https://github.com/thunderstore-io/Thunderstore/blob/master/django/thunderstore/account/tokens.py
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])"
+        r"(?P<secret>tss_[0-9A-Za-z]{36})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,  # prefix + exact 36-character generator length are the anchor
+    context_keywords=[
+        "thunderstore",
+        "TSS",
+        "THUNDERSTORE_API_TOKEN",
+        "service_account",
+        "publish",
+    ],
+    known_test_values={"tss_" + "0" * 36},
+    recommendation=(
+        "Delete the owning service account in the Thunderstore team settings and issue a"
+        " new token. Review recent package uploads for the affected team."
+    ),
+    tags=["devops", "thunderstore", "package-registry"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -1378,4 +1421,6 @@ register(
     CFXRE_SERVER_KEY,
     # 2026-07-29 — Trigger.dev secret key (tr_<env>_ prefix, generator-sourced)
     TRIGGER_DEV_SECRET_KEY,
+    # 2026-08-03 — Thunderstore API token ('tss_' + 30 random + 6-char CRC32 checksum)
+    THUNDERSTORE_API_TOKEN,
 )
