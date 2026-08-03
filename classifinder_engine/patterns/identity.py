@@ -637,6 +637,93 @@ AUTHRESS_SERVICE_CLIENT_ACCESS_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# UNKEY
+# ===================================================
+
+UNKEY_ROOT_KEY = SecretPattern(
+    id="unkey_root_key",
+    name="Unkey Root Key",
+    description=(
+        "Unkey (unkey.com) root key — the literal 'unkey_' prefix followed by 24"
+        " Bitcoin-base58 characters, 30 in total. A root key administers the whole"
+        " workspace: it can mint, revoke and read every API key Unkey manages for the"
+        " account, so leaking one compromises every downstream API it protects."
+    ),
+    provider="unkey",
+    severity="critical",
+    # Charset is Bitcoin base58, taken from Unkey's own key-generation module:
+    # the standard alphabet EXCLUDES the four visually ambiguous characters
+    # 0 (zero), O (capital o), I (capital i) and l (lowercase L). Using a plain
+    # [A-Za-z0-9] class here would be wrong — it would accept bodies the
+    # generator can never emit.
+    # Source: https://github.com/unkeyed/unkey/blob/main/web/internal/keys/src/v1.ts
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])"
+        r"(?P<secret>unkey_[1-9A-HJ-NP-Za-km-z]{24})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # vendor prefix + fixed base58 length are the anchor
+    context_keywords=[
+        "unkey",
+        "UNKEY_ROOT_KEY",
+        "root_key",
+        "api_key",
+        "workspace",
+    ],
+    known_test_values={"unkey_" + "1" * 24},
+    recommendation=(
+        "Revoke this root key in the Unkey dashboard under Settings > Root Keys and"
+        " issue a replacement. Then audit the workspace's key-creation and"
+        " key-verification logs for activity you do not recognize."
+    ),
+    tags=["identity", "unkey", "api-key-management"],
+)
+
+
+# ===================================================
+# HUBSPOT — PRIVATE APP ACCESS TOKEN
+# ===================================================
+
+HUBSPOT_PRIVATE_APP_TOKEN = SecretPattern(
+    id="hubspot_private_app_token",
+    name="HubSpot Private App Access Token",
+    description=(
+        "HubSpot private app access token — a region prefix ('pat-na1-' or 'pat-eu1-')"
+        " followed by a canonical 8-4-4-4-12 hex UUID, 44 characters in total. This is"
+        " the credential that replaced HubSpot's deprecated bare-UUID API key; it carries"
+        " whatever CRM scopes the private app was granted, commonly full read/write on"
+        " contacts, companies and deals."
+    ),
+    provider="hubspot",
+    severity="high",
+    # Prefix-anchored, unlike the pre-existing context-gated bare-UUID
+    # hubspot_api_key above: the region tag makes the token self-identifying,
+    # so no surrounding keyword is needed. The two published regions are
+    # na1 (North America) and eu1 (Europe).
+    # Source: https://developers.hubspot.com/docs/guides/apps/private-apps/overview
+    regex=re.compile(
+        r"(?<![0-9A-Za-z\-])"
+        r"(?P<secret>pat-(?:na1|eu1)-"
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+        r"(?![0-9a-fA-F\-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["hubspot", "private_app", "HUBSPOT_TOKEN", "crm", "Authorization"],
+    known_test_values={"pat-na1-" + "00000000-0000-0000-0000-000000000000"},
+    recommendation=(
+        "Rotate this token in HubSpot under Settings > Integrations > Private Apps >"
+        " the affected app > Auth. Then review the app's call log for requests you do"
+        " not recognize."
+    ),
+    tags=["identity", "hubspot", "crm", "private-app"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -658,4 +745,7 @@ register(
     ZOHO_OAUTH_TOKEN,
     # 2026-07-27 — Authress service client access key (four-segment structure)
     AUTHRESS_SERVICE_CLIENT_ACCESS_KEY,
+    # 2026-08-03 — Unkey root key ('unkey_' + 24 base58) and HubSpot private app token
+    UNKEY_ROOT_KEY,
+    HUBSPOT_PRIVATE_APP_TOKEN,
 )

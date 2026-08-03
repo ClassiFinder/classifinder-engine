@@ -1295,6 +1295,52 @@ MERCURY_PRODUCTION_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# RAMP
+# ===================================================
+
+RAMP_CLIENT_SECRET = SecretPattern(
+    id="ramp_client_secret",
+    name="Ramp API Client Secret",
+    description=(
+        "Ramp (ramp.com) developer API client secret — the literal 'ramp_sec_' prefix"
+        " followed by exactly 48 alphanumerics (57 characters total). Paired with a"
+        " non-secret 'ramp_id_' client identifier in the OAuth client-credentials"
+        " exchange. Ramp issues corporate cards and moves company money, so a leaked"
+        " client secret is a fintech-grade compromise: severity critical."
+    ),
+    provider="ramp",
+    severity="critical",
+    # Ramp's developer API getting-started guide documents the client
+    # id / client secret pair and the 'ramp_sec_' prefix on the secret half.
+    # The 'ramp_id_' companion is an identifier, not a credential, and is
+    # deliberately NOT registered. Body length is a fixed 48 alphanumerics.
+    # Source: https://docs.ramp.com/developer-api/v1/getting-started
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])"
+        r"(?P<secret>ramp_sec_[0-9A-Za-z]{48})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # nine-character vendor prefix + fixed length carry the signal
+    context_keywords=[
+        "ramp",
+        "RAMP_CLIENT_SECRET",
+        "client_secret",
+        "ramp_id",
+        "oauth",
+    ],
+    known_test_values={"ramp_sec_" + "0" * 48},
+    recommendation=(
+        "Rotate this client secret immediately in the Ramp developer dashboard under"
+        " Developer > API clients, then review recent card, transfer and reimbursement"
+        " activity on the affected Ramp account."
+    ),
+    tags=["payment", "ramp", "fintech", "corporate-card"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -1335,4 +1381,6 @@ register(
     POLAR_ORGANIZATION_ACCESS_TOKEN,
     # 2026-07-27 — Mercury production API token (vendor sourced, '_yrucrem' anchor)
     MERCURY_PRODUCTION_API_TOKEN,
+    # 2026-08-03 — Ramp API client secret ('ramp_sec_' + fixed 48-char body)
+    RAMP_CLIENT_SECRET,
 )

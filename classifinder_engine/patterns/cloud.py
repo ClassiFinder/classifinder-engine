@@ -438,6 +438,225 @@ DOPPLER_TOKEN = SecretPattern(
     tags=["cloud", "doppler", "secrets"],
 )
 
+# ---------------------------------------------------------------------------
+# 2026-08-03 — the remaining five Doppler auth-token families.
+#
+# Doppler publishes every one of its token formats, with an explicit regex per
+# family, on a single reference page. `dp.pt.` (personal token) already shipped
+# above; the five below complete the set. Each family carries a distinct literal
+# segment after `dp.`, so none of them can double-match another — including the
+# `dp.said.` Service Account *Identity* token, which is deliberately NOT
+# registered here and must not be absorbed by `dp.sa.`.
+#
+# Bodies are 40-44 characters of [A-Za-z0-9] in every family. The service token
+# is the sole exception in structure: it may carry an optional lowercase config
+# segment between the prefix and the body (`dp.st.dev.<body>`), and it is also
+# emitted in the bare `dp.st.<body>` form. Both must match — making the segment
+# mandatory silently misses every bare service token.
+# ---------------------------------------------------------------------------
+
+DOPPLER_CLI_TOKEN = SecretPattern(
+    id="doppler_cli_token",
+    name="Doppler CLI Token",
+    description=(
+        "Doppler CLI token with dp.ct. prefix, minted by `doppler login` and stored in the"
+        " local CLI config. Carries the full authority of the developer who logged in —"
+        " read access to every project and config that user can reach."
+    ),
+    provider="doppler",
+    severity="critical",
+    # Doppler documents one regex per token family; the CLI token is
+    # `dp.ct.` followed by 40-44 alphanumerics.
+    # Source: https://docs.doppler.com/reference/auth-token-formats
+    regex=re.compile(
+        r"(?<![A-Za-z0-9._\-])"
+        r"(?P<secret>dp\.ct\.[0-9A-Za-z]{40,44})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["doppler", "DOPPLER_TOKEN", "dp.ct", "cli"],
+    known_test_values={"dp.ct." + "0" * 43},
+    recommendation=(
+        "Revoke this CLI token in the Doppler dashboard under Account > Tokens,"
+        " then run `doppler logout` and re-authenticate on the affected machine."
+    ),
+    tags=["cloud", "doppler", "secrets", "cli"],
+)
+
+
+DOPPLER_SERVICE_TOKEN = SecretPattern(
+    id="doppler_service_token",
+    name="Doppler Service Token",
+    description=(
+        "Doppler service token with dp.st. prefix, optionally carrying a config segment"
+        " (dp.st.<config>.<body>). Scoped read (or read/write) access to one config's"
+        " secrets — the token type deployed into CI and production runtimes."
+    ),
+    provider="doppler",
+    severity="critical",
+    # Doppler's published service-token regex allows an optional lowercase
+    # config segment before the body; the bare `dp.st.<body>` form is equally
+    # valid and is what the dashboard emits by default.
+    # Source: https://docs.doppler.com/reference/auth-token-formats
+    regex=re.compile(
+        r"(?<![A-Za-z0-9._\-])"
+        r"(?P<secret>dp\.st\.(?:[0-9a-z\-_]{2,35}\.)?[0-9A-Za-z]{40,44})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["doppler", "DOPPLER_TOKEN", "dp.st", "service_token"],
+    known_test_values={"dp.st." + "0" * 43, "dp.st." + "dev." + "0" * 43},
+    recommendation=(
+        "Revoke this service token in the Doppler dashboard under the affected config's"
+        " Access tab, then issue a replacement and redeploy the workloads that used it."
+    ),
+    tags=["cloud", "doppler", "secrets", "service-token"],
+)
+
+
+DOPPLER_SERVICE_ACCOUNT_TOKEN = SecretPattern(
+    id="doppler_service_account_token",
+    name="Doppler Service Account Token",
+    description=(
+        "Doppler service account token with dp.sa. prefix. Machine credential scoped to a"
+        " service account, typically granting workplace-wide programmatic access to"
+        " projects and configs. Distinct from the dp.said. service account IDENTITY token."
+    ),
+    provider="doppler",
+    severity="critical",
+    # Anchored on the literal `dp.sa.` so the separately-documented
+    # `dp.said.` service account identity token cannot be absorbed here —
+    # `dp.said.` has no dot immediately after `sa`, so the anchor rejects it.
+    # Source: https://docs.doppler.com/reference/auth-token-formats
+    regex=re.compile(
+        r"(?<![A-Za-z0-9._\-])"
+        r"(?P<secret>dp\.sa\.[0-9A-Za-z]{40,44})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["doppler", "DOPPLER_TOKEN", "dp.sa", "service_account"],
+    known_test_values={"dp.sa." + "0" * 43},
+    recommendation=(
+        "Revoke this service account token in the Doppler dashboard under"
+        " Team > Service Accounts, and audit that account's recent API activity."
+    ),
+    tags=["cloud", "doppler", "secrets", "service-account"],
+)
+
+
+DOPPLER_AUDIT_TOKEN = SecretPattern(
+    id="doppler_audit_token",
+    name="Doppler Audit Token",
+    description=(
+        "Doppler audit token with dp.audit. prefix. Read-only access to the workplace audit"
+        " log — it cannot read secrets, so impact is disclosure of activity metadata"
+        " (who accessed what, when) rather than credential compromise."
+    ),
+    provider="doppler",
+    severity="medium",
+    # Source: https://docs.doppler.com/reference/auth-token-formats
+    regex=re.compile(
+        r"(?<![A-Za-z0-9._\-])"
+        r"(?P<secret>dp\.audit\.[0-9A-Za-z]{40,44})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["doppler", "DOPPLER_TOKEN", "dp.audit", "audit"],
+    known_test_values={"dp.audit." + "0" * 43},
+    recommendation=(
+        "Revoke this audit token in the Doppler dashboard under Team > Audit."
+        " It exposes workplace activity metadata but not secret values."
+    ),
+    tags=["cloud", "doppler", "audit"],
+)
+
+
+DOPPLER_SCIM_TOKEN = SecretPattern(
+    id="doppler_scim_token",
+    name="Doppler SCIM Token",
+    description=(
+        "Doppler SCIM token with dp.scim. prefix. Used by an identity provider to provision"
+        " and de-provision Doppler users. It cannot read secrets, but it can create, modify"
+        " and remove workplace members — an account-takeover primitive."
+    ),
+    provider="doppler",
+    severity="high",
+    # Source: https://docs.doppler.com/reference/auth-token-formats
+    regex=re.compile(
+        r"(?<![A-Za-z0-9._\-])"
+        r"(?P<secret>dp\.scim\.[0-9A-Za-z]{40,44})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,
+    context_keywords=["doppler", "DOPPLER_TOKEN", "dp.scim", "scim", "provisioning"],
+    known_test_values={"dp.scim." + "0" * 43},
+    recommendation=(
+        "Revoke this SCIM token in the Doppler dashboard under Team > SCIM and reissue it"
+        " in your identity provider. Audit recent user provisioning changes."
+    ),
+    tags=["cloud", "doppler", "scim", "provisioning"],
+)
+
+
+# ===================================================
+# GOOGLE CLOUD STORAGE — HMAC KEYS
+# ===================================================
+
+GCS_HMAC_ACCESS_KEY_ID = SecretPattern(
+    id="gcs_hmac_access_key_id",
+    name="Google Cloud Storage HMAC Access Key ID",
+    description=(
+        "Google Cloud Storage HMAC access key ID, used with the S3-compatible XML API."
+        " Service-account keys are 61 characters, user-account keys 24 — both begin GOOG"
+        " and use uppercase alphanumerics only."
+    ),
+    provider="gcp",
+    severity="critical",
+    # Scope decision: the access key ID is flagged, its paired secret is NOT.
+    # The paired secret is a bare, unanchored 40-character base64 string with no
+    # prefix or structure to key on — registering it would be a generic-base64
+    # false-positive cannon. Flagging the ID alone mirrors how this engine
+    # already handles AWS AKIA access key IDs, whose secret is likewise omitted.
+    # Both documented lengths are pinned: 61 chars (service account) and 24
+    # chars (user account). The prefix is plain GOOG per Google's own example —
+    # the widely-circulated GOOG1E variant is not a Google-published anchor.
+    # Source: https://docs.cloud.google.com/storage/docs/authentication/hmackeys
+    regex=re.compile(
+        r"(?<![0-9A-Z])"
+        r"(?P<secret>GOOG(?:[0-9A-Z]{57}|[0-9A-Z]{20}))"
+        r"(?![0-9A-Z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "gcs",
+        "hmac",
+        "google",
+        "storage",
+        "access_id",
+        "GOOG",
+        "s3",
+    ],
+    known_test_values={"GOOG" + "0" * 57, "GOOG" + "0" * 20},
+    recommendation=(
+        "Delete this HMAC key in the Google Cloud console under Cloud Storage > Settings >"
+        " Interoperability, and rotate the paired secret. Audit the owning service"
+        " account's Cloud Storage access logs."
+    ),
+    tags=["cloud", "gcp", "gcs", "hmac", "storage"],
+)
+
 
 # ===================================================
 # TERRAFORM CLOUD
@@ -1499,4 +1718,12 @@ register(
     AMAZON_MWS_AUTH_TOKEN,
     # 2026-07-30 — Infisical service token ('st.' + UUID + 32 hex, generator-sourced)
     INFISICAL_SERVICE_TOKEN,
+    # 2026-08-03 — the remaining five Doppler auth-token families (vendor-published regexes)
+    DOPPLER_CLI_TOKEN,
+    DOPPLER_SERVICE_TOKEN,
+    DOPPLER_SERVICE_ACCOUNT_TOKEN,
+    DOPPLER_AUDIT_TOKEN,
+    DOPPLER_SCIM_TOKEN,
+    # 2026-08-03 — GCS HMAC access key ID (ID only; paired secret deliberately not registered)
+    GCS_HMAC_ACCESS_KEY_ID,
 )
