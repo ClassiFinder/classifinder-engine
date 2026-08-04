@@ -724,6 +724,64 @@ HUBSPOT_PRIVATE_APP_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# HCAPTCHA — SITEVERIFY SECRET KEY
+# ===================================================
+
+HCAPTCHA_SITEVERIFY_SECRET_KEY = SecretPattern(
+    id="hcaptcha_siteverify_secret_key",
+    name="hCaptcha Siteverify Secret Key",
+    description=(
+        "hCaptcha server-side secret key, the credential POSTed as 'secret' to"
+        " https://api.hcaptcha.com/siteverify. Two live shapes: the legacy/standard"
+        " '0x' + 40 hex characters, and the current enterprise 'ES_' + 32 hex"
+        " characters. Detected only when an hCaptcha context word ('hcaptcha' or"
+        " 'siteverify') precedes the value on the same line — the '0x' + 40-hex form is"
+        " byte-identical to a public Ethereum wallet ADDRESS, which is not a secret and"
+        " appears freely in ordinary text, so matching it bare would be an FP cannon."
+    ),
+    provider="hcaptcha",
+    severity="medium",
+    # Context-gated on purpose, following the ethereum_private_key precedent in
+    # payment.py: the '0x' + 40-hex branch has exactly the shape of an Ethereum
+    # address, so an ungated format-only regex would fire on every wallet address,
+    # contract address and block-explorer link in ordinary text. Requiring an
+    # hCaptcha-specific word before the value makes an uncontextualised address
+    # unmatchable rather than merely low-confidence. The vendor's published dummy
+    # secret (all zeros) is registered as a known test value below.
+    # Source: https://docs.hcaptcha.com/ (Developer Guide — siteverify secret key)
+    regex=re.compile(
+        r"(?:hcaptcha|siteverify)"
+        r"[^\n]{0,60}?"
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>0x[a-fA-F0-9]{40}|ES_[a-fA-F0-9]{32})"
+        r"(?![a-fA-F0-9])",
+        re.ASCII | re.IGNORECASE,
+    ),
+    confidence_base=0.80,
+    entropy_threshold=3.0,
+    context_keywords=[
+        "hcaptcha",
+        "HCAPTCHA_SECRET",
+        "siteverify",
+        "captcha",
+        "hcaptcha.com",
+    ],
+    known_test_values={
+        # Vendor-published dummy secret from the hCaptcha test key pairs.
+        # Written by concatenation so no contiguous key literal exists in source.
+        "0x" + "0" * 40,
+    },
+    recommendation=(
+        "Rotate this secret key in the hCaptcha dashboard (Settings > Secret Key) and"
+        " update every server that calls https://api.hcaptcha.com/siteverify. The secret"
+        " authenticates verification calls, so a leaked one lets a third party verify"
+        " tokens against your account and burn your verification quota."
+    ),
+    tags=["identity", "hcaptcha", "captcha", "anti-bot"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -748,4 +806,6 @@ register(
     # 2026-08-03 — Unkey root key ('unkey_' + 24 base58) and HubSpot private app token
     UNKEY_ROOT_KEY,
     HUBSPOT_PRIVATE_APP_TOKEN,
+    # 2026-08-04 — hCaptcha siteverify secret key (context-gated; 0x+40hex / ES_+32hex)
+    HCAPTCHA_SITEVERIFY_SECRET_KEY,
 )
