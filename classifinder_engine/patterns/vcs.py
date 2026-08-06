@@ -705,6 +705,56 @@ NUGET_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# CRATES.IO
+# ===================================================
+
+CRATES_IO_API_TOKEN = SecretPattern(
+    id="crates_io_api_token",
+    name="crates.io API Token",
+    description=(
+        "crates.io API token: the literal cio prefix followed by exactly 32"
+        " alphanumeric characters, 35 characters in total."
+        " Grants publish and yank rights on the Rust package registry."
+    ),
+    provider="crates_io",
+    severity="critical",
+    # crates.io's own token generator is the authority for this shape:
+    # PlainToken::generate() returns TOKEN_PREFIX + generate_secure_alphanumeric_string(
+    # TOKEN_LENGTH), where TOKEN_PREFIX = "cio" and TOKEN_LENGTH = 32, and the helper
+    # draws from rand::distr::Alphanumeric (a-z, A-Z, 0-9). HashedToken::parse()
+    # rejects any token that does not start with the prefix, and the source carries
+    # the comment "NEVER CHANGE THE PREFIX OF EXISTING TOKENS!!!" — so the prefix is
+    # both mandatory and stable. The `cio` anchor is only three characters, so the
+    # exact {32} bound, the two alphanumeric boundaries and the entropy threshold
+    # are what carry the precision here, not the prefix.
+    # Source: https://github.com/rust-lang/crates.io/blob/main/crates/crates_io_database/src/utils/token.rs
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>cio[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.80,
+    entropy_threshold=3.5,
+    context_keywords=[
+        "cargo",
+        "crates.io",
+        "crates",
+        "CARGO_REGISTRY_TOKEN",
+        "registry.token",
+        "credentials.toml",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Revoke this token at crates.io under Account Settings > API Tokens,"
+        " then run `cargo logout` and re-authenticate."
+        " An attacker can publish or yank crates under your name."
+    ),
+    tags=["vcs", "crates-io", "registry"],
+)
+
+
 register(
     GITHUB_PAT_CLASSIC,
     GITHUB_PAT_FINE_GRAINED,
@@ -728,4 +778,5 @@ register(
     RUBYGEMS_TOKEN,
     AIRTABLE_API_KEY,
     NUGET_API_KEY,
+    CRATES_IO_API_TOKEN,
 )
