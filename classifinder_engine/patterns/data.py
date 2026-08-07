@@ -195,6 +195,50 @@ POSTHOG_PERSONAL_API_KEY = SecretPattern(
 )
 
 
+POSTHOG_SECRET_API_TOKEN = SecretPattern(
+    id="posthog_secret_api_token",
+    name="PostHog Secret API Token",
+    description=(
+        "PostHog secret API token with phs_ prefix and a 48-49 character base57 body."
+        " Authenticates feature-flag local evaluation, which returns every flag"
+        " definition for the project including rollout percentages and cohort filters."
+    ),
+    provider="posthog",
+    severity="high",
+    # Body charset is PostHog's BASE57 = BASE62 minus the ambiguous characters
+    # 0, 1, O, I and l, so a token can never contain those five. Length is 48 OR
+    # 49: generate_random_token_secret() is "phs_" + generate_random_token(35),
+    # which forces the top bit of a 280-bit integer and base-57 encodes it
+    # without zero padding. 57**48 == 2**279.98 < 2**280, so about 3% of tokens
+    # carry a 49th character; a fixed {48} bound would silently miss those.
+    # Source: https://github.com/PostHog/posthog/blob/master/posthog/models/utils.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>phs_[23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ]{48,49})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=4.0,
+    context_keywords=[
+        "posthog",
+        "POSTHOG_SECRET_API_KEY",
+        "local_evaluation",
+        "feature_flag",
+        "phs_",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Rotate this PostHog secret API token under Project Settings > Feature"
+        " flags > Secure API key, then update every service that calls"
+        " /api/feature_flag/local_evaluation. Treat the flag definitions it"
+        " exposed as disclosed — rollout conditions and cohort definitions"
+        " commonly embed user-property filters."
+    ),
+    tags=["data", "posthog", "analytics", "feature-flags"],
+)
+
+
 # ===================================================
 # POSTMAN
 # ===================================================
@@ -735,6 +779,9 @@ register(
     PLANETSCALE_PASSWORD,
     POSTHOG_PROJECT_API_KEY,
     POSTHOG_PERSONAL_API_KEY,
+    # 2026-08-07 — PostHog secret API token (phs_), the feature-flag
+    # local-evaluation credential; distinct from phc_ and phx_ above
+    POSTHOG_SECRET_API_TOKEN,
     POSTMAN_API_TOKEN,
     ALGOLIA_API_KEY,
     CONTENTFUL_DELIVERY_API_TOKEN,
