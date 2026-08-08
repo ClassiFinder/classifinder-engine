@@ -796,6 +796,74 @@ COCKROACHDB_CLOUD_API_KEY = SecretPattern(
 )
 
 
+MONGODB_ATLAS_SERVICE_ACCOUNT_CLIENT_SECRET = SecretPattern(
+    id="mongodb_atlas_service_account_client_secret",
+    name="MongoDB Atlas Service Account Client Secret",
+    description=(
+        "MongoDB Atlas Service Account client secret — the password half of the"
+        " OAuth2 client-credentials pair that authenticates to the Atlas"
+        " Administration API, the Atlas CLI, and the Terraform provider."
+        " Structure is the literal 'mdb_sa_sk_' prefix followed by a 40-character"
+        " body (50 characters total). Its companion 'mdb_sa_id_' client ID is the"
+        " public username half and is deliberately NOT matched. The secret carries"
+        " whatever organization or project roles the service account holds, up to"
+        " full control-plane access."
+    ),
+    provider="mongodb",
+    severity="high",
+    # Format pinned from MongoDB's OWN first-party secret scanner, mongodb/kingfisher
+    # (crates/kingfisher-rules/data/rules/mongodb.yml, rule kingfisher.mongodb.4
+    # "MongoDB Atlas Service Account Token"): 'mdb_sa_sk_' + 6 [A-Za-z0-9_-] +
+    # 34 alphanumerics, with a live-validation endpoint and a full-length example
+    # whose body is exactly 40 characters. Atlas's prose docs publish the prefix but
+    # describe the body only as "<random-string>", so the vendor's own key-handling
+    # code is the authority here rather than the prose. The narrower 6+34 split is
+    # shipped verbatim from that vendor rule rather than widened to a flat 40-char
+    # base64url body: the format is not invented here and is not broadened past what
+    # MongoDB's own tooling asserts.
+    # No entropy threshold: the 10-character vendor-unique prefix plus the fixed
+    # 50-character length carry the signal, and a gate would only add FN risk.
+    # Regex independently authored; only the format facts were used.
+    # Source: https://github.com/mongodb/kingfisher/blob/main/crates/kingfisher-rules/data/rules/mongodb.yml
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>mdb_sa_sk_[A-Za-z0-9_-]{6}[A-Za-z0-9]{34})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # prefix-anchored + fixed 50-character length
+    entropy_threshold=0.0,
+    context_keywords=[
+        "mongodb",
+        "atlas",
+        "service_account",
+        "serviceaccount",
+        "client_secret",
+        "clientSecret",
+        "MONGODB_ATLAS_CLIENT_SECRET",
+        "cloud.mongodb.com",
+    ],
+    known_test_values={
+        # The example value published in MongoDB's own kingfisher rule file
+        # (rule kingfisher.mongodb.4). Built by string concatenation so no
+        # scannable key literal exists in source, which GitHub push protection
+        # would otherwise block on the public engine repo.
+        "mdb_sa_sk_" + "BdIX_j" + "Lzut2WTgglKzKvSgWMDDj5hEoTqdwOyLOL",
+    },
+    recommendation=(
+        "Revoke the client secret in the Atlas UI under Organization Access"
+        " Manager > Applications > Service Accounts (or via the Admin API"
+        " serviceAccounts/{clientId}/secrets endpoint), then issue a replacement"
+        " and update the Atlas CLI profiles, Terraform provider credentials, and"
+        " CI configurations that use it. Review the organization's Atlas activity"
+        " feed for unexpected cluster, database-user, or IP access-list changes"
+        " since the leak, and confirm the service account's roles are still"
+        " least-privilege."
+    ),
+    tags=["database", "mongodb", "atlas", "cloud-api", "service-account"],
+)
+
+
 register(
     POSTGRES_CONNECTION_STRING,
     MYSQL_CONNECTION_STRING,
@@ -820,4 +888,6 @@ register(
     SUPABASE_SECRET_KEY,
     # 2026-07-29 — CockroachDB Cloud service-account API key (CCDB1_ prefix)
     COCKROACHDB_CLOUD_API_KEY,
+    # 2026-08-05 — MongoDB Atlas service-account client secret (mdb_sa_sk_ prefix)
+    MONGODB_ATLAS_SERVICE_ACCOUNT_CLIENT_SECRET,
 )
