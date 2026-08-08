@@ -42,7 +42,7 @@ classifinder-engine/
         └── prompt_injection.py # Role-hijack tokens, jailbreak personas, instruction-override phrases — 4 phase-1 + 6 phase-2 (10 patterns) <!-- pattern-count-ignore -->
 ```
 
-**276 detection patterns** — 262 secret types across 10 categories + 14 prompt-injection markers (4 phase-1 high-precision + 6 phase-2 medium-precision + 4 phase-3 SAFE-MCP-derived). Each pattern includes a regex, base confidence score, entropy threshold, context keywords, known test values, and remediation guidance.
+**277 detection patterns** — 263 secret types across 10 categories + 14 prompt-injection markers (4 phase-1 high-precision + 6 phase-2 medium-precision + 4 phase-3 SAFE-MCP-derived). Each pattern includes a regex, base confidence score, entropy threshold, context keywords, known test values, and remediation guidance.
 
 ## How It Works
 
