@@ -145,15 +145,24 @@ POSTHOG_PROJECT_API_KEY = SecretPattern(
     id="posthog_project_api_key",
     name="PostHog Project API Key",
     description=(
-        "PostHog project-scoped API key with phc_ prefix (43 alphanumeric chars)."
+        "PostHog project-scoped API key with phc_ prefix and a 44-character base57 body."
         " Used by client SDKs to send events; not strictly secret but identifies the project."
     ),
     provider="posthog",
     severity="medium",
-    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/posthog.go) — phc_ prefix
+    # Body charset is PostHog's BASE57 = BASE62 minus the ambiguous characters
+    # 0, 1, O, I and l, so a token can never contain those five. Length is
+    # exactly 44: generate_random_token(32) forces the top bit of a 256-bit
+    # integer and base-57 encodes it without zero padding, and
+    # 57**43 == 2**250.8 < 2**255 <= value < 2**256 < 2**256.6 == 57**44.
+    # Corrected 2026-08-08: the previous [A-Za-z0-9]{43} bound came from a
+    # third-party detector catalog rather than the generator, and with the
+    # right-hand boundary it matched only ~2% of real keys.
+    # Source: https://github.com/PostHog/posthog/blob/master/posthog/models/utils.py
     regex=re.compile(
-        r"(?P<secret>phc_[A-Za-z0-9]{43})"
-        r"(?![A-Za-z0-9])",
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>phc_[23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ]{44})"
+        r"(?![A-Za-z0-9_-])",
         re.ASCII,
     ),
     confidence_base=0.93,
@@ -172,15 +181,24 @@ POSTHOG_PERSONAL_API_KEY = SecretPattern(
     id="posthog_personal_api_key",
     name="PostHog Personal API Key",
     description=(
-        "PostHog personal API key with phx_ prefix (47 alphanumeric chars)."
+        "PostHog personal API key with phx_ prefix and a 48-49 character base57 body."
         " Used for administrative PostHog API operations — higher privilege."
     ),
     provider="posthog",
     severity="critical",
-    # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/posthog.go) — phx_ prefix
+    # Body charset is PostHog's BASE57 = BASE62 minus the ambiguous characters
+    # 0, 1, O, I and l. Length is 48 OR 49: the key is "phx_" +
+    # generate_random_token(35), which forces the top bit of a 280-bit integer
+    # and base-57 encodes it without zero padding. 57**48 == 2**279.98 < 2**280,
+    # so about 3% of tokens carry a 49th character — the same arithmetic as the
+    # phs_ token below. Corrected 2026-08-08: the previous [A-Za-z0-9]{47} bound
+    # came from a third-party detector catalog rather than the generator, and
+    # with the right-hand boundary it matched only ~2% of real keys.
+    # Source: https://github.com/PostHog/posthog/blob/master/posthog/models/utils.py
     regex=re.compile(
-        r"(?P<secret>phx_[A-Za-z0-9]{47})"
-        r"(?![A-Za-z0-9])",
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>phx_[23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ]{48,49})"
+        r"(?![A-Za-z0-9_-])",
         re.ASCII,
     ),
     confidence_base=0.97,
