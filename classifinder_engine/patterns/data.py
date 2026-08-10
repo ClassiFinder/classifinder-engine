@@ -3,7 +3,7 @@ ClassiFinder — Data, Analytics, and Dev Tools Patterns (Batch 4 Part 2.3)
 
 Patterns for data warehouses (ClickHouse Cloud, PlanetScale), product analytics
 (PostHog), API tooling (Postman), search infrastructure (Algolia), and headless
-CMSes (Contentful).
+CMSes (Contentful, Ghost).
 
 Pattern design notes:
 - All patterns use prefix anchors or context gating per Betterleaks observations.
@@ -790,6 +790,108 @@ CONTENTFUL_MANAGEMENT_PERSONAL_ACCESS_TOKEN = SecretPattern(
     tags=["data", "contentful", "cms"],
 )
 
+
+# ===================================================
+# GHOST (2026-08-10)
+# ===================================================
+# Ghost's Admin API key is the colon-joined pair {id}:{secret}, and it is the
+# only pattern in this module with NO literal prefix to anchor on. The anchor is
+# structural instead — a fixed-width 24-hex + ':' + 64-hex run, 89 characters
+# exactly — so it is priced in the PEM-block / connection-string family
+# (confidence_base 0.90) rather than the 0.95 the prefix-anchored siblings above
+# get, and it carries no entropy threshold: hex is low-Shannon by construction
+# (a real key measures ~4.0 bits) and any penalty would suppress every genuine
+# credential.
+#
+# The two fixed widths come from the vendor's own code, not from prose:
+#   - The generator, TryGhost/framework packages/security/lib/secret.js, branches
+#     on the key type — 'content' takes 13 bytes / 26 hex, everything else takes
+#     32 bytes / 64 hex via crypto.randomBytes(bytes).toString('hex').
+#     TryGhost/Ghost core/server/models/api-key.js calls
+#     security.secret.create(this.get('type')), and 'admin' falls to that else
+#     branch, so the admin secret is exactly 64 lowercase hex characters. The
+#     26-hex CONTENT key is a different, lower-privilege credential and is
+#     deliberately not matched.
+#   - The 24-hex left half is a bson-objectid (Ghost's primary key), and the
+#     vendor's SDK validates the whole thing with /[0-9a-f]{24}:[0-9a-f]{64}/,
+#     erroring with "'key' must have the following format {A}:{B}, where A is 24
+#     hex characters and B is 64 hex characters".
+# token.js in the same package does key.split(':') and uses the halves as the
+# JWT 'keyid' header and the HS256 signing key, which is why the leaked artifact
+# is the single joined string rather than either half.
+#
+# Both boundary guards are load-bearing, and the left one carries ':' on purpose:
+#   - Without ':' in the lookbehind, an Astra DB application token
+#     (AstraCS:<24 alnum>:<64 hex>, database.py) whose client id happened to be
+#     all lowercase hex would embed this exact shape and be double-reported.
+#   - Hex characters in the same lookbehind are what defeat the colon-joined
+#     hash pair, the realistic FP surface here: an 'md5:sha256' manifest line
+#     offers a 32-hex left side, which cannot donate a 24-hex suffix once the
+#     preceding character must be non-hex. 'sha1:sha256' fails the same way.
+# A bare ObjectId, a bare sha256, and 23/25-hex or 63/65-hex near-misses all
+# fall out for want of the other half or the exact width. Every case is pinned
+# in tests.
+
+GHOST_ADMIN_API_KEY = SecretPattern(
+    id="ghost_admin_api_key",
+    name="Ghost Admin API Key",
+    description=(
+        "Ghost Admin API key — a 24-character hexadecimal key id, a ':'"
+        " separator, and a 64-character lowercase-hex secret, 89 characters in"
+        " total. The two halves are split apart by Ghost's SDK and used as the"
+        " JWT 'keyid' header and the HS256 signing key, so the joined string is"
+        " the whole credential. Grants full Ghost Admin API access: creating and"
+        " modifying posts and pages, reading member PII including email"
+        " addresses, and managing users, integrations and themes. Distinct from"
+        " the 26-hex read-only Content API key, which is not matched."
+    ),
+    provider="ghost",
+    severity="critical",
+    # Width of the admin secret per Ghost's own generator,
+    # https://github.com/TryGhost/framework/blob/main/packages/security/lib/secret.js
+    # ('content' => 13 bytes/26 hex, else => 32 bytes/64 hex), selected by
+    # https://github.com/TryGhost/Ghost/blob/main/ghost/core/core/server/models/api-key.js
+    # which calls security.secret.create(this.get('type')). Both widths and the
+    # colon join are restated as a machine-readable spec by the vendor's own SDK
+    # validator. Independently authored from those vendor sources — the
+    # boundary guards, confidence and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/TryGhost/SDK/blob/main/packages/admin-api/lib/admin-api.js
+    regex=re.compile(
+        r"(?<![0-9A-Za-z:._-])"
+        r"(?P<secret>[0-9a-f]{24}:[0-9a-f]{64})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    # Structural anchor, not a prefix anchor — same family as the PEM blocks and
+    # connection strings, so 0.90 rather than the 0.95 used above.
+    confidence_base=0.90,
+    # Deliberately 0.0: a 64-hex body tops out near 4.0 bits, so any threshold
+    # that a placeholder failed would also fail real keys.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "ghost",
+        "GHOST_ADMIN_API_KEY",
+        "admin api key",
+        "ghost-admin-api",
+        "@tryghost/admin-api",
+    ],
+    known_test_values={
+        # All-zero halves — the canonical placeholder form, assembled by
+        # concatenation so no contiguous key literal exists in this file.
+        # Down-scores to ~0.15.
+        "0" * 24 + ":" + "0" * 64,
+    },
+    recommendation=(
+        "Delete this integration's key in Ghost under Settings > Integrations,"
+        " create a replacement, and update it everywhere the Admin API is"
+        " called — CI, deployment scripts, and any @tryghost/admin-api client."
+        " Because the key grants full Admin API access, review the site for"
+        " unexpected posts, pages, users, themes or integrations, and treat"
+        " member email addresses as exposed while the key was public."
+    ),
+    tags=["data", "ghost", "cms"],
+)
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -819,4 +921,7 @@ register(
     # 2026-08-01 — Contentful Management personal access token (CFPAT- prefix,
     # distinct from the context-gated read-only delivery token above)
     CONTENTFUL_MANAGEMENT_PERSONAL_ACCESS_TOKEN,
+    # 2026-08-10 — Ghost Admin API key (structurally anchored 24hex:64hex, the
+    # only prefix-less pattern in this module; the 26-hex Content key is excluded)
+    GHOST_ADMIN_API_KEY,
 )
