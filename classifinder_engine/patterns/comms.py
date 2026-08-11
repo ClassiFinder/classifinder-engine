@@ -1662,6 +1662,76 @@ LOB_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# CAL.COM (2026-08-08)
+# ===================================================
+
+CAL_COM_API_KEY = SecretPattern(
+    id="cal_com_api_key",
+    name="Cal.com API Key",
+    description=(
+        "Cal.com API key — the credential for the scheduling platform's REST"
+        " API, sent as an 'Authorization: Bearer' header. Live-mode keys are"
+        " the literal 'cal_live_' prefix followed by exactly 32 lowercase-hex"
+        " characters, 41 characters in total, because Cal.com's generator"
+        " hex-encodes 16 random bytes. The key grants full API access to the"
+        " account's bookings, event types, availability and attendee records,"
+        " so a leak exposes participants' names, email addresses and calendar"
+        " contents. Self-hosted instances keep the default 'cal_' prefix, which"
+        " is deliberately NOT matched: a bare 'cal_' anchor is a common code"
+        " identifier prefix, and a bare 32-character lowercase-hex body is"
+        " indistinguishable from an MD5 digest."
+    ),
+    provider="cal_com",
+    severity="high",
+    # Two independent vendor facts fix this shape. Prefix: Cal.com's API
+    # reference states test-mode keys use 'cal_' and live-mode keys use
+    # 'cal_live_', and its generator agrees —
+    # packages/trpc/server/routers/viewer/apiKeys/create.handler.ts reads
+    # `const apiKeyPrefix = process.env.API_KEY_PREFIX ?? "cal_"` and emits
+    # `${apiKeyPrefix}${apiKey}`, while apps/api/v2/src/lib/api-key/index.ts
+    # gates on `authString?.startsWith(prefix ?? "cal_")`. Cal.com's hosted
+    # deployment sets API_KEY_PREFIX=cal_live_. Body: packages/features/
+    # api-keys-legacy/api-keys/lib/apiKeys.ts defines `generateUniqueAPIKey =
+    # (apiKey = randomBytes(16).toString("hex")) => [hashAPIKey(apiKey), apiKey]`
+    # and Node's hex encoding of 16 bytes is exactly 32 lowercase hex chars, so
+    # a live key is 41 characters. A widely-circulated third-party article
+    # claims randomBytes(24) / 48 hex; that contradicts the vendor generator and
+    # is not shipped. Regex independently authored; the token boundaries are
+    # ClassiFinder's own false-positive guard, and TruffleHog (AGPL-3.0) was
+    # neither read nor consulted.
+    # Format per https://cal.com/docs/api-reference/v2/introduction
+    regex=re.compile(
+        r"(?<![0-9A-Za-z])"
+        r"(?P<secret>cal_live_[0-9a-f]{32})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # 9-character literal anchor + strict fixed-length hex body
+    entropy_threshold=0.0,
+    context_keywords=[
+        "cal.com",
+        "calcom",
+        "CAL_API_KEY",
+        "CALCOM_API_KEY",
+        "booking",
+        "event-types",
+    ],
+    known_test_values={
+        # Synthetic sequential-hex body, assembled by concatenation so no
+        # scannable literal exists in source. Down-scores to ~0.15.
+        "cal_live_" + "0123456789abcdef0123456789abcdef",
+    },
+    recommendation=(
+        "Revoke this key in Cal.com under Settings > Developer > API Keys, issue"
+        " a replacement, and update every integration that used it. Audit recent"
+        " bookings for unauthorized creation, rescheduling or cancellation — the"
+        " key also reads attendee names and email addresses."
+    ),
+    tags=["comms", "cal-com", "scheduling"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -1715,4 +1785,6 @@ register(
     KLAVIYO_PRIVATE_API_KEY,
     # 2026-07-27 — Lob API key (vendor sourced, label-gated against GoCardless/Stripe)
     LOB_API_KEY,
+    # 2026-08-08 — Cal.com API key (vendor sourced, cal_live_ + 32-hex)
+    CAL_COM_API_KEY,
 )
