@@ -1341,6 +1341,66 @@ RAMP_CLIENT_SECRET = SecretPattern(
 )
 
 
+# ===================================================
+# BRAINTREE
+# ===================================================
+
+BRAINTREE_OAUTH_ACCESS_TOKEN = SecretPattern(
+    id="braintree_oauth_access_token",
+    name="Braintree OAuth Access Token (Production)",
+    description=(
+        "Braintree OAuth access token scoped to the production gateway. The credential is"
+        " '$'-delimited -- access_token$<environment>$<merchant_id>$<secret> -- and only the"
+        " 'production' environment is reported. It authorizes live payment-gateway operations"
+        " on a merchant account: creating and refunding transactions, and vaulting customers"
+        " and payment methods. Severity critical."
+    ),
+    provider="braintree",
+    severity="critical",
+    # The literal 'access_token' prefix is asserted by Braintree's OWN validator:
+    # braintree_ruby lib/braintree/credentials_parser.rb raises a ConfigurationError
+    # unless the value starts with "access_token". The '$'-delimited layout comes from
+    # that same file and from braintree_python braintree/credentials_parser.py, both of
+    # which read split("$")[1] as the environment and split("$")[2] as the merchant id --
+    # so the secret is segment 3. The legal environment values are exactly development /
+    # integration / qa / sandbox / production (braintree_python braintree/environment.py,
+    # Environment.All); only 'production' represents a live credential and only it is
+    # matched. Neither SDK validates the secret segment and Braintree publishes no width
+    # for it, so the 24-character 'access_token$production$' literal carries the precision
+    # here and the body is bounded generously rather than pinned to a third-party guess.
+    # Source: https://github.com/braintree/braintree_ruby/blob/master/lib/braintree/credentials_parser.rb
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>access_token\$production\$[A-Za-z0-9_-]{8,40}"
+        r"\$[A-Za-z0-9]{16,64})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # 24-character vendor-unique literal anchor
+    entropy_threshold=0.0,  # the literal anchor carries the signal; the body width is unknown
+    context_keywords=[
+        "braintree",
+        "BRAINTREE_ACCESS_TOKEN",
+        "paypal",
+        "gateway",
+        "merchant",
+    ],
+    known_test_values={
+        "access_token" + "$production$" + "0123456789abcdef" + "$" + "0123456789abcdef" * 2,
+        "access_token" + "$production$" + "0" * 16 + "$" + "0" * 32,
+    },
+    recommendation=(
+        "Revoke this access token immediately: call Braintree's OAuth revoke-access-token"
+        " endpoint, or disconnect the OAuth grant for the affected merchant from the"
+        " connected application. Rotate the paired refresh token as well -- the access token"
+        " expires 24 hours after creation but the refresh token does not, so it can mint new"
+        " ones. Then audit recent transactions, refunds and vault activity on that merchant"
+        " account."
+    ),
+    tags=["payment", "braintree", "paypal", "oauth", "fintech"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -1383,4 +1443,7 @@ register(
     MERCURY_PRODUCTION_API_TOKEN,
     # 2026-08-03 — Ramp API client secret ('ramp_sec_' + fixed 48-char body)
     RAMP_CLIENT_SECRET,
+    # 2026-08-11 — Braintree production OAuth access token
+    #              ('access_token$production$' literal anchor)
+    BRAINTREE_OAUTH_ACCESS_TOKEN,
 )
