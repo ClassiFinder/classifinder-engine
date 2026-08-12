@@ -1732,6 +1732,88 @@ CAL_COM_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# ROLLBAR (2026-08-12 — context-gated, prefix-less)
+# ===================================================
+
+ROLLBAR_PROJECT_ACCESS_TOKEN = SecretPattern(
+    id="rollbar_project_access_token",
+    name="Rollbar Project Access Token",
+    description=(
+        "Rollbar project access token — a 32-character lowercase-hex string"
+        " (128 bits) used to authenticate against the Rollbar item-ingest and"
+        " project APIs. The value carries no prefix of any kind, so a bare"
+        " token is indistinguishable from an MD5 digest; this detector is"
+        " therefore context-gated and only fires when a Rollbar-qualified label"
+        " sits immediately before the value — a ROLLBAR_* env var, a"
+        " 'rollbar' identifier within 40 characters of an access-token key"
+        " (e.g. rollbar.init({accessToken: ...})), or a literal"
+        " post_server_item / post_client_item scope name. A bare 'access_token'"
+        " label alone deliberately does NOT match: it is generic across every"
+        " OAuth implementation. Server (post_server_item) and client"
+        " (post_client_item) tokens are NOT distinguishable by shape — both are"
+        " bare 32-hex — and a post_client_item token is a write-only telemetry"
+        " token that ships publicly in browser bundles by design, which is why"
+        " this is rated high rather than critical. Covers the 128-bit token"
+        " form only; Rollbar's newer 512-bit V2 tokens are not matched, and the"
+        " trailing hex guard makes a longer token miss cleanly rather than"
+        " partially match."
+    ),
+    provider="rollbar",
+    severity="high",
+    # The 32-lowercase-hex width comes from Rollbar's OWN sources, not from a
+    # third-party detector catalog: the vendor's Terraform provider documents a
+    # concrete import example `<project_id>/<32-hex access_token>`, and that
+    # provider's client/project_access_token_test.go carries eight distinct
+    # fixtures that are all exactly 32 lowercase hex characters.
+    # docs.rollbar.com/docs/access-tokens corroborates the 128-bit width and the
+    # read / write / post_server_item / post_client_item scopes.
+    # There is deliberately NO `post_server_item_` value prefix: every official
+    # Rollbar SDK uses the ALL-CAPS string POST_SERVER_ITEM_ACCESS_TOKEN as a
+    # fill-me-in placeholder for the token's VALUE, and the one repo that reads
+    # it as a prefix (rollbar-js-wizard) misread that placeholder. Shipping such
+    # a prefix would miss 100% of real tokens — see ATTRIBUTION.md.
+    # The `(?i:...)` scope is load-bearing: a global re.IGNORECASE would widen
+    # the body to uppercase hex, which is a common checksum rendering and pure
+    # false-positive surface. Rollbar tokens are lowercase hex only.
+    # Format per docs.rollbar.com/docs/access-tokens and the vendor's own
+    # terraform-provider-rollbar fixtures (URLs in ATTRIBUTION.md).
+    regex=re.compile(
+        r"(?i:"
+        r"rollbar[^\n]{0,40}?access[_-]?token"
+        r"|post[_-]?(?:server|client)[_-]?item[_-]?access[_-]?token"
+        r")"
+        r"[\"'\s]*[=:][\"'\s]*"
+        r"(?P<secret>[a-f0-9]{32})"
+        r"(?![a-fA-F0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.60,  # format-only — the value has no distinctive prefix
+    entropy_threshold=3.0,  # penalize low-entropy 32-hex placeholders
+    context_keywords=[
+        "rollbar",
+        "ROLLBAR_ACCESS_TOKEN",
+        "post_server_item",
+        "post_client_item",
+        "rollbar.com",
+        "api.rollbar.com",
+    ],
+    known_test_values={
+        # Synthetic, sequential hex — not a live token.
+        "0123456789abcdef" "0123456789abcdef",
+    },
+    recommendation=(
+        "Rotate this token in the Rollbar dashboard under Settings > Project"
+        " Access Tokens (disable the old one, then create a replacement)."
+        " Check the token's scopes first: a post_client_item token is"
+        " write-only telemetry ingest and is expected to be public, whereas a"
+        " post_server_item, read or write token exposes your project's error"
+        " data and configuration and should be treated as compromised."
+    ),
+    tags=["monitoring", "rollbar", "observability"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -1787,4 +1869,6 @@ register(
     LOB_API_KEY,
     # 2026-08-08 — Cal.com API key (vendor sourced, cal_live_ + 32-hex)
     CAL_COM_API_KEY,
+    # 2026-08-12 — Rollbar project access token (vendor sourced, context-gated 32-hex)
+    ROLLBAR_PROJECT_ACCESS_TOKEN,
 )
