@@ -1401,6 +1401,174 @@ BRAINTREE_OAUTH_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# MOLLIE (2026-08-13 — split live / test, both context-gated)
+# ===================================================
+#
+# Mollie ships one credential shape for two very different credentials:
+# 'live_' + >=30 word chars and 'test_' + >=30 word chars (the vendor's own
+# TokenValidator pins /^(live|test)_\w{30,}$/). They are split into two
+# patterns because a live key is full Payments API auth and a test key cannot
+# move money, and the registry prices live-vs-test separately elsewhere
+# (stripe_live_secret_key vs stripe_test_secret_key).
+#
+# Both arms are context-gated on a Mollie key label. A bare (live|test)_ +
+# 30..64 alphanumeric body is NOT unique -- it overlaps two detectors that
+# already ship in this registry:
+#   * gocardless_access_token (this module): live_ + 40 chars. A GoCardless
+#     token whose 40 characters happen to be pure alphanumeric sits inside
+#     Mollie's width window. The left-edge lookbehind does not separate them:
+#     GoCardless's live_ is also at a word boundary.
+#   * lob_api_key (comms.py): (live|test)_ + a 35-character body -- the same
+#     prefix set AND inside Mollie's width window, on both arms.
+# Both of those neighbours are themselves label-gated ('gocardless' / 'lob'),
+# so gating Mollie the same way makes all three mutually exclusive on real
+# text. This is the Lob precedent applied verbatim, down to the 0.85 base and
+# the label-then-separator regex shape.
+#
+# Stripe is a separate, weaker problem and is handled structurally: the
+# (?<![A-Za-z0-9_]) guard before the secret rejects sk_live_ / sk_test_ /
+# pk_live_ / rk_live_, because those prefixes end in an underscore. Verified
+# against modern 51-prefixed ~60-character Stripe keys, not just the short
+# 24-character documentation key.
+
+MOLLIE_TEST_API_KEY = SecretPattern(
+    id="mollie_test_api_key",
+    name="Mollie Test API Key",
+    description=(
+        "Mollie test-mode API key — the literal prefix 'test_' followed by a"
+        " 30-64 character alphanumeric body, gated on a nearby Mollie key"
+        " label. Authenticates against the Mollie Payments API in test mode:"
+        " it exposes account structure, webhook configuration and test-mode"
+        " payment data, but cannot charge a card, issue a real refund or move"
+        " money, which is why it is medium rather than critical."
+        "\n\n"
+        "Collision guard. The 'test_' prefix and this width window are shared"
+        " with lob_api_key (test_ + a 35-character body), so this pattern is"
+        " label-gated exactly as Lob is; a Lob key under a Lob label reports as"
+        " Lob and nothing else. Stripe's sk_test_ / pk_test_ keys cannot match:"
+        " the secret must begin at 'test_' immediately after the label"
+        " separator, and the (?<![A-Za-z0-9_]) guard rejects the underscore"
+        " that Stripe's prefixes end with. Regression tests cover both"
+        " directions."
+    ),
+    provider="mollie",
+    severity="medium",
+    # Body charset is a deduction, not a vendor quote: Mollie's validator says
+    # \w (which admits '_'), but zero published Mollie examples contain one, so
+    # the tighter [A-Za-z0-9] ships and an underscore-bearing key is an
+    # accepted, documented recall gap. The 64 ceiling is ClassiFinder's, not
+    # Mollie's — the vendor sets no upper bound, so a longer token misses
+    # CLEANLY rather than partially matching (rollbar_project_access_token
+    # precedent). The Mollie label gate, the boundary guards and the
+    # case-exact prefix are likewise our own anti-collision work.
+    # Format per mollie/mollie-api-php src/Http/Auth/TokenValidator.php,
+    # API_KEY_PATTERN = /^(live|test)_\w{30,}$/ (URLs in ATTRIBUTION.md).
+    regex=re.compile(
+        r"(?<![0-9A-Za-z])"
+        r"(?i:mollie[0-9A-Za-z._>-]{0,24}(?:key|token|secret))"
+        r"[\s]*[=:(>\"'\s]+"
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>test_[A-Za-z0-9]{30,64})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.85,  # bare test_ prefix — the Mollie label gate carries the weight
+    entropy_threshold=3.5,
+    context_keywords=[
+        "mollie",
+        "MOLLIE_API_KEY",
+        "api.mollie.com",
+        "setApiKey",
+        "payment",
+    ],
+    known_test_values={
+        # Mollie's own README placeholder, identical across the official PHP,
+        # Python and Node SDKs. Assembled by concatenation so no contiguous
+        # key literal exists in this source file. Down-scores to ~0.15.
+        "test_" + "dHar4XY7LxsDOtmnkVtjNVWXLSlXsM",
+    },
+    recommendation=(
+        "Revoke this key in the Mollie Dashboard under Developers > API keys"
+        " and generate a replacement. A test key cannot move money, but it"
+        " reveals your account structure, webhook endpoints and test-mode"
+        " payment history — and its presence usually means the matching live"
+        " key is handled the same way, so audit that too."
+    ),
+    tags=["payment", "mollie", "test-credential"],
+)
+
+
+MOLLIE_LIVE_API_KEY = SecretPattern(
+    id="mollie_live_api_key",
+    name="Mollie Live API Key",
+    description=(
+        "Mollie live-mode API key — the literal prefix 'live_' followed by a"
+        " 30-64 character alphanumeric body, gated on a nearby Mollie key"
+        " label. This is full Payments API authentication: it can read every"
+        " payment and customer record, issue refunds and move money, hence"
+        " critical."
+        "\n\n"
+        "Collision guard. The 'live_' prefix and this width window are shared"
+        " with two detectors already in the registry —"
+        " gocardless_access_token (live_ + 40 characters, pure-alphanumeric"
+        " instances of which fall inside this window) and lob_api_key (live_ +"
+        " 35 characters). Both are themselves label-gated, so gating Mollie the"
+        " same way makes all three mutually exclusive on real text; a"
+        " GoCardless or Lob token under its own label reports as that provider"
+        " and produces no Mollie finding. Stripe's sk_live_ / pk_live_ /"
+        " rk_live_ keys cannot match because the secret must begin at 'live_'"
+        " immediately after the label separator and the (?<![A-Za-z0-9_]) guard"
+        " rejects their trailing underscore. The cost is real: a live_ key with"
+        " no Mollie label within ~24 characters is deliberately not reported."
+        " That recall gap is accepted in exchange for not cross-firing on two"
+        " shipping detectors."
+    ),
+    provider="mollie",
+    severity="critical",
+    # Prefix set and the >=30 body floor are the vendor's own: mollie-api-php's
+    # TokenValidator pins /^(live|test)_\w{30,}$/, and mollie-api-python's
+    # client.py corroborates the prefix set with ^(live|test)_\w+$ and the
+    # error "An API key must start with 'test_' or 'live_'". Body charset
+    # ([A-Za-z0-9], not \w), the 64 ceiling, the case-exact prefix and the
+    # whole Mollie label gate are ClassiFinder's tightening — see
+    # ATTRIBUTION.md. No third-party detector catalog was used.
+    # Format per mollie/mollie-api-php src/Http/Auth/TokenValidator.php and
+    # mollie/mollie-api-python mollie/api/client.py (URLs in ATTRIBUTION.md).
+    regex=re.compile(
+        r"(?<![0-9A-Za-z])"
+        r"(?i:mollie[0-9A-Za-z._>-]{0,24}(?:key|token|secret))"
+        r"[\s]*[=:(>\"'\s]+"
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>live_[A-Za-z0-9]{30,64})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.85,  # bare live_ prefix — the Mollie label gate carries the weight
+    entropy_threshold=3.5,
+    context_keywords=[
+        "mollie",
+        "MOLLIE_API_KEY",
+        "api.mollie.com",
+        "setApiKey",
+        "payment",
+    ],
+    known_test_values={
+        # The live_ rendering of Mollie's own README placeholder body.
+        # Concatenated so no contiguous key literal exists in this source file.
+        "live_" + "dHar4XY7LxsDOtmnkVtjNVWXLSlXsM",
+    },
+    recommendation=(
+        "Treat this as a live payment credential and revoke it immediately in"
+        " the Mollie Dashboard under Developers > API keys, then create a"
+        " replacement. Before assuming impact, audit recent payments, refunds"
+        " and settlements in the Dashboard — a live key can issue refunds and"
+        " read full customer and payment records."
+    ),
+    tags=["payment", "mollie", "fintech"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -1446,4 +1614,9 @@ register(
     # 2026-08-11 — Braintree production OAuth access token
     #              ('access_token$production$' literal anchor)
     BRAINTREE_OAUTH_ACCESS_TOKEN,
+    # 2026-08-13 — Mollie API keys, split by mode: test_ is structural,
+    #              live_ is Mollie-context-gated to avoid cross-firing
+    #              with GOCARDLESS_ACCESS_TOKEN (also live_ + alnum).
+    MOLLIE_TEST_API_KEY,
+    MOLLIE_LIVE_API_KEY,
 )
