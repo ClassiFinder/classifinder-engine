@@ -96,6 +96,76 @@ AWS_SECRET_KEY = SecretPattern(
 )
 
 
+AWS_STS_SESSION_TOKEN = SecretPattern(
+    id="aws_sts_session_token",
+    name="AWS STS Session Token",
+    description=(
+        "AWS STS temporary session token — the third component of a temporary"
+        " credential triple, alongside an ASIA access key ID and a 40-character"
+        " secret access key. A base64 blob whose leading bytes are a fixed"
+        " binary header, which is what makes the base64 prefix deterministic."
+    ),
+    provider="aws",
+    severity="critical",
+    # The header literals decode to fixed protobuf bytes, so this is
+    # prefix-anchored rather than format-only:
+    #   IQoJb3JpZ2luX2Vj  -> 21 0a 09 'origin_ec'  (v2, current, dominant)
+    #   FwoGZXIvYXdz      -> 17 0a 06 'er/aws'     (v1, legacy)
+    #   FQoGZXIvYXdz      -> 15 0a 06 'er/aws'     (v1, legacy)
+    #   AQoDYXdz          -> 01 0a 03 'aws'        (legacy; AWS's own sample)
+    # All four are byte-aligned (16/12/12/8 base64 chars = 12/9/9/6 bytes), so
+    # there is no partial-byte bleed and the prefixes cannot drift. No entropy
+    # gate for the same reason the AKIA/ASIA pattern has none. The upper bound
+    # is deliberately open: AWS states the token size "is not fixed" and that
+    # callers should "make no assumptions about the maximum size". The charset
+    # excludes newlines because AWS's own XML and JSON samples hard-wrap tokens.
+    # Vendor-published format — SessionToken in the AWS STS AssumeRole API Reference
+    regex=re.compile(
+        r"(?<![A-Za-z0-9+/])"
+        r"(?P<secret>"
+        r"(?:IQoJb3JpZ2luX2Vj|F[wQ]oGZXIvYXdz|AQoDYXdz)"
+        r"[A-Za-z0-9+/]{100,}"
+        r"={0,2}"
+        r")"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # prefix-anchored, no entropy check needed
+    context_keywords=[
+        "aws",
+        "sts",
+        "session_token",
+        "AWS_SESSION_TOKEN",
+        "SessionToken",
+        "security_token",
+        "assume-role",
+        "credential",
+    ],
+    known_test_values={
+        # AWS's own AssumeRole sample response, joined from the five wrapped
+        # lines the API Reference prints. Assembled by concatenation so no
+        # scannable AWS-credential literal exists in source.
+        "AQoD"
+        + "YXdzEPT//////////wEXAMPLEtc764bNrC9SAPBSM22wDOk4x4HIZ8j4FZTwdQW"
+        + "LWsKWHGBuFqwAeMicRXmxfpSPfIeoIYRqTflfKD8YUuwthAx7mSEI/qkPpKPi/kMcGd"
+        + "QrmGdeehM4IC1NtBmUpp2wUE8phUZampKsburEDy0KPkyQDYwT7WZ0wq5VSXDvp75YU"
+        + "9HFvlRd8Tx6q6fE8YQcHNVXAkiY9q6d+xo0rKwT38xVqr7ZD0u0iPPkUL64lIZbqBAz"
+        + "+scqKmlzm8FDrypNC9Yjc8fPOLn9FX9KSYvKTr4rvx3iSIlTJabIQwj2ICCR/oLxBA==",
+    },
+    recommendation=(
+        "This is a temporary credential and cannot be rotated. Revoke the role"
+        " session immediately: attach an inline Deny policy scoped to"
+        " aws:TokenIssueTime (the AWSRevokeOlderSessions action in the IAM"
+        " console does this for you). Then audit the session's activity in"
+        " CloudTrail and rotate the long-lived credentials or identity"
+        " provider secret that was used to obtain it -- whoever holds those"
+        " can simply mint a replacement token."
+    ),
+    tags=["cloud", "aws", "iam", "sts", "temporary-credentials"],
+)
+
+
 # ===================================================
 # GCP
 # ===================================================
@@ -1676,6 +1746,9 @@ INFISICAL_SERVICE_TOKEN = SecretPattern(
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
+    # 2026-08-17 — STS temporary session token, the third component of the
+    # AWS credential triple (ASIA key ID + secret key were already covered)
+    AWS_STS_SESSION_TOKEN,
     GCP_API_KEY,
     GCP_SERVICE_ACCOUNT_KEY,
     AZURE_STORAGE_KEY,
