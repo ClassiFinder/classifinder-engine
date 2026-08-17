@@ -48,6 +48,57 @@ ClassiFinder's secret-detection pattern library has multiple lineages. Each patt
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 
+### microsoft/security-utilities (MIT)
+
+**Project:** https://github.com/microsoft/security-utilities
+**Copyright:** Microsoft Corporation
+**License:** MIT
+**Use in ClassiFinder:** Microsoft stamps a fixed 4-character signature into the keys it generates, at a fixed offset, so the credential announces its own issuing service without a leading prefix. `GeneratedRegexPatterns/HighConfidenceSecurityModels.json` in that repository publishes, for each service, the signature, the offset it sits at, and the key's total length. Those three facts are what the following nine patterns were derived from (2026-08-17):
+
+| ClassiFinder Pattern | Microsoft rule id(s) | Signature @ offset | Length |
+|---|---|---|---|
+| `azure_cosmos_db_key` | SEC101/160 | `ACDb` @ 76 | 88 |
+| `azure_functions_key` | SEC101/158 | `AzFu` @ 44 (base64URL) | 56 |
+| `azure_search_key` | SEC101/166, SEC101/167 | `AzSe` @ 42 | 52 |
+| `azure_event_hub_key` | SEC101/172 | `+AEh` @ 33 | 44 |
+| `azure_service_bus_key` | SEC101/171 | `+ASb` @ 33 | 44 |
+| `azure_iot_key` | SEC101/178, SEC101/179, SEC101/180 | `AIoT` @ 33 | 44 |
+| `azure_container_registry_key` | SEC101/176 | `+ACR` @ 42 | 52 |
+| `azure_apim_key` | SEC101/181–SEC101/184 | `APIM` @ 76 | 88 |
+| `microsoft_cask_key` | SEC101/200 | `JQQJ` @ 52 | 84, or 88 with the optional tail |
+
+Signature literals, offsets and lengths are unprotectable format facts, and the upstream project is MIT-licensed in any case, so this attribution is recorded for transparency rather than out of necessity. The shipped regexes are independently authored and differ materially from the upstream rules: Microsoft's are single-line generated patterns using a spelled-out 62-character alphabet, a `(?P<refine>…)` capture group and consuming boundary groups `(^|[^…])…([^…]|$)`; ClassiFinder's use character-class shorthand, a `(?P<secret>…)` group, and zero-width lookaround boundary guards so the reported span is exactly the credential. The left guard deliberately does not exclude `=`, so `AccountKey=<key>` still matches while a signature buried inside a longer blob does not.
+
+**Three deliberate departures from a naive port, all documented inline:**
+
+1. **Names do not overclaim.** Microsoft ships byte-identical regexes for Azure AI Search *admin* and *query* keys; for IoT Hub, IoT device and Device Provisioning keys; and for all four API Management key types. Those credentials are indistinguishable by format, so ClassiFinder uses one generic pattern and states the ambiguity in the description rather than picking the scariest subtype as a name.
+2. **`azure_search_key` carries a disclosed false-positive risk.** Query keys are public by design and are legitimately embedded in client-side JavaScript, so this pattern will fire on values their owners intended to publish. It ships anyway, at one notch lower confidence, because missing admin keys entirely is the worse failure.
+3. **No `known_test_values` are registered for any of the nine.** Microsoft publishes no literal example keys — its own tests call `GenerateTruePositiveExamples()` to build fixtures at runtime — so there is no vendor-published dummy to register, and inventing one would be worse than having none.
+
+`azure_cosmos_db_key` additionally fixes a pre-existing mislabel: the Cosmos shape is a strict subset of `azure_storage_key` (86 base64 characters + `==`) and real Cosmos connection strings genuinely use `AccountKey=`, so leaked Cosmos keys were previously reported as Azure Storage keys. Its confidence is set above the storage pattern's so the specific reading wins deduplication.
+
+> MIT License
+>
+> Copyright (c) Microsoft Corporation.
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all
+> copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
+
 ### SAFE-MCP (CC-BY-4.0)
 
 **Project:** https://github.com/safe-mcp/safe-mcp
