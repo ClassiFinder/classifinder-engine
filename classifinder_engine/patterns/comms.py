@@ -1814,6 +1814,78 @@ ROLLBAR_PROJECT_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# HONEYCOMB
+# ===================================================
+
+HONEYCOMB_INGEST_KEY = SecretPattern(
+    id="honeycomb_ingest_key",
+    name="Honeycomb Ingest Key",
+    description=(
+        "Honeycomb ingest key — 'hc' + a one-letter region + a two-letter keytype"
+        " + '_' + a 58-character lowercase-alphanumeric body, 64 characters total."
+        " The body is the 26-character key ID concatenated with the 32-character"
+        " secret and no separator, which is the exact string sent in the"
+        " X-Honeycomb-Team header. Grants write access to telemetry ingest for the"
+        " environment the key belongs to (events, traces, logs and metrics)."
+    ),
+    provider="honeycomb",
+    severity="medium",
+    # The 58-character body is the whole precision story and must not be relaxed.
+    # A Honeycomb ingest key ID on its own is 'hc<region><keytype>_' + 26
+    # characters and is a PUBLIC identifier, not a credential; only the ID
+    # concatenated with the 32-character secret (26 + 32 = 58) authenticates.
+    # A looser body bound would report the key ID as a leak.
+    #
+    # The charset is lowercase-only per the vendor regex — deliberately not
+    # widened to [A-Za-z0-9], which would trade real precision for keys that do
+    # not exist. There is no entropy_threshold: the body is fixed-width
+    # lowercase alphanumeric, so an entropy gate could only sink legitimate keys.
+    #
+    # 'hc[a-z]{3}_' is kept in the vendor's own general form rather than being
+    # narrowed to the documented keytypes (hcaik_/hcxik_/hcxlk_/hcxmk_), so a
+    # newly-issued region or keytype is detected rather than silently missed;
+    # the fixed 58-character body carries the precision instead. Refinery's
+    # 'hc[a-z][a-z]{2}' is a redundant spelling of the same thing.
+    #
+    # The other two alternands in the vendor regex — 32 lowercase hex ("classic"
+    # keys) and 20-23 alphanumerics (new-style keys) — are unanchorable generics
+    # and are deliberately NOT shipped: either would be a false-positive cannon.
+    #
+    # Source: https://github.com/honeycombio/refinery/blob/main/config/validate.go
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>hc[a-z]{3}_[a-z0-9]{58})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "honeycomb",
+        "HONEYCOMB_API_KEY",
+        "HONEYCOMB_INGEST_KEY",
+        "X-Honeycomb-Team",
+        "api.honeycomb.io",
+        "otlp",
+    ],
+    known_test_values={
+        # Printed verbatim in Honeycomb's own API reference for
+        # POST /2/keys (docs.honeycomb.io/api/key-management/createapikey):
+        # a 26-digit key ID joined to a 32-digit secret.
+        "hcxik_" "12345678901234567890123456" "12345678901234567890123456789012",
+    },
+    recommendation=(
+        "Revoke this key in the Honeycomb UI under Environment Settings > API"
+        " Keys (or via the Keys API) and issue a replacement. An ingest key is"
+        " write-only — it cannot read your telemetry — so the exposure is"
+        " unauthorized data injection and quota abuse rather than data theft,"
+        " but rotate it anyway and check ingest volume for anomalies."
+    ),
+    tags=["monitoring", "honeycomb", "observability", "telemetry"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -1871,4 +1943,6 @@ register(
     CAL_COM_API_KEY,
     # 2026-08-12 — Rollbar project access token (vendor sourced, context-gated 32-hex)
     ROLLBAR_PROJECT_ACCESS_TOKEN,
+    # 2026-08-17 — Honeycomb ingest key (vendor sourced, hc<region><keytype>_ + 58)
+    HONEYCOMB_INGEST_KEY,
 )
