@@ -889,6 +889,71 @@ RUNPOD_API_KEY = SecretPattern(
 )
 
 
+
+# ===================================================
+# BAIDU (QIANFAN / BCE)
+# ===================================================
+
+BAIDU_QIANFAN_BCE_API_KEY = SecretPattern(
+    id="baidu_qianfan_bce_api_key",
+    name="Baidu Qianfan BCE API Key",
+    description=(
+        "Baidu Cloud Engine v3 API key, used as the bearer token for the Qianfan"
+        " LLM platform and for AppBuilder. Shaped"
+        " bce-v3/ALTAK-<21 alphanumerics>/<lowercase hex>, 75 characters in the"
+        " observed form. Grants direct access to billable model inference and to"
+        " whatever BCE services the issuing account can reach."
+    ),
+    provider="baidu",
+    severity="high",
+    # Three fixed segments carry the precision, which is why there is no entropy
+    # gate: the literal `bce-v3/`, the literal `ALTAK-` sub-prefix, an
+    # exactly-21-character key ID, a `/`, then a lowercase-hex secret. The
+    # exactly-21 width is confirmed across four independent public samples; the
+    # 40-character tail was measurable on only one unmasked sample, so the tail
+    # bound is deliberately tolerant ({32,64}) rather than a hard {40} — the two
+    # literal prefixes plus the fixed-width ID already make this a near-zero-FP
+    # anchor, so widening the tail costs no precision but survives a re-widened
+    # tail instead of silently missing it.
+    #
+    # Lowercase hex (not alphanumerics) for the tail is also deliberate: it
+    # excludes the author-redacted `x`/`X` placeholders that dominate the public
+    # corpus, and the exactly-21 requirement on segment 1 excludes Baidu's own
+    # masked documentation values (`bce-v3/ALTAK-KZke********/f1d6ee***`).
+    # Source: baidubce/bce-qianfan-sdk, python/qianfan/tests/chat_completion_v2_test.py
+    #   https://github.com/baidubce/bce-qianfan-sdk
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>bce-v3/ALTAK-[A-Za-z0-9]{21}/[a-f0-9]{32,64})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "baidu",
+        "qianfan",
+        "bce-v3",
+        "QIANFAN_BEARER_TOKEN",
+        "APPBUILDER_TOKEN",
+        "bce",
+    ],
+    # Baidu's own SDK test fixture, split so the literal never appears whole in
+    # this file (these tokens are widely deployed and secret-scanning partners
+    # match on the joined form).
+    known_test_values={
+        "bce-v3/ALTAK-" + "JZasis7GfnokSLLXykKHj" + "/"
+        + "054c2e64c06db4d6019f0dbfc964e90aa3fc3ddd",
+    },
+    recommendation=(
+        "Revoke this API key in the Baidu Cloud console under the Qianfan"
+        " ModelBuilder API-key page, issue a replacement, and audit recent"
+        " inference usage for unauthorized charges."
+    ),
+    tags=["ai", "baidu", "qianfan", "llm", "cloud"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -916,4 +981,5 @@ register(
     ANYSCALE_API_KEY,
     BRAINTRUST_API_KEY,
     RUNPOD_API_KEY,
+    BAIDU_QIANFAN_BCE_API_KEY,
 )
