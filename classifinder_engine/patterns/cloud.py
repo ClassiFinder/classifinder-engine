@@ -1743,6 +1743,448 @@ INFISICAL_SERVICE_TOKEN = SecretPattern(
     ),
     tags=["cloud", "infisical", "secrets"],
 )
+
+# ===================================================
+# AZURE / MICROSOFT IDENTIFIABLE ("annotated") KEYS
+# ===================================================
+#
+# Microsoft stamps a fixed 4-character signature into its generated keys at a
+# fixed byte offset, so the credential announces its own provider and service
+# without a leading prefix. `microsoft/security-utilities` (MIT) publishes the
+# signature, the offset and the total length for each service in
+# GeneratedRegexPatterns/HighConfidenceSecurityModels.json; those three facts
+# are what the nine patterns below are derived from. See ATTRIBUTION.md.
+#
+# Every one of them is signature-anchored at a fixed offset rather than
+# prefix-anchored, which is an equally strong signal: the probability that an
+# arbitrary base64 blob carries e.g. `ACDb` at exactly offset 76 AND terminates
+# with a base64-legal `[AQgw]==` is negligible. That is why none of them carries
+# an entropy gate. What they do carry are left/right boundary guards, so a
+# signature sitting inside a longer blob cannot be carved out into a finding.
+# The left guard deliberately does NOT exclude `=`, so `AccountKey=<key>` and
+# `?code=<key>` still match while a mid-blob match does not.
+#
+# Microsoft publishes no real literals — its own tests call
+# GenerateTruePositiveExamples() — so there is no vendor-published dummy to
+# register as a known_test_value for any of these. Registering the test fixtures
+# instead would force them to 0.15 and break the tests that use them.
+
+
+AZURE_COSMOS_DB_KEY = SecretPattern(
+    id="azure_cosmos_db_key",
+    name="Azure Cosmos DB Account Key",
+    description=(
+        "Azure Cosmos DB account key — 88 base64 characters carrying the literal"
+        " signature 'ACDb' at offset 76. Grants full read/write access to every"
+        " container in the account. May be either the primary or the secondary"
+        " key, and either the read-write or the read-only variant; Microsoft"
+        " ships the same format for all four, so they are indistinguishable."
+    ),
+    provider="azure",
+    severity="critical",
+    # Confidence 0.95 is load-bearing, not cosmetic. This shape is a strict
+    # subset of `azure_storage_key` (86 base64 characters + '=='), and real
+    # Cosmos connection strings genuinely use `AccountKey=` — so before this
+    # pattern existed the engine reported a leaked Cosmos key as
+    # `azure_storage_key` at 0.92. Dedup picks the highest-confidence finding on
+    # an overlapping span, so 0.95 is what makes the specific reading win and
+    # fixes that mislabel. A non-collision test asserts it in both directions.
+    # Source: microsoft/security-utilities (MIT), rule SEC101/160
+    #   https://github.com/microsoft/security-utilities/blob/main/GeneratedRegexPatterns/HighConfidenceSecurityModels.json
+    regex=re.compile(
+        r"(?<![A-Za-z0-9+/_-])"
+        r"(?P<secret>[A-Za-z0-9+/]{76}ACDb[A-Za-z0-9+/]{5}[AQgw]==)"
+        r"(?![A-Za-z0-9+/=_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # signature-anchored at a fixed offset
+    context_keywords=[
+        "cosmos",
+        "AccountKey",
+        "documents.azure.com",
+        "azure",
+        "COSMOS_KEY",
+        "AccountEndpoint",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Regenerate this account key in the Azure Portal (Cosmos DB account ->"
+        " Keys) and roll the secondary key first so callers can cut over."
+        " Prefer Entra ID role-based access or a managed identity over account"
+        " keys, which cannot be scoped below the account."
+    ),
+    tags=["cloud", "azure", "cosmos", "database"],
+)
+
+
+AZURE_FUNCTIONS_KEY = SecretPattern(
+    id="azure_functions_key",
+    name="Azure Functions Access Key",
+    description=(
+        "Azure Functions access key — 56 base64url characters carrying the"
+        " literal signature 'AzFu' at offset 44. Authorizes invocation of a"
+        " function app's HTTP-triggered endpoints, usually via the '?code='"
+        " query parameter or the 'x-functions-key' header. May be a function,"
+        " host or master key; the format does not distinguish them."
+    ),
+    provider="azure",
+    severity="high",
+    # Base64URL, not standard base64: the charset is [A-Za-z0-9_-], with '_'
+    # and '-' replacing '+' and '/'. Using the standard alphabet here would miss
+    # every real key that happens to contain either substituted character.
+    # Source: microsoft/security-utilities (MIT), rule SEC101/158
+    #   https://github.com/microsoft/security-utilities/blob/main/GeneratedRegexPatterns/HighConfidenceSecurityModels.json
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>[A-Za-z0-9_-]{44}AzFu[A-Za-z0-9_-]{5}[AQgw]==)"
+        r"(?![A-Za-z0-9=_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,  # signature-anchored at a fixed offset
+    context_keywords=[
+        "azurewebsites.net",
+        "functions",
+        "x-functions-key",
+        "code",
+        "azure",
+        "FUNCTION_KEY",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Renew this key in the Azure Portal (Function App -> App keys, or the"
+        " individual function's Function keys). If it is the master key, treat"
+        " the whole function app as compromised — the master key also unlocks"
+        " the admin API. Prefer Entra ID authentication over access keys."
+    ),
+    tags=["cloud", "azure", "functions", "serverless"],
+)
+
+
+AZURE_SEARCH_KEY = SecretPattern(
+    id="azure_search_key",
+    name="Azure AI Search Service Key",
+    description=(
+        "Azure AI Search (formerly Cognitive Search) service key — 52"
+        " alphanumeric characters carrying the literal signature 'AzSe' at"
+        " offset 42. May be an ADMIN key, which grants full control of indexes"
+        " and data, or a QUERY key, which is read-only and is designed to be"
+        " embedded in client-side code. Microsoft ships a byte-identical format"
+        " for both, so a finding cannot tell them apart — treat it as an admin"
+        " key until you have confirmed otherwise, and expect legitimate query"
+        " keys to surface in public JavaScript bundles."
+    ),
+    provider="azure",
+    severity="high",
+    # Deliberate, documented false-positive risk. Query keys are public by
+    # design and are legitimately shipped in browser bundles, so this pattern
+    # will fire on values their owners intended to publish. It ships anyway
+    # because the alternative — missing admin keys entirely, since the two are
+    # byte-identical — is the worse failure. confidence_base is set one notch
+    # below the rest of this family to reflect that, while staying above the
+    # 0.85 FP-wordlist pricing floor.
+    # Source: microsoft/security-utilities (MIT), rules SEC101/166 and SEC101/167
+    #   https://github.com/microsoft/security-utilities/blob/main/GeneratedRegexPatterns/HighConfidenceSecurityModels.json
+    regex=re.compile(
+        r"(?<![A-Za-z0-9+/_-])"
+        r"(?P<secret>[A-Za-z0-9]{42}AzSe[A-D][A-Za-z0-9]{5})"
+        r"(?![A-Za-z0-9+/=_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # signature-anchored at a fixed offset
+    context_keywords=[
+        "search.windows.net",
+        "api-key",
+        "azure",
+        "search",
+        "SEARCH_API_KEY",
+        "cognitive",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Regenerate the key in the Azure Portal (Search service -> Keys)."
+        " Confirm first whether this is an admin or a query key: an admin key"
+        " can create, delete and read every index, while a query key is"
+        " read-only and may have been published deliberately."
+    ),
+    tags=["cloud", "azure", "search", "ai"],
+)
+
+
+AZURE_EVENT_HUB_KEY = SecretPattern(
+    id="azure_event_hub_key",
+    name="Azure Event Hubs Shared Access Key",
+    description=(
+        "Azure Event Hubs shared access key — 44 base64 characters carrying the"
+        " literal signature '+AEh' at offset 33. The 'SharedAccessKey' half of"
+        " an Event Hubs connection string; grants whatever the paired SAS policy"
+        " allows (send, listen or manage) over the namespace or entity."
+    ),
+    provider="azure",
+    severity="high",
+    # The '+' in '+AEh' is a literal base64 character, not a quantifier, and is
+    # escaped accordingly. Same for the Service Bus and Container Registry
+    # siblings below.
+    # Source: microsoft/security-utilities (MIT), rule SEC101/172
+    #   https://github.com/microsoft/security-utilities/blob/main/GeneratedRegexPatterns/HighConfidenceSecurityModels.json
+    regex=re.compile(
+        r"(?<![A-Za-z0-9+/_-])"
+        r"(?P<secret>[A-Za-z0-9+/]{33}\+AEh[A-P][A-Za-z0-9+/]{5}=)"
+        r"(?![A-Za-z0-9+/=_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,  # signature-anchored at a fixed offset
+    context_keywords=[
+        "servicebus.windows.net",
+        "SharedAccessKey",
+        "eventhub",
+        "Endpoint",
+        "azure",
+        "EVENTHUB_CONNECTION_STRING",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Regenerate the shared access policy's key in the Azure Portal"
+        " (Event Hubs namespace or entity -> Shared access policies)."
+        " Prefer Entra ID role-based access over SAS keys, and scope any"
+        " remaining policy to the single entity and the single right it needs."
+    ),
+    tags=["cloud", "azure", "eventhub", "messaging"],
+)
+
+
+AZURE_SERVICE_BUS_KEY = SecretPattern(
+    id="azure_service_bus_key",
+    name="Azure Service Bus Shared Access Key",
+    description=(
+        "Azure Service Bus shared access key — 44 base64 characters carrying the"
+        " literal signature '+ASb' at offset 33. The 'SharedAccessKey' half of a"
+        " Service Bus connection string; grants whatever the paired SAS policy"
+        " allows (send, listen or manage) over the namespace, queue or topic."
+    ),
+    provider="azure",
+    severity="high",
+    # Structurally identical to the Event Hubs key apart from the signature —
+    # both services sit on the same *.servicebus.windows.net endpoint, which is
+    # why the signature rather than the hostname is what separates them.
+    # Source: microsoft/security-utilities (MIT), rule SEC101/171
+    #   https://github.com/microsoft/security-utilities/blob/main/GeneratedRegexPatterns/HighConfidenceSecurityModels.json
+    regex=re.compile(
+        r"(?<![A-Za-z0-9+/_-])"
+        r"(?P<secret>[A-Za-z0-9+/]{33}\+ASb[A-P][A-Za-z0-9+/]{5}=)"
+        r"(?![A-Za-z0-9+/=_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,  # signature-anchored at a fixed offset
+    context_keywords=[
+        "servicebus.windows.net",
+        "SharedAccessKey",
+        "servicebus",
+        "Endpoint",
+        "azure",
+        "SERVICEBUS_CONNECTION_STRING",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Regenerate the shared access policy's key in the Azure Portal"
+        " (Service Bus namespace, queue or topic -> Shared access policies)."
+        " Prefer Entra ID role-based access over SAS keys, and scope any"
+        " remaining policy to the single entity and the single right it needs."
+    ),
+    tags=["cloud", "azure", "servicebus", "messaging"],
+)
+
+
+AZURE_IOT_KEY = SecretPattern(
+    id="azure_iot_key",
+    name="Azure IoT Key",
+    description=(
+        "Azure IoT shared access key — 44 base64 characters carrying the literal"
+        " signature 'AIoT' at offset 33. Microsoft ships a byte-identical format"
+        " for the IoT Hub service key, the per-device symmetric key and the"
+        " Device Provisioning Service key, so a finding cannot tell which of the"
+        " three it is. Assume the broadest: an IoT Hub or DPS key can enrol,"
+        " impersonate and control every device in the hub."
+    ),
+    provider="azure",
+    severity="critical",
+    # Named generically on purpose. SEC101/178 (IoT Hub), SEC101/179 (Device
+    # Provisioning) and SEC101/180 (Device) are three separate Microsoft rules
+    # with one identical regex; calling this "IoT Hub Key" would overclaim on
+    # two thirds of its matches.
+    # Source: microsoft/security-utilities (MIT), rules SEC101/178, 179 and 180
+    #   https://github.com/microsoft/security-utilities/blob/main/GeneratedRegexPatterns/HighConfidenceSecurityModels.json
+    regex=re.compile(
+        r"(?<![A-Za-z0-9+/_-])"
+        r"(?P<secret>[A-Za-z0-9+/]{33}AIoT[A-P][A-Za-z0-9+/]{5}=)"
+        r"(?![A-Za-z0-9+/=_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,  # signature-anchored at a fixed offset
+    context_keywords=[
+        "azure-devices.net",
+        "SharedAccessKey",
+        "iothub",
+        "DeviceId",
+        "HostName",
+        "azure",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Determine which key this is before rotating: an IoT Hub shared access"
+        " policy key and a DPS enrolment key are regenerated in the Azure"
+        " Portal, while a device symmetric key is regenerated per device."
+        " If it is a hub or DPS key, audit device registrations for"
+        " unrecognised enrolments — it can mint device identities."
+    ),
+    tags=["cloud", "azure", "iot"],
+)
+
+
+AZURE_CONTAINER_REGISTRY_KEY = SecretPattern(
+    id="azure_container_registry_key",
+    name="Azure Container Registry Access Key",
+    description=(
+        "Azure Container Registry admin access key — 52 base64 characters"
+        " carrying the literal signature '+ACR' at offset 42. Paired with the"
+        " registry name as the username, it grants push and pull rights over"
+        " every repository in the registry."
+    ),
+    provider="azure",
+    severity="critical",
+    # Push access to a container registry is a supply-chain foothold: an
+    # attacker who can push a tag can have it pulled and executed by whatever
+    # deploys from it. Hence critical rather than high.
+    # Source: microsoft/security-utilities (MIT), rule SEC101/176
+    #   https://github.com/microsoft/security-utilities/blob/main/GeneratedRegexPatterns/HighConfidenceSecurityModels.json
+    regex=re.compile(
+        r"(?<![A-Za-z0-9+/_-])"
+        r"(?P<secret>[A-Za-z0-9+/]{42}\+ACR[A-D][A-Za-z0-9+/]{5})"
+        r"(?![A-Za-z0-9+/=_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,  # signature-anchored at a fixed offset
+    context_keywords=[
+        "azurecr.io",
+        "registry",
+        "docker login",
+        "acr",
+        "azure",
+        "REGISTRY_PASSWORD",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Regenerate the admin credential in the Azure Portal (Container"
+        " Registry -> Access keys), then audit the registry's push history for"
+        " unexpected tags. Better: disable the admin account entirely and use"
+        " Entra ID tokens or a scoped repository token instead."
+    ),
+    tags=["cloud", "azure", "registry", "containers"],
+)
+
+
+AZURE_APIM_KEY = SecretPattern(
+    id="azure_apim_key",
+    name="Azure API Management Key",
+    description=(
+        "Azure API Management key — 88 base64 characters carrying the literal"
+        " signature 'APIM' at offset 76. Microsoft ships a byte-identical format"
+        " for the direct-management, subscription, gateway and repository keys,"
+        " so a finding cannot tell which of the four it is. Assume the"
+        " broadest: a direct-management key is a control-plane credential for"
+        " the whole APIM instance."
+    ),
+    provider="azure",
+    severity="high",
+    # Named generically on purpose — SEC101/181 through SEC101/184 are four
+    # Microsoft rules sharing one regex, so "Subscription Key" would overclaim.
+    # Like the Cosmos key this shares the 86-base64 + '==' shape with
+    # `azure_storage_key`; confidence_base is set above that pattern's
+    # post-context score so the specific reading wins dedup. The practical
+    # likelihood of an APIM key sitting behind an `AccountKey=` label is low,
+    # but the non-collision is asserted rather than assumed.
+    # Source: microsoft/security-utilities (MIT), rules SEC101/181 through 184
+    #   https://github.com/microsoft/security-utilities/blob/main/GeneratedRegexPatterns/HighConfidenceSecurityModels.json
+    regex=re.compile(
+        r"(?<![A-Za-z0-9+/_-])"
+        r"(?P<secret>[A-Za-z0-9+/]{76}APIM[A-Za-z0-9+/]{5}[AQgw]==)"
+        r"(?![A-Za-z0-9+/=_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.93,
+    entropy_threshold=0.0,  # signature-anchored at a fixed offset
+    context_keywords=[
+        "azure-api.net",
+        "Ocp-Apim-Subscription-Key",
+        "apim",
+        "management",
+        "azure",
+        "subscription",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Regenerate the key in the Azure Portal (API Management -> the relevant"
+        " Subscriptions, Gateways or Repository page). If it is the direct"
+        " management key, disable direct management access entirely and use the"
+        " ARM control plane, which honours Entra ID and RBAC."
+    ),
+    tags=["cloud", "azure", "apim", "api-gateway"],
+)
+
+
+MICROSOFT_CASK_KEY = SecretPattern(
+    id="microsoft_cask_key",
+    name="Microsoft Common Annotated Security Key",
+    description=(
+        "Microsoft Common Annotated Security Key (CASK) — the successor format"
+        " to the per-service 'identifiable' keys, carrying the literal signature"
+        " 'JQQJ' at offset 52 followed by a version character and a fixed"
+        " metadata layout. 84 characters, or 88 with the optional base64 tail."
+        " The provider signature that would name the issuing service is not"
+        " part of the shape this pattern matches, so the credential is reported"
+        " unclassified: it may belong to any Microsoft or Azure service."
+    ),
+    provider="microsoft",
+    severity="high",
+    # The optional '(?:[A-Za-z0-9]{2}==)?' tail is Microsoft's own: a CASK key
+    # is published as either 84 or 88 characters. The group is greedy, so an
+    # 88-character key is matched in full rather than truncated to its first 84.
+    # Source: microsoft/security-utilities (MIT), rule SEC101/200
+    #   https://github.com/microsoft/security-utilities/blob/main/GeneratedRegexPatterns/HighConfidenceSecurityModels.json
+    regex=re.compile(
+        r"(?<![A-Za-z0-9])"
+        r"(?P<secret>[A-Za-z0-9]{52}JQQJ9[9DH][A-Za-z0-9][A-L][A-Za-z0-9]{16}"
+        r"[A-Za-z][A-Za-z0-9]{7}(?:[A-Za-z0-9]{2}==)?)"
+        r"(?![A-Za-z0-9=])",
+        re.ASCII,
+    ),
+    confidence_base=0.93,
+    entropy_threshold=0.0,  # signature-anchored at a fixed offset
+    context_keywords=[
+        "azure",
+        "microsoft",
+        "api_key",
+        "apikey",
+        "key",
+        "secret",
+    ],
+    known_test_values=set(),
+    recommendation=(
+        "Identify the issuing service from where the key is used, then"
+        " regenerate it there. CASK keys are self-describing by design, so"
+        " Microsoft's own tooling can classify the value; treat it as a live"
+        " credential for whatever service it belongs to until proven otherwise."
+    ),
+    tags=["cloud", "azure", "microsoft"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -1799,4 +2241,16 @@ register(
     DOPPLER_SCIM_TOKEN,
     # 2026-08-03 — GCS HMAC access key ID (ID only; paired secret deliberately not registered)
     GCS_HMAC_ACCESS_KEY_ID,
+    # 2026-08-17 — Microsoft "identifiable" / annotated keys: a fixed 4-char
+    # signature at a fixed offset, derived from microsoft/security-utilities
+    # (MIT). See ATTRIBUTION.md.
+    AZURE_COSMOS_DB_KEY,
+    AZURE_FUNCTIONS_KEY,
+    AZURE_SEARCH_KEY,
+    AZURE_EVENT_HUB_KEY,
+    AZURE_SERVICE_BUS_KEY,
+    AZURE_IOT_KEY,
+    AZURE_CONTAINER_REGISTRY_KEY,
+    AZURE_APIM_KEY,
+    MICROSOFT_CASK_KEY,
 )
