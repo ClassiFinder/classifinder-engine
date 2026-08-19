@@ -59,7 +59,7 @@ redacted_text, redaction_map = redact(text, findings, style="label")
 ```
 
 The `scan()` function:
-1. Runs all 283 regex patterns against the input
+1. Runs all 297 regex patterns against the input
 2. Calculates confidence: `base + context_boost (+0.02/keyword, max +0.10) - entropy_penalty (-0.50 if below threshold) → override to 0.15 if test value → clamp [0.05, 0.99]`
 3. Deduplicates overlapping findings (highest confidence wins)
 4. Returns structured findings sorted by position
