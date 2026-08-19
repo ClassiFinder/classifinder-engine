@@ -755,6 +755,75 @@ CRATES_IO_API_TOKEN = SecretPattern(
 )
 
 
+
+# ===================================================
+# BLOCK PROTOCOL
+# ===================================================
+
+BLOCK_PROTOCOL_API_KEY = SecretPattern(
+    id="block_protocol_api_key",
+    name="Block Protocol API Key",
+    description=(
+        "Block Protocol Hub API key, used by the `blockprotocol` CLI (and by the"
+        " official WordPress plugin) to authenticate publish requests. Shaped"
+        " b10ck5.<32 lowercase hex>.<canonical UUID>, 76 characters. Grants the"
+        " ability to publish and overwrite blocks under the issuing account."
+    ),
+    provider="block_protocol",
+    severity="high",
+    # Three dot-separated segments of fixed width: the literal `b10ck5`, a
+    # 32-character lowercase-hex public portion, and a canonical hyphenated
+    # UUID (8-4-4-4-12). 6 + 1 + 32 + 1 + 36 = 76 characters.
+    #
+    # The whole three-part structure is anchored, not just the prefix. The
+    # vendor documents the 32-hex middle segment as the deliberately
+    # non-secret "public" portion of the key; it is the trailing UUID that
+    # makes the value sensitive, so matching `b10ck5.` plus a loose tail would
+    # report a non-credential as a leak.
+    #
+    # No entropy gate: `b10ck5` is distinctive leetspeak rather than a natural
+    # substring, and the two fixed-width hex segments carry the rest of the
+    # signal, so an entropy floor could only sink legitimate keys — including
+    # the vendor's own all-zeros CLI template, which is instead registered as
+    # a known_test_value below. Lowercase-only hex is the vendor's charset and
+    # is deliberately not widened to [0-9a-fA-F]: it excludes the X-masked
+    # placeholders that dominate hand-redacted public samples.
+    # Source: blockprotocol/blockprotocol,
+    #   libs/blockprotocol/cli/commands/publish/find-api-key.js — the CLI's own
+    #   config template literal `api-key=b10ck5.<32 zeros>.<zero UUID>`
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>b10ck5\.[0-9a-f]{32}\."
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+        r"(?![A-Za-z0-9-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "blockprotocol",
+        "block-protocol",
+        "blockprotocolrc",
+        "BLOCK_PROTOCOL_API_KEY",
+        "block protocol",
+    ],
+    # The `blockprotocol` CLI writes this all-zeros template into every new
+    # `.blockprotocolrc`, so it is the single most likely value to appear in a
+    # public repository. Assembled by concatenation so no whole key-shaped
+    # literal is written as one string in this file.
+    known_test_values={
+        "b10ck5." + "0" * 32 + "." + "00000000-0000-0000-0000-000000000000",
+    },
+    recommendation=(
+        "Revoke this key in the Block Protocol Hub under your account's API"
+        " Keys page, issue a replacement, and update the `.blockprotocolrc`"
+        " file or BLOCK_PROTOCOL_API_KEY environment variable that carries it."
+        " An attacker can publish or overwrite blocks under your name."
+    ),
+    tags=["vcs", "block-protocol", "registry", "blocks"],
+)
+
+
 register(
     GITHUB_PAT_CLASSIC,
     GITHUB_PAT_FINE_GRAINED,
@@ -779,4 +848,5 @@ register(
     AIRTABLE_API_KEY,
     NUGET_API_KEY,
     CRATES_IO_API_TOKEN,
+    BLOCK_PROTOCOL_API_KEY,
 )
