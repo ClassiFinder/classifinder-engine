@@ -1886,6 +1886,87 @@ HONEYCOMB_INGEST_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# GC NOTIFY (Government of Canada Notification service)
+# ===================================================
+
+GC_NOTIFY_API_KEY = SecretPattern(
+    id="gc_notify_api_key",
+    name="GC Notify API Key",
+    description=(
+        "GC Notify (Government of Canada Notification service) API key, sent in"
+        " the Authorization header as `ApiKey-v1 <key>`. Shaped"
+        " gcntfy-<key name>-<service id UUID>-<secret UUID>. Grants"
+        " send-on-behalf-of authority for a Government of Canada service's"
+        " email and SMS notifications."
+    ),
+    provider="gc_notify",
+    severity="high",
+    # Four parts: the literal `gcntfy` prefix, a user-chosen key name, and a
+    # fixed 73-character tail of two canonical hyphenated UUIDs (8-4-4-4-12)
+    # -- the issuing service_id and the secret -- joined by a hyphen.
+    #
+    # Anchored RIGHT on BOTH trailing UUIDs, not one. The user-chosen name
+    # segment may itself contain hyphens, so a greedy name plus a single
+    # trailing UUID lets the name swallow the service_id and admits any
+    # `gcntfy-<anything>-<uuid>` string. Requiring both UUIDs plus the
+    # `gcntfy-` prefix makes this prefix-anchored AND structural. The name
+    # segment uses a lazy {1,64}? bound so the hyphen-tolerant charset cannot
+    # run away; backtracking still finds the split when the name has hyphens.
+    #
+    # No entropy gate: `gcntfy-` is a literal vendor prefix and both UUIDs are
+    # fixed-width, so an entropy floor could only sink legitimate keys.
+    # confidence_base 0.95 is also deliberate rather than cosmetic -- the
+    # vendor's own published example names the key `my_test_key`, and at any
+    # base below 0.85 the FP-wordlist penalty (-0.40) would sink every
+    # real-world key whose owner named it `*test*`, `*demo*` or `*staging*`.
+    #
+    # Scope is the Canadian `gcntfy-` variant only. The upstream UK GOV.UK
+    # Notify format is a bare `<name>-<uuid>-<uuid>` with no prefix and is not
+    # anchorable; widening to cover it would be a false-positive cannon.
+    # Source: https://documentation.notification.canada.ca/en/start.html --
+    #   GC Notify's own "Get started" page documents the key as
+    #   "{prefix}-{key_name}-{iss-uuid}-{secret-key-uuid}"; charset of the name
+    #   segment per cds-snc/sanitize-pii src/patterns.ts, detector
+    #   `api_key_gc_notify` (the vendor's own PII sanitizer).
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>gcntfy-[A-Za-z0-9_-]{1,64}?-"
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}-"
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "gc notify",
+        "gcnotify",
+        "gcntfy",
+        "notification.canada.ca",
+        "GC_NOTIFY_API_KEY",
+        "NOTIFY_API_KEY",
+        "ApiKey-v1",
+    ],
+    known_test_values={
+        # Printed verbatim on GC Notify's own "Get started" page as the
+        # Authorization-header example. Assembled by concatenation so no whole
+        # key-shaped literal is written as a single string in this file.
+        "gcntfy-" "my_test_key" "-26785a09-ab16-4eb0-8407-a37497a57506"
+        "-3d844edf-8d35-48ac-975b-e847b4f122b0",
+    },
+    recommendation=(
+        "Revoke this key immediately in the GC Notify service dashboard under"
+        " API integration > API keys, and issue a replacement. The embedded"
+        " service_id identifies the affected service, so treat the key as"
+        " having allowed anyone to send email or SMS in that service's name;"
+        " review the service's notification history for messages you did not"
+        " send."
+    ),
+    tags=["comms", "gc-notify", "government", "notifications", "canada"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -1945,4 +2026,6 @@ register(
     ROLLBAR_PROJECT_ACCESS_TOKEN,
     # 2026-08-17 — Honeycomb ingest key (vendor sourced, hc<region><keytype>_ + 58)
     HONEYCOMB_INGEST_KEY,
+    # 2026-08-20 — GC Notify API key (vendor sourced, gcntfy- + name + 2 UUIDs)
+    GC_NOTIFY_API_KEY,
 )
