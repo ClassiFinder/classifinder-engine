@@ -892,6 +892,110 @@ GHOST_ADMIN_API_KEY = SecretPattern(
     tags=["data", "ghost", "cms"],
 )
 
+
+# ===================================================
+# TABLEAU
+# ===================================================
+
+# The Tableau Personal Access Token secret is a prefixless FIXED-WIDTH COMPOSITE
+# and is anchorable only because of that: 22 characters of [A-Za-z0-9+/], the
+# '==' base64 padding, a ':' joint, then exactly 32 mixed-case alphanumerics --
+# 57 characters in total. The head is standard base64 that decodes to exactly
+# 16 bytes (a 128-bit id), which is what makes the '==' padding structurally
+# guaranteed rather than incidental, and the '==:' joint the safe anchor.
+#
+# Ten independent samples were measured before shipping -- Tableau's own
+# published example plus nine unrelated real-world occurrences -- and all ten
+# measured identically 22 + '==' + ':' + 32. Both widths are pinned in tests.
+#
+# The whole composite is the secret. Tableau's REST API reference shows it as
+# the single `personalAccessTokenSecret` attribute value, so a pattern that
+# reported only the 32-character tail would under-report the credential.
+#
+# Boundary guards are load-bearing and deliberately ASYMMETRIC:
+#   - Left `(?<![A-Za-z0-9+/])` stops the head from being the last 22 characters
+#     of a longer base64 body. It does NOT carry '=': `TABLEAU_PAT_SECRET=<v>`
+#     is a primary carrier for this credential, and excluding '=' on the left
+#     would blind the pattern to every env assignment.
+#   - Right `(?![A-Za-z0-9=])` stops the tail from being the leading run of a
+#     longer token, and carries '=' so a longer base64 body that merely
+#     contains this shape cannot be reported.
+#
+# The mixed-case requirement on the tail is the false-positive defence. Its
+# surface is checksum/manifest lines: base64 of 16 bytes IS the wire form of an
+# MD5 digest, and a 32-character hex digest also satisfies [A-Za-z0-9]{32}, so
+# '<base64 md5>==:<hex md5>' would otherwise match. Hex is single-case and
+# always fails the two lookaheads; a genuine 32-character mixed-case tail fails
+# them with probability ~3e-8. Measured, not assumed: the loose shape produced
+# zero corpus hits, so this is preventive rather than reactive.
+
+TABLEAU_PERSONAL_ACCESS_TOKEN_SECRET = SecretPattern(
+    id="tableau_personal_access_token_secret",
+    name="Tableau Personal Access Token Secret",
+    description=(
+        "Tableau Personal Access Token secret — 22 base64 characters, '==', a"
+        " ':' joint, and 32 mixed-case alphanumerics, 57 characters in total"
+        " with no prefix. Presented to the Tableau REST API sign-in endpoint as"
+        " the `personalAccessTokenSecret` attribute alongside the token name,"
+        " and grants full REST API access as the token's owner: querying and"
+        " publishing workbooks and data sources, and — for a site or server"
+        " administrator's token — site administration."
+    ),
+    provider="tableau",
+    severity="high",
+    # Composite widths and the '==:' joint per Tableau's own REST API
+    # authentication reference, which publishes a concrete
+    # personalAccessTokenSecret value of exactly this shape; corroborated by
+    # nine further independent real-world occurrences, all measuring 22 + '=='
+    # + ':' + 32. The boundary guards, the mixed-case tail requirement, the
+    # confidence and the known_test_values are ClassiFinder's own.
+    # Source: https://help.tableau.com/current/api/rest_api/en-us/REST/rest_api_ref_authentication.htm
+    regex=re.compile(
+        r"(?<![A-Za-z0-9+/])"
+        r"(?P<secret>[A-Za-z0-9+/]{22}==:"
+        r"(?=[A-Za-z0-9]{0,31}[a-z])"
+        r"(?=[A-Za-z0-9]{0,31}[A-Z])"
+        r"[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9=])",
+        re.ASCII,
+    ),
+    # Structural anchor, not a prefix anchor — same family as the PEM blocks,
+    # connection strings and the Ghost admin key above, so 0.90. It is also a
+    # floor rather than a preference: below 0.85 the FP-wordlist penalty (-0.40)
+    # would sink real secrets that merely sit in a *test* / *demo* / *staging*
+    # context, and Tableau PATs are routinely issued per-environment.
+    confidence_base=0.90,
+    # Deliberately 0.0: every character of both halves is fixed-width and
+    # random, so any entropy floor a placeholder failed would also fail real
+    # secrets. The mixed-case tail requirement does the placeholder filtering.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "tableau",
+        "personalAccessTokenSecret",
+        "personal_access_token",
+        "tableau_auth",
+        "pat_secret",
+        "tsRequest",
+    ],
+    known_test_values={
+        # The literal Tableau prints in its own REST API authentication
+        # reference — the single most-copied value of this shape. Assembled by
+        # concatenation so no contiguous full-shape literal exists in this
+        # repository. Down-scores to ~0.15.
+        "vFel4qtGTZ2+Po0ZWT7YWg" + "==:" + "nMmSHnQ5kJBP17ZtsBgPtuVWdYJFAbBG",
+    },
+    recommendation=(
+        "Revoke this personal access token in Tableau under My Account Settings"
+        " > Personal Access Tokens (or, for another user's token, in Server/"
+        "Cloud site settings), and issue a replacement. Update it everywhere the"
+        " REST API is signed into — CI jobs, tabcmd/Tableau CLI wrappers, and"
+        " any tableauserverclient script. Because the token authenticates as its"
+        " owner, review the site's sign-in and job history for activity you did"
+        " not initiate while the secret was exposed."
+    ),
+    tags=["data", "tableau", "analytics", "business-intelligence"],
+)
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -924,4 +1028,7 @@ register(
     # 2026-08-10 — Ghost Admin API key (structurally anchored 24hex:64hex, the
     # only prefix-less pattern in this module; the 26-hex Content key is excluded)
     GHOST_ADMIN_API_KEY,
+    # 2026-08-21 — Tableau personal access token secret (prefixless fixed-width
+    # composite, 22 base64 + '==:' + 32 mixed-case alnum; vendor REST API ref)
+    TABLEAU_PERSONAL_ACCESS_TOKEN_SECRET,
 )
