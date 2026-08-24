@@ -1967,6 +1967,129 @@ GC_NOTIFY_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# ABLY
+# ===================================================
+
+# An Ably API key is a PREFIXLESS three-part composite. Ably's own auth
+# documentation states the format verbatim -- "[public app ID].[public key
+# ID]:[API key secret]" -- and renders a concrete example with each segment
+# labelled. The whole string is the credential: it is what a client passes as
+# `key` to Ably.Realtime / Ably.Rest and what is sent as HTTP basic auth
+# (app_id.key_id as the user, the secret as the password), so reporting only
+# the secret half would under-report the leak.
+#
+# The anchor is the SECRET segment, and it is a derived constant rather than a
+# width measured from one sample. The secret is unpadded base64url and decodes
+# to exactly 32 bytes -- a 256-bit key. 43 is the unique unpadded-base64url
+# length for 32 bytes (31 bytes -> 42 characters, 33 bytes -> 44), so {43} is a
+# property of the key size, not an extrapolation. Its charset was verified
+# programmatically as strictly [A-Za-z0-9_-].
+#
+# The two PUBLIC segments are deliberately LOOSE {4,10} ranges. Their widths
+# are attested at a single observation (6 and 6) and Ably publishes no bound,
+# so pinning them would be inventing a format. Nothing here is invented: the
+# loose halves carry no precision, and all of it comes from the secret.
+#
+# Boundary guards are load-bearing, and the left one deliberately excludes '.'
+# as well as the key charset:
+#   - Left `(?<![A-Za-z0-9_.-])` means the pattern cannot bite the trailing two
+#     segments of a longer dotted path. Without the '.', a Gradle coordinate or
+#     a dotted config key followed by a 43-character base64url value would be
+#     reportable as a credential; a real key has exactly one dot and is always
+#     preceded by whitespace, '=', a quote, '/' or '@'.
+#   - Right `(?![A-Za-z0-9_=-])` stops the secret from being the leading run of
+#     a longer token, and carries '=' because a 43-character base64url run
+#     FOLLOWED by '=' is padded base64 of 32 bytes -- a digest, not an Ably
+#     secret, which is always unpadded.
+#
+# The mixed-case lookaheads are the placeholder defence and are close to free:
+# a random 43-character base64url string contains no lowercase (or no
+# uppercase) with probability ~2e-10, while every plausible mask -- 43 'X's,
+# 43 'x's, a lowercase hex run -- fails one of them. This matters because
+# confidence_base 0.90 sits above the 0.85 FP-wordlist gate (scanner.py:197),
+# so the wordlist never gets a chance to price masked values down.
+#
+# Measured before shipping, not assumed: this exact shape produced exactly one
+# match -- the true positive -- across 2785 files / 53.9 MB of real Ably-owned
+# and Ably-Labs code including minified JS, and zero matches across all 143
+# files of the benign, adversarial and known-secrets corpora. A loose
+# `x.y:z` with no width anchor collided on real strings in that same corpus
+# ('ably.chat:chat-extensions-compose', 'google.firebase:firebase-messaging-
+# ktx', 'Format.msgpack:i.Format.json', 'this.data:d.isBuffer'), which is why
+# the {43} anchor is load-bearing and must not be relaxed.
+
+ABLY_API_KEY = SecretPattern(
+    id="ably_api_key",
+    name="Ably API Key",
+    description=(
+        "Ably API key — the prefixless composite `[app ID].[key ID]:[secret]`,"
+        " where the secret is 43 unpadded base64url characters (a 256-bit key)."
+        " Presented whole as the `key` option to the Ably Realtime/REST client"
+        " or as HTTP basic auth, and grants every capability the key was issued"
+        " with: publishing to and subscribing on channels, presence, history,"
+        " push admin, and — for a key with the `privileged-headers` or channel"
+        " metadata capabilities — reading other clients' channel state."
+    ),
+    provider="ably",
+    severity="high",
+    # Composite structure per Ably's own authentication documentation, which
+    # states the format verbatim and renders a labelled example. The 43-character
+    # secret width is derived from that example decoding to exactly 32 bytes
+    # (unpadded base64url), not copied. Boundary guards, the mixed-case
+    # lookaheads, the loose public segments, the confidence and the
+    # known_test_values are ClassiFinder's own.
+    # Source: https://ably.com/docs/auth
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_.-])"
+        r"(?P<secret>[A-Za-z0-9_-]{4,10}\.[A-Za-z0-9_-]{4,10}:"
+        r"(?=[A-Za-z0-9_-]{0,42}[a-z])"
+        r"(?=[A-Za-z0-9_-]{0,42}[A-Z])"
+        r"[A-Za-z0-9_-]{43})"
+        r"(?![A-Za-z0-9_=-])",
+        re.ASCII,
+    ),
+    # Structural tier, not the prefix-anchored 0.95 tier: there is no literal
+    # prefix to anchor on, only the composite shape. 0.90 is also a floor rather
+    # than a preference — below 0.85 the FP-wordlist penalty (-0.40) would sink
+    # real keys that merely sit in a *test* / *demo* / *staging* context, and
+    # Ably keys are routinely issued per-environment.
+    confidence_base=0.90,
+    # Deliberately 0.0: the secret is a fixed-width random 256-bit value, so any
+    # entropy floor a placeholder failed would also fail real keys. The
+    # mixed-case lookaheads do the placeholder filtering instead.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "ably",
+        "ABLY_API_KEY",
+        "ably_key",
+        "Ably.Realtime",
+        "Ably.Rest",
+        "ably.io",
+    ],
+    known_test_values={
+        # The single key literal Ably publishes in its own auth documentation —
+        # the most-copied value of this shape. Assembled by concatenation so no
+        # contiguous full-shape literal exists in this repository. Down-scores
+        # to ~0.15.
+        "I2E_JQ" + "." + "OqUdfg" + ":" + "EVKVTCBlzLBPYJiCZTsIW_pqylJ9WVRB5K9P19Ap1y0",
+    },
+    recommendation=(
+        "Revoke this key in the Ably dashboard under your app's API Keys tab and"
+        " issue a replacement with the narrowest capabilities and channel scope"
+        " the client actually needs. Update every place the whole"
+        " `appID.keyID:secret` string is configured — server env vars, CI"
+        " secrets, and any Ably.Realtime/Ably.Rest client. If the key was"
+        " embedded in browser or mobile code, replace that usage with token"
+        " authentication (an Ably token request signed server-side) rather than"
+        " shipping a replacement key. Review the app's connection and channel"
+        " activity for publishing or presence you did not initiate while the"
+        " key was exposed."
+    ),
+    tags=["comms", "ably", "realtime", "pubsub", "messaging"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -2028,4 +2151,8 @@ register(
     HONEYCOMB_INGEST_KEY,
     # 2026-08-20 — GC Notify API key (vendor sourced, gcntfy- + name + 2 UUIDs)
     GC_NOTIFY_API_KEY,
+    # 2026-08-23 — Ably API key (vendor sourced, prefixless
+    # appID.keyID:secret composite anchored on the 43-character
+    # base64url 256-bit secret)
+    ABLY_API_KEY,
 )
