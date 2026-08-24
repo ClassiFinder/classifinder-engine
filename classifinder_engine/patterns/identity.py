@@ -782,6 +782,175 @@ HCAPTCHA_SITEVERIFY_SECRET_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# AGE (2026-08-24)
+# ===================================================
+
+# An age secret key IS the decryption identity: whoever holds it can decrypt
+# every file, backup or SOPS-managed secrets tree encrypted to the matching
+# public recipient, retroactively and undetectably. Hence critical.
+#
+# The format is Bech32 as specified by C2SP's age specification: a human-
+# readable part, the '1' separator, then the data part. For a secret key the HRP
+# is the uppercase 'AGE-SECRET-KEY-', and the data part is exactly 58 characters
+# — 52 Bech32 characters carrying the 32-byte X25519 scalar (32 bytes = 256
+# bits, and Bech32 packs 5 bits per character, so ceil(256/5) = 52) plus the
+# 6-character Bech32 checksum. That 58 is therefore a derived constant, not a
+# width measured off one sample.
+#
+# The charset is the Bech32 data alphabet, uppercased, and it is deliberately
+# NOT [A-Z0-9]: Bech32 excludes '1', 'B', 'I' and 'O' precisely because they are
+# visually ambiguous. Spelling the 32 permitted characters out is what makes the
+# pattern reject a masked or hand-typed lookalike.
+#
+# Anchoring on 'AGE-SECRET-KEY-1' rather than 'AGE-SECRET-KEY-' is load-bearing:
+# the post-quantum variant published alongside it uses the HRP
+# 'AGE-SECRET-KEY-PQ-' with a 60-character data part, so a prefix-only anchor
+# would half-match a PQ key and report a truncated, wrong span. Requiring the
+# '1' separator and exactly 58 data characters makes the PQ form unmatchable; a
+# test pins that.
+#
+# The public half of the pair ('age1...') is a RECIPIENT, not a credential, and
+# is deliberately not registered — reporting it would be reporting a public key
+# as a leak.
+
+AGE_SECRET_KEY = SecretPattern(
+    id="age_secret_key",
+    name="age Secret Key",
+    description=(
+        "age encryption secret key — the Bech32 string 'AGE-SECRET-KEY-1'"
+        " followed by 58 Bech32 data characters (a 32-byte X25519 scalar plus"
+        " checksum). This is the private decryption identity: it decrypts every"
+        " file, backup or SOPS-managed secrets tree encrypted to the matching"
+        " 'age1...' recipient, including ciphertext captured before the leak was"
+        " noticed."
+    ),
+    provider="age",
+    severity="critical",
+    # Bech32 structure, the 'AGE-SECRET-KEY-' human-readable part and the data
+    # charset are from C2SP's age specification; the 58-character data width is
+    # derived from it (52 characters for a 256-bit scalar at 5 bits per Bech32
+    # character, plus the 6-character checksum). The boundary guards, the
+    # confidence and the known_test_values are ClassiFinder's own.
+    # Source: https://github.com/C2SP/C2SP/blob/main/age.md
+    regex=re.compile(
+        r"(?<![A-Za-z0-9])"
+        r"(?P<secret>AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58})"
+        r"(?![A-Z0-9])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier. A 16-character literal prefix plus a checksummed
+    # fixed-width body is about as unambiguous as a detector gets, and 0.95 sits
+    # well above the 0.85 FP-wordlist gate so a key in a *test* fixture or
+    # *demo* runbook is never silently priced below threshold.
+    confidence_base=0.95,
+    # 0.0 on purpose: the body is a fixed-width Bech32-checksummed value, so an
+    # entropy floor could only ever sink legitimate keys.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "age",
+        "age-keygen",
+        "AGE_SECRET_KEY",
+        "sops",
+        "identity",
+        "recipient",
+    ],
+    known_test_values={
+        # The key the age specification itself publishes as its worked example —
+        # the most copy-pasted value of this shape. Assembled by concatenation so
+        # no contiguous key-shaped literal exists in this repository, which also
+        # keeps third-party push-protection scanners blind to it. ~0.15.
+        "AGE-SECRET-KEY-"
+        + "1GFPYYSJZGFPYYSJZGFPYYSJZGFPYYSJZGFPYYSJZGFPYYSJZGFPQ4EGAEX",
+    },
+    recommendation=(
+        "An age key cannot be revoked — there is no registry to revoke it in."
+        " Generate a fresh identity with `age-keygen`, re-encrypt every file"
+        " that named the old recipient to the new one (for SOPS, `sops updatekeys`"
+        " across the tree), and then treat everything the old key could decrypt"
+        " as compromised and rotate those underlying credentials too, since any"
+        " ciphertext an attacker already copied stays decryptable forever."
+        " Delete the exposed identity file and purge it from shell history, CI"
+        " logs and any git history it reached."
+    ),
+    tags=["identity", "age", "encryption", "private-key"],
+)
+
+
+# ===================================================
+# 42 INTRA (2026-08-24)
+# ===================================================
+
+# The 42 School Intra OAuth application credential pair is unusual and is the
+# reason this pattern has to be precise: the two halves are the SAME shape apart
+# from one leading character. 'u-s4t2ud-<64 hex>' is the application UID, which
+# is PUBLIC and appears in front-end code by design, while 's-s4t2ud-<64 hex>'
+# is the client SECRET. A detector anchored on 's4t2ud-' alone would report
+# every published UID as a leak.
+#
+# So the leading 's-' is load-bearing, and the left guard is what stops it being
+# satisfied by the tail of something longer. A UID is asserted as a negative.
+#
+# Two secret prefixes are covered: 's-s4t2ud-' and 's-s4t2af-'. The body is 64
+# lowercase hex characters — a 32-byte value — and the charset is deliberately
+# not widened to [0-9a-fA-F], because 42's own values are lowercase and the
+# narrow class is what rejects uppercase-masked placeholders.
+
+INTRA42_CLIENT_SECRET = SecretPattern(
+    id="intra42_client_secret",
+    name="42 Intra OAuth Client Secret",
+    description=(
+        "42 School Intra OAuth application client secret — 's-s4t2ud-' (or"
+        " 's-s4t2af-') followed by 64 lowercase hex characters. Paired with the"
+        " public 'u-s4t2ud-' application UID, it completes the client-credentials"
+        " exchange and yields Intra API tokens that can read student, project and"
+        " campus data on behalf of the registered application."
+    ),
+    provider="intra42",
+    severity="high",
+    # Prefix and the 64-lowercase-hex body are 42 Intra's own credential shape,
+    # as carried in published application configuration. The leading 's-'
+    # discriminator against the public 'u-' UID, the boundary guards, the
+    # confidence and the known_test_values are ClassiFinder's own.
+    # Source: https://github.com/pulgamecanica/42Portfolio/discussions/13
+    regex=re.compile(
+        r"(?<![A-Za-z0-9])"
+        r"(?P<secret>s-s4t2(?:ud|af)-[a-f0-9]{64})"
+        r"(?![a-f0-9])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier: a nine-character literal prefix plus a fixed 64-hex
+    # width. Above the 0.85 FP-wordlist gate, which matters here because 42
+    # applications are routinely registered with "test" in the name.
+    confidence_base=0.95,
+    # 0.0 on purpose: fixed-width hex body; an entropy floor could only sink
+    # legitimate secrets.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "intra",
+        "42",
+        "client_secret",
+        "API_42_SECRET",
+        "s4t2ud",
+        "oauth",
+    ],
+    known_test_values={
+        # The zero-filled placeholder shape used when the secret is redacted.
+        # Assembled by concatenation. Down-scores to ~0.15.
+        "s-s4t2ud-" + "0" * 64,
+    },
+    recommendation=(
+        "Regenerate the application's secret on the 42 Intra applications page"
+        " (the UID stays the same — only the secret rotates) and update every"
+        " server-side deployment that holds it. The secret must never reach"
+        " front-end code or a mobile bundle: only the UID is public. Review the"
+        " application's API usage for calls you did not make while it was"
+        " exposed."
+    ),
+    tags=["identity", "intra42", "oauth", "education"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -808,4 +977,9 @@ register(
     HUBSPOT_PRIVATE_APP_TOKEN,
     # 2026-08-04 — hCaptcha siteverify secret key (context-gated; 0x+40hex / ES_+32hex)
     HCAPTCHA_SITEVERIFY_SECRET_KEY,
+    # 2026-08-24 — age secret key (Bech32, C2SP spec) and the 42 Intra
+    # OAuth client secret (anchored on the 's-' discriminator so the
+    # public 'u-' application UID can never match).
+    AGE_SECRET_KEY,
+    INTRA42_CLIENT_SECRET,
 )
