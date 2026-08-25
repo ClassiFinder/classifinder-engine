@@ -1374,6 +1374,139 @@ THUNDERSTORE_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# LOGFIRE
+# ===================================================
+
+# Logfire is Pydantic's hosted observability platform. A write token is what
+# the SDK sends to the ingestion endpoint -- `logfire.configure(token=...)`,
+# or the `LOGFIRE_TOKEN` / `PYDANTIC_LOGFIRE_TOKEN` environment variables --
+# so anyone holding it can write spans, logs and metrics into the owning
+# project.
+#
+# THE STRUCTURE IS THE VENDOR'S OWN PARSING REGEX, not an inference from
+# samples. logfire/_internal/auth.py compiles PYDANTIC_LOGFIRE_TOKEN_PATTERN
+# from
+#   ^(?P<safe_part>pylf_v(?P<version>[0-9]+)_(?P<region>[a-z]+)_
+#   (?:(?P<organization_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-
+#   [0-9a-f]{4}-[0-9a-f]{12})_)?)(?P<token>[a-zA-Z0-9]+)$
+# and LOGFIRE_TOKEN_REGION_PATTERN from
+#   ^pylf_v[0-9]+_(?P<region>[a-z]+)_
+# Every element below -- the `pylf_v` literal, the numeric version, the
+# lowercase-only region, the OPTIONAL lowercase-hex organization UUID
+# followed by '_', and the strictly alphanumeric body -- is read off that
+# definition. The vendor also treats the string as secret-bearing itself:
+# logfire/_internal/scrubbing.py lists r'pylf_v\d+_' among its DEFAULT_PATTERNS.
+#
+# THE REGION IS `[a-z]{2,20}`, NOT A `us|eu` ALTERNATION. The REGIONS dict
+# ships only 'us' and 'eu', but the vendor's own fixtures carry 'local',
+# 'stagingeu' and 'unknownregion', so pinning the two production regions
+# would blind the pattern to real tokens. The bound is a ReDoS-safety
+# ceiling, not a claim about the region vocabulary.
+#
+# THE 44-CHARACTER BODY IS EMPIRICAL, AND THAT IS STATED HONESTLY: the
+# vendor's regex leaves the body unbounded (`[a-zA-Z0-9]+`), so {44} comes
+# from measurement rather than from the vendor. Every realistic full-length
+# token in the vendor repository is exactly 44 characters, across two
+# DISTINCT bodies and five region/version combinations -- 'pylf_v1_us_<44>'
+# and 'pylf_v1_eu_<44>' in tests/conftest.py, and the org-scoped
+# 'pylf_v2_stagingeu_<uuid>_<44>' in tests/test_variables.py. The width is
+# load-bearing rather than decorative: the same repository is full of toy
+# stubs ('pylf_v1_us_token1', 'pylf_v1_eu_token3', 'pylf_v1_us_test_token')
+# that an unbounded body would report as live credentials. Those stubs are
+# pinned as negatives. Do not relax {44} to `+`.
+#
+# Boundary guards. Left `(?<![A-Za-z0-9_-])` keeps `pylf_v` from being the
+# tail of a longer identifier; right `(?![A-Za-z0-9])` carries exactly the
+# body charset, so a 44-character run that is really the head of a longer
+# body cannot be reported as a whole token.
+#
+# The mixed-case lookaheads are the placeholder defence and are close to
+# free. confidence_base 0.95 sits well above the 0.85 FP-wordlist gate
+# (scanner.py:197), so the wordlist never gets a chance to price a masked
+# value down -- the lookaheads have to. A 44-character run of 'x', of 'X' or
+# of '0' fails one of them, while a random base62 body lacks lowercase (or
+# uppercase) with probability ~4e-11.
+
+LOGFIRE_WRITE_TOKEN = SecretPattern(
+    id="logfire_write_token",
+    name="Logfire Write Token",
+    description=(
+        "Pydantic Logfire write token — `pylf_v<version>_<region>_` followed by an"
+        " optional lowercase-hex organization UUID and a 44-character alphanumeric"
+        " body. Passed to `logfire.configure(token=...)` or carried in"
+        " `LOGFIRE_TOKEN` / `PYDANTIC_LOGFIRE_TOKEN`, and it authorizes writes into"
+        " the owning Logfire project: an attacker can poison the project's traces,"
+        " logs and metrics, bury real signals under noise, and drive metered"
+        " ingestion cost."
+    ),
+    provider="logfire",
+    severity="high",
+    # Structure taken from the vendor's own token-parsing regex —
+    # PYDANTIC_LOGFIRE_TOKEN_PATTERN and LOGFIRE_TOKEN_REGION_PATTERN — in the
+    # MIT-licensed pydantic/logfire SDK. The 44-character body bound, the
+    # {2,20} region ceiling, the boundary guards, the mixed-case lookaheads,
+    # the confidence and the known_test_values are ClassiFinder's own.
+    # Source: https://github.com/pydantic/logfire/blob/main/logfire/_internal/auth.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>pylf_v[0-9]{1,3}_[a-z]{2,20}_"
+        r"(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_)?"
+        r"(?=[A-Za-z0-9]{0,43}[a-z])"
+        r"(?=[A-Za-z0-9]{0,43}[A-Z])"
+        r"[A-Za-z0-9]{44})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier: `pylf_v<digits>_<region>_` is a literal vendor
+    # prefix, not a shape. It is also a floor rather than a preference — the
+    # vendor's own fixtures sit in *test* / *staging* / *local* contexts, and
+    # below 0.85 the FP-wordlist penalty (-0.40) would silently sink real
+    # tokens that merely live next to those words.
+    confidence_base=0.95,
+    # Deliberately 0.0: the body is a fixed-width random base62 run, so any
+    # entropy floor a placeholder failed would also fail real tokens. The
+    # mixed-case lookaheads do the placeholder filtering instead.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "logfire",
+        "LOGFIRE_TOKEN",
+        "PYDANTIC_LOGFIRE_TOKEN",
+        "logfire.configure",
+        "pylf_",
+        "pydantic",
+    ],
+    known_test_values={
+        # The two token bodies that appear in pydantic/logfire's own test
+        # fixtures — the values every tutorial and bug report copies. Assembled
+        # by concatenation so no contiguous full-shape literal exists in this
+        # repository. Each down-scores to ~0.15.
+        "pylf_" + "v1_us_" + "0kYhc414Ys2FNDRdt5vFB05xFx5NjVcbcBMy4Kp6PH0W",
+        "pylf_" + "v1_eu_" + "0kYhc414Ys2FNDRdt5vFB05xFx5NjVcbcBMy4Kp6PH0W",
+        "pylf_" + "v2_eu_" + "0kYhc414Ys2FNDRdt5vFB05xFx5NjVcbcBMy4Kp6PH0W",
+        "pylf_" + "v1_unknownregion_" + "0kYhc414Ys2FNDRdt5vFB05xFx5NjVcbcBMy4Kp6PH0W",
+        "pylf_" + "v1_local_" + "ZQHXp1vFjkR0dWxyQ8jCB4DPDlpd4752XWjpcNtdsPB6",
+        "pylf_"
+        + "v2_stagingeu_"
+        + "9f9ba85a-b759-4181-9527-d812e03f9f7f_"
+        + "0kYhc414Ys2FNDRdt5vFB05xFx5NjVcbcBMy4Kp6PH0W",
+    },
+    recommendation=(
+        "Revoke this write token in the Logfire dashboard under the project's"
+        " Settings > Write tokens, then issue a replacement and update every"
+        " place it is configured — `logfire.configure(token=...)`, the"
+        " `LOGFIRE_TOKEN` / `PYDANTIC_LOGFIRE_TOKEN` environment variables, CI"
+        " secrets, and container or deployment manifests. Review the project's"
+        " recent traces and metrics for spans your services did not emit:"
+        " a leaked write token cannot read your data, but it can inject"
+        " fabricated telemetry, hide a real incident under volume, and run up"
+        " ingestion charges."
+    ),
+    tags=["devops", "logfire", "pydantic", "observability", "telemetry"],
+)
+
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -1423,4 +1556,7 @@ register(
     TRIGGER_DEV_SECRET_KEY,
     # 2026-08-03 — Thunderstore API token ('tss_' + 30 random + 6-char CRC32 checksum)
     THUNDERSTORE_API_TOKEN,
+    # 2026-08-25 — Logfire write token (vendor SDK parsing regex,
+    # pylf_v<version>_<region>_ + optional org UUID + 44-char body)
+    LOGFIRE_WRITE_TOKEN,
 )
