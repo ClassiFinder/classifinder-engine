@@ -805,6 +805,88 @@ VAULT_TOKEN = SecretPattern(
 
 
 # ===================================================
+# HASHICORP VAULT — BATCH TOKENS (2026-08-24)
+# ===================================================
+
+# Vault's token prefix is the whole discriminator between its token classes:
+# 'hvs.' service tokens (above), 'hvb.' batch tokens (here) and 'hvr.' recovery
+# tokens. Batch tokens are encrypted blobs rather than storage entries — they
+# are not renewable, carry no accessor, cannot be listed and cannot create
+# child tokens — which is why this is severity high where vault_token is
+# critical. It is still a bearer credential that authenticates every request it
+# is attached to for as long as its TTL runs.
+#
+# The {24,} floor is the vendor's own wording rather than a measured width:
+# HashiCorp documents the prefix as being followed by "at least 24 randomly-
+# generated characters", and a batch token's body varies with the size of the
+# encrypted payload it carries, so pinning an exact width would be inventing a
+# format. The trailing (?![A-Za-z0-9]) guard is what makes the greedy run take
+# the whole token instead of a 24-character prefix of it, and it also stops the
+# pattern from reporting the leading slice of a longer alphanumeric run.
+#
+# 'hvb.' does not overlap the existing vault_token regex (hvs\.[A-Za-z0-9]{24,}):
+# the two prefixes differ in the third character, so an hvs. token still
+# resolves to vault_token. A test pins that.
+
+VAULT_BATCH_TOKEN = SecretPattern(
+    id="vault_batch_token",
+    name="HashiCorp Vault Batch Token",
+    description=(
+        "HashiCorp Vault batch token — the 'hvb.' prefix followed by at least 24"
+        " randomly-generated characters. Batch tokens are lightweight, encrypted,"
+        " non-persisted tokens: not renewable, no accessor, not listable, and"
+        " unable to create child tokens. A leaked batch token still authenticates"
+        " every Vault request it is presented on, with the policies it was"
+        " issued with, until its TTL expires."
+    ),
+    provider="vault",
+    severity="high",
+    # Prefix and the "at least 24 randomly-generated characters" body floor are
+    # HashiCorp's own, from its token concepts page. The boundary guard, the
+    # confidence and the known_test_values are ClassiFinder's own.
+    # Source: https://developer.hashicorp.com/vault/docs/concepts/tokens
+    regex=re.compile(
+        r"(?P<secret>hvb\.[A-Za-z0-9]{24,})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier. Deliberately kept at/above 0.85 so the FP-wordlist
+    # penalty (-0.40, scanner.py) can never silently sink a real batch token
+    # that happens to sit next to the word "test" or "demo" — Vault batch tokens
+    # are minted per-environment and routinely appear in staging config.
+    confidence_base=0.95,
+    # 0.0 on purpose: the body is a fixed-charset random run, so any entropy
+    # floor a masked placeholder failed would also sink short real tokens. The
+    # literal 'hvb.' prefix carries the precision instead.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "vault",
+        "VAULT_TOKEN",
+        "hashicorp",
+        "batch",
+        "hvb",
+    ],
+    known_test_values={
+        # The masked shape that dominates Vault tutorials and issue reports.
+        # Assembled by concatenation so no contiguous token-shaped literal
+        # exists in this repository. Down-scores to ~0.15.
+        "hvb." + "X" * 28,
+    },
+    recommendation=(
+        "Batch tokens cannot be revoked individually — they are not stored in"
+        " Vault, so `vault token revoke` has nothing to revoke. Contain the leak"
+        " by revoking the parent lease or the auth-method role that minted it,"
+        " or by rotating the underlying auth credentials, and shorten the role's"
+        " token_ttl so the exposure window closes. Then stop the leak at source:"
+        " batch tokens are meant to be requested per-operation, never written to"
+        " config, CI variables or logs. Audit Vault's audit device for requests"
+        " carrying this token."
+    ),
+    tags=["cloud", "vault", "secrets", "batch-token"],
+)
+
+
+# ===================================================
 # PULUMI
 # ===================================================
 
@@ -1508,6 +1590,103 @@ YANDEX_CLOUD_IAM_TOKEN = SecretPattern(
 
 
 # ===================================================
+# YANDEX PASSPORT OAUTH TOKEN (2026-08-24)
+# ===================================================
+
+# Distinct credential from yandex_cloud_iam_token above, and far more dangerous.
+# An IAM token ('t1.' prefix) is a ~12-hour derived credential; a Yandex
+# Passport OAuth token is the LONG-LIVED user credential you exchange FOR IAM
+# tokens, so a leak grants renewable access for the life of the token rather
+# than until the next expiry. Hence critical, where the IAM token is medium.
+#
+# Yandex documents the anchor exactly: "The token always starts with a `y`, a
+# random number in the `0-3` range, and an underscore (`_`)." The digit class is
+# deliberately NOT widened past [0-3] — that is the vendor's documented range,
+# and widening it would be inventing format.
+#
+# A three-character prefix is a weak anchor on its own, so two things carry the
+# precision instead:
+#   - The exact 55-character body width, measured on the vendor's own published
+#     token. Both boundary guards are (?<![A-Za-z0-9_-]) / (?![A-Za-z0-9_-]),
+#     which means the pattern can never fire INSIDE a longer base64url run — in
+#     a JWT payload or a base64 blob every neighbouring character is in the key
+#     charset, so the left guard fails and there is no match. The residual FP
+#     surface is a standalone 58-character token that happens to open with
+#     y[0-3]_.
+#   - The mixed-case lookaheads, which are the placeholder defence and cost
+#     essentially nothing: a random 55-character base64url body contains no
+#     lowercase (or no uppercase) with probability ~1e-13, while every plausible
+#     mask — 55 'x's, 55 'X's, a lowercase hex run, an all-digit run — fails one
+#     of them. This matters because confidence_base 0.90 sits ABOVE the 0.85
+#     FP-wordlist gate, so the wordlist never gets a chance to price masks down.
+
+YANDEX_PASSPORT_OAUTH_TOKEN = SecretPattern(
+    id="yandex_passport_oauth_token",
+    name="Yandex Passport OAuth Token",
+    description=(
+        "Yandex Passport OAuth token — 'y', a digit in the 0-3 range, an"
+        " underscore, then 55 base64url characters. This is the long-lived user"
+        " credential that Yandex Cloud API clients exchange for short-lived IAM"
+        " tokens, so unlike an IAM token it does not expire out of usefulness:"
+        " whoever holds it can keep minting fresh IAM tokens and acting as the"
+        " account across Yandex Cloud and Yandex services."
+    ),
+    provider="yandex",
+    severity="critical",
+    # Prefix shape (a 'y', a digit 0-3, an underscore) is stated verbatim in
+    # Yandex Cloud's OAuth token documentation, and the 55-character body width
+    # was measured on the token the same page publishes. The boundary guards,
+    # the mixed-case lookaheads, the confidence and the known_test_values are
+    # ClassiFinder's own.
+    # Source: https://yandex.cloud/en/docs/iam/concepts/authorization/oauth-token
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>y[0-3]_"
+        r"(?=[A-Za-z0-9_-]{0,54}[a-z])"
+        r"(?=[A-Za-z0-9_-]{0,54}[A-Z])"
+        r"[A-Za-z0-9_-]{55})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    # 0.90 — the structural tier rather than the 0.95 prefix-anchored tier,
+    # because a three-character prefix is a weak anchor and the width plus the
+    # guards are doing most of the work. It is also a floor: below 0.85 the
+    # FP-wordlist penalty (-0.40) would sink real tokens sitting in a *test* or
+    # *demo* context.
+    confidence_base=0.90,
+    # 0.0 on purpose: the body is a fixed-width random base64url value, so any
+    # entropy floor a placeholder failed would also fail real tokens. The
+    # mixed-case lookaheads do the placeholder filtering instead.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "yandex",
+        "oauth",
+        "OAUTH_TOKEN",
+        "passport",
+        "yandex_passport",
+        "iam",
+    ],
+    known_test_values={
+        # Alphabet-sequence fixture shape — the placeholder convention used
+        # throughout this repository, and mixed-case so it still satisfies the
+        # lookaheads. Assembled by concatenation so no contiguous token-shaped
+        # literal exists here. Down-scores to ~0.15.
+        "y0_" + ("AbCdEfGhIjKlMnOpQrStUvWxYz0123456789" * 2)[:55],
+    },
+    recommendation=(
+        "Revoke the OAuth token by removing the application's access under the"
+        " Yandex ID account page (Security > App passwords and tokens), which"
+        " invalidates every token issued to that client, then re-authorise and"
+        " store the new token in a secret manager rather than in source or CI"
+        " config. Rotate any IAM tokens, service-account keys or resources the"
+        " token could have provisioned while it was exposed, and review the"
+        " account's Yandex Cloud audit trails for API calls you did not make."
+    ),
+    tags=["cloud", "yandex", "oauth", "passport"],
+)
+
+
+# ===================================================
 # ELASTIC CLOUD (Batch 12 — 2026-07-13; prefix-anchored)
 # ===================================================
 
@@ -2185,6 +2364,168 @@ MICROSOFT_CASK_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# OPENSHIFT (2026-08-24)
+# ===================================================
+
+# An OpenShift OAuth access token is the bearer credential `oc login --token=`
+# takes and the value of the `Authorization: Bearer ...` header against the
+# cluster API. The whole 'sha256~<43>' string is the credential, so the whole
+# string is captured — the prefix is not a decoration to be stripped.
+#
+# The 43-character body is a DERIVED constant, not a width measured off one
+# sample. OpenShift's OAuth API types state that a token's stored name is the
+# token sha256-hashed and then URL-safe unpadded-base64-encoded per RFC 4648;
+# 43 is the unique unpadded-base64url length for a 32-byte SHA-256 digest
+# (31 bytes -> 42 characters, 33 -> 44). So {43} is a property of the digest
+# size and cannot drift.
+#
+# 'sha256~' appears in no other registered pattern. The 43-character body is
+# also matchable by the generic catch-alls, but provider != "generic" wins every
+# overlapping span in _dedup_overlapping_findings regardless of confidence, so
+# this pattern is the sole claimant; a test pins that.
+#
+# The '~' is the reason the left guard can be cheap: it is not in the token
+# charset, so a 'sha256~' occurring inside a longer identifier is already
+# impossible. The guards exist to stop the body being the leading or trailing
+# slice of a longer base64url run.
+
+OPENSHIFT_OAUTH_ACCESS_TOKEN = SecretPattern(
+    id="openshift_oauth_access_token",
+    name="OpenShift OAuth Access Token",
+    description=(
+        "OpenShift / OKD OAuth access token — the literal 'sha256~' prefix"
+        " followed by 43 URL-safe unpadded base64 characters. This is the bearer"
+        " token `oc login --token=` accepts and that clients send as"
+        " 'Authorization: Bearer'. It carries the full RBAC of the user or"
+        " service account it was issued to, so on a cluster-admin account it is"
+        " effectively root on the whole cluster."
+    ),
+    provider="openshift",
+    severity="high",
+    # Structure per OpenShift's own OAuth API type definitions, which state that
+    # the token name is the token sha256-hashed and URL-safe unpadded-base64
+    # encoded (RFC 4648); the 43-character width is derived from that 32-byte
+    # digest, not transcribed. Guards, confidence and known_test_values are
+    # ClassiFinder's own.
+    # Source: https://github.com/openshift/api/blob/master/oauth/v1/types.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_~-])"
+        r"(?P<secret>sha256~[A-Za-z0-9_-]{43})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier: 'sha256~' plus a derived fixed width is about as
+    # unambiguous as a detector gets. Also comfortably above the 0.85
+    # FP-wordlist gate, so a token pasted next to the word "test" is not sunk.
+    confidence_base=0.95,
+    # 0.0 on purpose: the body is a fixed-width digest, so an entropy floor
+    # could only ever sink legitimate tokens.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "openshift",
+        "oc login",
+        "okd",
+        "kubeconfig",
+        "Bearer",
+        "OCP_TOKEN",
+    ],
+    known_test_values={
+        # The masked shape that dominates OpenShift docs, blog posts and
+        # bug reports. Assembled by concatenation. Down-scores to ~0.15.
+        "sha256~" + "A" * 43,
+    },
+    recommendation=(
+        "Delete the token object on the cluster — `oc delete oauthaccesstoken"
+        " sha256~<...>`, or `oc logout` from the session that minted it — which"
+        " revokes it immediately; OpenShift access tokens are otherwise valid"
+        " for their full 24-hour default lifetime. If the token belonged to a"
+        " service account, rotate the account's credentials. Then review the"
+        " cluster audit log for API activity attributed to that user while the"
+        " token was exposed, and stop embedding `oc login --token=` in CI"
+        " scripts, kubeconfigs committed to source, or shell history."
+    ),
+    tags=["cloud", "openshift", "kubernetes", "oauth"],
+)
+
+
+# ===================================================
+# SCALINGO (2026-08-24)
+# ===================================================
+
+# Scalingo API tokens carry a region in the prefix — 'tk-us-' is the token shape
+# Scalingo's own token documentation publishes, and it is the only variant
+# shipped here. Widening the region segment to an open [a-z]{2} would be
+# inventing format for regions whose prefixes have not been observed.
+#
+# Severity is critical rather than high on the vendor's own wording: Scalingo
+# API tokens have an INFINITE lifetime unless explicitly revoked, and they
+# authenticate the full platform API — deploying, scaling, reading environment
+# variables (which is to say, every other secret the app holds), and opening
+# database tunnels.
+#
+# The 48-character body is measured, not assumed: both concrete tokens Scalingo
+# renders in its own documentation are exactly 48 characters after the prefix.
+# The charset includes '-' and '_' as well as alphanumerics, which is why the
+# left guard has to carry '-' too: without it, the trailing part of a longer
+# hyphenated identifier could present as a 'tk-us-' prefix.
+
+SCALINGO_API_TOKEN = SecretPattern(
+    id="scalingo_api_token",
+    name="Scalingo API Token",
+    description=(
+        "Scalingo API token — the 'tk-us-' region-qualified prefix followed by"
+        " 48 base64url characters. Scalingo API tokens have no expiry unless"
+        " revoked, and they authenticate the whole platform API: deploying and"
+        " restarting apps, scaling containers, reading and writing environment"
+        " variables (so every other credential the app holds), and opening"
+        " database tunnels."
+    ),
+    provider="scalingo",
+    severity="critical",
+    # Prefix and the 48-character body are Scalingo's own: both concrete tokens
+    # rendered on its token documentation measure identically. Guards,
+    # confidence and known_test_values are ClassiFinder's own.
+    # Source: https://developers.scalingo.com/tokens
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>tk-us-[A-Za-z0-9_-]{48})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier, and above the 0.85 FP-wordlist gate so a token in a
+    # *test* or *staging* context is not silently priced down — Scalingo tokens
+    # are commonly issued per-environment.
+    confidence_base=0.95,
+    # 0.0 on purpose: fixed-width random body; an entropy floor could only sink
+    # legitimate tokens.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "scalingo",
+        "SCALINGO_API_TOKEN",
+        "scalingo login",
+        "api_token",
+    ],
+    known_test_values={
+        # The token Scalingo publishes in its own documentation — the most
+        # copy-pasted value of this shape. Assembled by concatenation so no
+        # contiguous token-shaped literal exists here. Down-scores to ~0.15.
+        "tk-us-" + "BQ3LRmLGc35pMjdgwjX6kI1IWh7MAYk2uqquYwLDxCd4fhSm",
+        # Masked placeholder shape.
+        "tk-us-" + "X" * 48,
+    },
+    recommendation=(
+        "Revoke this token immediately in the Scalingo dashboard under Account >"
+        " Tokens — it does not expire on its own — and issue a replacement"
+        " scoped to a single automation. Because the token can read every app's"
+        " environment variables, treat every other credential in those apps as"
+        " exposed too and rotate them. Review the app's deployment and"
+        " operations history for activity you did not initiate."
+    ),
+    tags=["cloud", "scalingo", "paas"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -2253,4 +2594,11 @@ register(
     AZURE_CONTAINER_REGISTRY_KEY,
     AZURE_APIM_KEY,
     MICROSOFT_CASK_KEY,
+    # 2026-08-24 — Vault batch token ('hvb.'), OpenShift OAuth access token
+    # ('sha256~' + derived 43-char digest), Scalingo API token ('tk-us-'),
+    # Yandex Passport OAuth token (long-lived, exchanged for IAM tokens).
+    VAULT_BATCH_TOKEN,
+    OPENSHIFT_OAUTH_ACCESS_TOKEN,
+    SCALINGO_API_TOKEN,
+    YANDEX_PASSPORT_OAUTH_TOKEN,
 )

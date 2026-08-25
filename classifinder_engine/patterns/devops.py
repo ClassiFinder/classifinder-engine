@@ -1505,6 +1505,214 @@ LOGFIRE_WRITE_TOKEN = SecretPattern(
     tags=["devops", "logfire", "pydantic", "observability", "telemetry"],
 )
 
+# SETTLEMINT (2026-08-24)
+# ===================================================
+
+# SettleMint issues three access-token families and distinguishes them purely by
+# the prefix: 'sm_pat_' personal access tokens (a human's credential),
+# 'sm_aat_' application access tokens (machine-to-machine, long-lived) and
+# 'sm_sat_' service account tokens. The vendor's own SDK carries the masking
+# regex /sm_(pat|aat|sat)_[0-9a-zA-Z]+/g, which is what attests the body charset
+# as strictly alphanumeric — no '-', no '_' after the prefix.
+#
+# The {16,} floor is the shortest body the vendor renders for this family (its
+# docs show the sibling token shape as 'sm_..._' followed by sixteen x's), and
+# it is a FLOOR rather than a fixed width on purpose: the vendor's own regex is
+# unbounded, so pinning an exact width would be inventing format. The trailing
+# (?![0-9a-zA-Z]) guard makes the greedy run take the whole token rather than a
+# 16-character prefix of it.
+#
+# 'sm_pat_' and 'sm_aat_' are shipped as two separate patterns rather than one
+# alternation because the two credentials have genuinely different blast radii
+# and remediation paths — a personal token is revoked by its owner, an
+# application token by rotating the application's credential — and a single
+# finding type would collapse that distinction in the API response.
+
+SETTLEMINT_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="settlemint_personal_access_token",
+    name="SettleMint Personal Access Token",
+    description=(
+        "SettleMint personal access token — the 'sm_pat_' prefix followed by at"
+        " least 16 alphanumerics. This is a human user's credential and carries"
+        " that user's permissions across every workspace and application they"
+        " can reach: reading and deploying blockchain networks, nodes, smart"
+        " contract sets, and the private keys and integration credentials held"
+        " alongside them."
+    ),
+    provider="settlemint",
+    severity="high",
+    # Prefix and the strictly-alphanumeric body charset are SettleMint's own,
+    # attested by the masking regex /sm_(pat|aat|sat)_[0-9a-zA-Z]+/g in the
+    # vendor SDK's access-token schema. Body floor, boundary guard, confidence
+    # and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/settlemint/sdk/blob/main/sdk/utils/src/validation/access-token.schema.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>sm_pat_[0-9a-zA-Z]{16,})"
+        r"(?![0-9a-zA-Z])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier, and above the 0.85 FP-wordlist gate so a token in a
+    # *test* / *demo* context is not silently priced below threshold.
+    confidence_base=0.95,
+    # 0.0 on purpose: a seven-character literal prefix already carries the
+    # precision, and an entropy floor on a 16-character body would sink short
+    # legitimate tokens.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "settlemint",
+        "SETTLEMINT_ACCESS_TOKEN",
+        "personal access token",
+        "sm_pat",
+    ],
+    known_test_values={
+        # The vendor's own masked placeholder shape (prefix + sixteen x's).
+        # Assembled by concatenation. Down-scores to ~0.15.
+        "sm_pat_" + "x" * 16,
+    },
+    recommendation=(
+        "Revoke this token in the SettleMint platform under your user Account"
+        " Settings > API tokens and issue a replacement scoped to the narrowest"
+        " workspace the caller needs. Because a personal token inherits the"
+        " user's full access, treat the blockchain node credentials, private"
+        " keys and integration secrets in every workspace it could reach as"
+        " exposed and rotate them. Review the workspace audit log for"
+        " deployments or key exports you did not perform."
+    ),
+    tags=["devops", "settlemint", "blockchain"],
+)
+
+
+SETTLEMINT_APPLICATION_ACCESS_TOKEN = SecretPattern(
+    id="settlemint_application_access_token",
+    name="SettleMint Application Access Token",
+    description=(
+        "SettleMint application access token — the 'sm_aat_' prefix followed by"
+        " at least 16 alphanumerics. This is a machine-to-machine credential"
+        " scoped to one application and is long-lived by design, so a leak is"
+        " durable: it grants API access to that application's blockchain nodes,"
+        " smart contract sets and integration services until it is rotated."
+    ),
+    provider="settlemint",
+    severity="high",
+    # Prefix and the strictly-alphanumeric body charset are SettleMint's own,
+    # attested by the masking regex /sm_(pat|aat|sat)_[0-9a-zA-Z]+/g in the
+    # vendor SDK's access-token schema. Body floor, boundary guard, confidence
+    # and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/settlemint/sdk/blob/main/sdk/utils/src/validation/access-token.schema.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>sm_aat_[0-9a-zA-Z]{16,})"
+        r"(?![0-9a-zA-Z])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier, and above the 0.85 FP-wordlist gate.
+    confidence_base=0.95,
+    # 0.0 on purpose — see the personal-access-token note above.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "settlemint",
+        "SETTLEMINT_ACCESS_TOKEN",
+        "application access token",
+        "sm_aat",
+    ],
+    known_test_values={
+        # The vendor's own masked placeholder shape (prefix + sixteen x's).
+        # Assembled by concatenation. Down-scores to ~0.15.
+        "sm_aat_" + "x" * 16,
+    },
+    recommendation=(
+        "Rotate this token in the SettleMint platform under the application's"
+        " Access tokens tab, then update every deployment, CI job and service"
+        " that presents it. Application tokens do not expire on their own, so"
+        " rotation is the only containment. Audit the application's blockchain"
+        " node and smart-contract activity for transactions or deployments"
+        " originating outside your own automation while it was exposed."
+    ),
+    tags=["devops", "settlemint", "blockchain", "machine-to-machine"],
+)
+
+
+# ===================================================
+# DOCKER SWARM (2026-08-24)
+# ===================================================
+
+# A Swarm join token is what `docker swarm join --token` takes, and possessing
+# the manager variant is equivalent to owning the cluster: a new manager joins
+# the Raft quorum and can read every service definition, every mounted Docker
+# secret and every config in the swarm. Worker tokens are lower-blast-radius but
+# still let an attacker place a node inside the overlay network.
+#
+# Both segment widths are cryptographic constants read off swarmkit's own CA
+# config, not measured from samples: base36DigestLen = 50 (the root CA
+# certificate's SHA-256 digest rendered in base 36 and zero-left-padded) and
+# maxGeneratedSecretLength = 25 (16 bytes of entropy, generatedSecretEntropyBytes,
+# likewise base-36 zero-left-padded). Base 36 is why the charset is [0-9a-z] and
+# never uppercase.
+#
+# Two token versions exist and both are covered by one alternation. v1 is
+# 'SWMTKN-1-'; the FIPS-era v2 form inserts a single [01] flag segment,
+# 'SWMTKN-2-0-' / 'SWMTKN-2-1-', and keeps the same two widths after it.
+
+DOCKER_SWARM_JOIN_TOKEN = SecretPattern(
+    id="docker_swarm_join_token",
+    name="Docker Swarm Join Token",
+    description=(
+        "Docker Swarm join token — 'SWMTKN-1-' (or the FIPS 'SWMTKN-2-0-' /"
+        " 'SWMTKN-2-1-' form) followed by the root CA certificate's SHA-256"
+        " digest as 50 base-36 characters, a hyphen, and a 16-byte secret as 25"
+        " base-36 characters. Presenting it to `docker swarm join` adds a node"
+        " to the cluster; the manager token makes the joiner part of the Raft"
+        " quorum, with read access to every service definition, Docker secret"
+        " and config in the swarm."
+    ),
+    provider="docker",
+    severity="high",
+    # Structure and both segment widths per Docker/moby swarmkit's own CA
+    # configuration — base36DigestLen = 50, maxGeneratedSecretLength = 25,
+    # generatedSecretEntropyBytes = 16, joinTokenBase = 36. Guards, confidence
+    # and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/moby/swarmkit/blob/master/ca/config.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9-])"
+        r"(?P<secret>SWMTKN-(?:1|2-[01])-[0-9a-z]{50}-[0-9a-z]{25})"
+        r"(?![0-9a-z])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier: a literal 'SWMTKN-' plus two fixed cryptographic
+    # widths leaves essentially no false-positive surface. Also above the 0.85
+    # FP-wordlist gate, so a token pasted into a *test* cluster runbook is not
+    # silently sunk.
+    confidence_base=0.95,
+    # 0.0 on purpose: the digest half is a fixed-width hash and the secret half
+    # a fixed-width random value, so an entropy floor could only sink real
+    # tokens.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "docker",
+        "swarm",
+        "docker swarm join",
+        "SWMTKN",
+        "manager",
+        "worker",
+    ],
+    known_test_values={
+        # The zero-filled placeholder shape — both segments are zero-left-padded
+        # base 36, so an all-zero token is the natural redaction and the one
+        # that shows up in tutorials. Assembled by concatenation. ~0.15.
+        "SWMTKN-1-" + "0" * 50 + "-" + "0" * 25,
+    },
+    recommendation=(
+        "Rotate the affected join token on a manager node — `docker swarm"
+        " join-token --rotate manager` or `--rotate worker` — which invalidates"
+        " the leaked value immediately; existing nodes stay joined. If the"
+        " MANAGER token leaked, also assume every Docker secret and config in"
+        " the swarm was readable and rotate those, and audit `docker node ls`"
+        " for nodes you did not add. Stop pasting join tokens into provisioning"
+        " scripts, CI logs or issue reports; fetch them at join time instead."
+    ),
+    tags=["devops", "docker", "swarm", "cluster"],
+)
 
 
 register(
@@ -1559,4 +1767,10 @@ register(
     # 2026-08-25 — Logfire write token (vendor SDK parsing regex,
     # pylf_v<version>_<region>_ + optional org UUID + 44-char body)
     LOGFIRE_WRITE_TOKEN,
+    # 2026-08-24 — SettleMint personal + application access tokens
+    # (vendor SDK masking regex) and the Docker Swarm join token
+    # (swarmkit CA constants: 50-char base-36 digest + 25-char secret).
+    SETTLEMINT_PERSONAL_ACCESS_TOKEN,
+    SETTLEMINT_APPLICATION_ACCESS_TOKEN,
+    DOCKER_SWARM_JOIN_TOKEN,
 )
