@@ -996,6 +996,67 @@ TABLEAU_PERSONAL_ACCESS_TOKEN_SECRET = SecretPattern(
     tags=["data", "tableau", "analytics", "business-intelligence"],
 )
 
+# ===================================================
+# DUB
+# ===================================================
+
+DUB_API_KEY = SecretPattern(
+    id="dub_api_key",
+    name="Dub API Key",
+    description=(
+        "Dub (dub.co) workspace API key — the literal 'dub_' prefix followed by a"
+        " 24-character alphanumeric nanoid body, 28 characters in total. Authenticates"
+        " the Dub REST API with workspace-scoped read/write on links, domains, tags,"
+        " webhooks and analytics. Distinct from Dub's public identifiers (dub_pk_"
+        " publishable key, dub_app_ OAuth client id) and from its other credentials"
+        " (dub_app_secret_, dub_access_token_, dub_embed_), all of which carry an"
+        " underscore inside the first 24 body characters and so cannot match."
+    ),
+    provider="dub",
+    severity="high",
+    # Prefix and body width come from the vendor's own generator rather than from
+    # samples: apps/web/app/api/tokens/route.ts mints the key as
+    # `dub_${nanoid(24)}`, and apps/web/lib/auth/workspace.ts gates restricted
+    # tokens on `apiKey?.startsWith("dub_")`. The charset is exact too — the
+    # nanoid imported there is packages/utils/src/functions/nanoid.ts, a
+    # customAlphabet call over 62 alphanumerics, so stock nanoid's '_' and '-'
+    # are NOT in the alphabet. Prefix + exact 24-character body is the anchor.
+    # Source: https://github.com/dubinc/dub/blob/main/apps/web/app/api/tokens/route.ts
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])"
+        r"(?P<secret>dub_[0-9A-Za-z]{24})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # prefix + exact nanoid(24) width are the anchor
+    context_keywords=[
+        "dub",
+        "dub.co",
+        "DUB_API_KEY",
+        "api.dub.co",
+        "workspace",
+    ],
+    known_test_values={
+        # Single-character masks — how documentation and redacted logs render
+        # this key. confidence_base sits above the 0.85 FP-wordlist gate, so
+        # these must be pinned here to land at ~0.15 rather than as live keys.
+        "dub_" + "x" * 24,
+        "dub_" + "X" * 24,
+        "dub_" + "0" * 24,
+    },
+    recommendation=(
+        "Delete this key under Dub's workspace Settings > API Keys and issue a"
+        " replacement, then update DUB_API_KEY everywhere it is configured — CI,"
+        " deploy targets, and local .env files. Because the key is"
+        " workspace-scoped, review the workspace's links, domains and webhook"
+        " endpoints for changes made while it was exposed; a holder can rewrite"
+        " destination URLs on existing short links and read all click analytics."
+    ),
+    tags=["data", "dub", "link-management", "analytics"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -1031,4 +1092,7 @@ register(
     # 2026-08-21 — Tableau personal access token secret (prefixless fixed-width
     # composite, 22 base64 + '==:' + 32 mixed-case alnum; vendor REST API ref)
     TABLEAU_PERSONAL_ACCESS_TOKEN_SECRET,
+    # 2026-08-26 — Dub API key (prefix + exact nanoid(24) body; the fixed width
+    # is also what excludes Dub's public dub_pk_ / dub_app_ identifiers)
+    DUB_API_KEY,
 )
