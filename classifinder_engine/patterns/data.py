@@ -1057,6 +1057,84 @@ DUB_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# OUTLINE
+# ===================================================
+
+OUTLINE_API_KEY = SecretPattern(
+    id="outline_api_key",
+    name="Outline API Key",
+    description=(
+        "Outline (getoutline.com / outline/outline) personal API key — the literal"
+        " 'ol_api_' prefix followed by exactly 38 alphanumeric characters, 45"
+        " characters in total. Sent as 'Authorization: Bearer' and carries the full"
+        " scope of the user who created it: read, create, update and delete every"
+        " document and collection that user can reach, plus admin operations if the"
+        " user is an admin. Legacy Outline keys predate the prefix and are bare"
+        " 38-character strings; those are deliberately NOT matched (see below)."
+    ),
+    provider="outline",
+    severity="high",
+    # Prefix, body width and charset all come from Outline's own generator and
+    # validator rather than from observed samples:
+    #   server/models/ApiKey.ts declares `static prefix = "ol_api_";` and the
+    #   @BeforeValidate hook mints the credential as
+    #   `const secret = `${ApiKey.prefix}${randomString(38)}`;`
+    #   The same file's `match()` pins the width exactly:
+    #   `text.replace(ApiKey.prefix, "").match(/^[\w]{38}$/)`.
+    # The charset is base62, not `\w`: shared/random.ts gives randomString a
+    # NUMBER argument, which defaults charset to "alphanumeric" and
+    # capitalization to "mixed" — lowercase + uppercase + numeric, with no '_'
+    # and no '-'. The `[\w]` in match() is a looser input-sniffing superset,
+    # not the alphabet the generator draws from.
+    #
+    # Anchored ONLY on the prefix, deliberately. match()'s own comment reads
+    # "cannot guarantee prefix here as older keys do not include it" — legacy
+    # Outline keys are bare 38-character alphanumeric strings. Registering an
+    # unprefixed variant would fire on every 38-character base62 run in every
+    # document, so the legacy form is knowingly left undetected rather than
+    # traded for an FP factory.
+    #
+    # No entropy gate: the body is a fixed-width random base62 run, so any
+    # floor a placeholder failed would also sink real keys.
+    # Source: https://github.com/outline/outline/blob/main/server/models/ApiKey.ts
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])"
+        r"(?P<secret>ol_api_[0-9A-Za-z]{38})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # prefix + vendor-pinned 38-char width are the anchor
+    context_keywords=[
+        "outline",
+        "getoutline",
+        "OUTLINE_API_KEY",
+        "app.getoutline.com",
+        "wiki",
+    ],
+    known_test_values={
+        # Single-character masks — how documentation and redacted logs render
+        # this key. confidence_base sits above the 0.85 FP-wordlist gate, so
+        # these must be pinned here to land at ~0.15 rather than as live keys.
+        "ol_api_" + "x" * 38,
+        "ol_api_" + "X" * 38,
+        "ol_api_" + "0" * 38,
+    },
+    recommendation=(
+        "Revoke this key under Outline's Settings > API Keys (or DELETE"
+        " /api/apiKeys.delete) and issue a replacement, then update"
+        " OUTLINE_API_KEY everywhere it is configured — CI, integrations, and"
+        " local .env files. Because the key inherits the creating user's full"
+        " scope, audit the workspace's document revision history and any"
+        " newly-created shares for activity while it was exposed; every"
+        " document and collection that user could read was readable with it."
+    ),
+    tags=["data", "outline", "wiki", "knowledge-base", "documentation"],
+)
+
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -1095,4 +1173,7 @@ register(
     # 2026-08-26 — Dub API key (prefix + exact nanoid(24) body; the fixed width
     # is also what excludes Dub's public dub_pk_ / dub_app_ identifiers)
     DUB_API_KEY,
+    # 2026-08-27 — Outline API key (ol_api_ + vendor-pinned 38-char base62 body;
+    # the prefixless legacy form is deliberately not registered)
+    OUTLINE_API_KEY,
 )
