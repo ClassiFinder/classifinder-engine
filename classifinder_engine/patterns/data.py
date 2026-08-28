@@ -1134,6 +1134,108 @@ OUTLINE_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# METABASE
+# ===================================================
+
+METABASE_API_KEY = SecretPattern(
+    id="metabase_api_key",
+    name="Metabase API Key",
+    description=(
+        "Metabase API key — the literal 'mb_' prefix followed by a 44-character"
+        " standard-base64 body (43 data characters plus exactly one '=' pad),"
+        " 47 characters in total. Sent as the 'x-api-key' request header and"
+        " authenticated as the group-scoped user the key was minted for: every"
+        " saved question, dashboard and collection that user can reach, and"
+        " through them the results of queries against every database the"
+        " Metabase instance is configured against."
+    ),
+    provider="metabase",
+    severity="high",
+    # Prefix, body width and charset all come from Metabase's own generator
+    # rather than from observed samples:
+    #   src/metabase/api_keys/models/api_key.clj
+    #     (mu/defn generate-key ... "Generates a new API key - a random base64
+    #      string prefixed with `mb_`"
+    #      (u.secret/secret
+    #        (str "mb_" (u.random/secure-base64
+    #                     api-keys.schema/generated-bytes-key-length))))
+    #   src/metabase/api_keys/schema.clj
+    #     generated-bytes-key-length = 32
+    #     prefix-length              = 7   ("the length of `mb_1234`")
+    #     generated-string-key-length = 47, derived independently by the vendor
+    #       (256 bits / 6 -> 42.67 unpadded chars -> ceil(/4) = 11 blocks
+    #        -> 44 chars, + 3 for the prefix)
+    #   src/metabase/util/random.cljc
+    #     (defn secure-base64 [size]
+    #       (Base64/encodeBase64String (secure-random-bytes size)))
+    #
+    # The body width is therefore DETERMINISTIC, not a measured range: 32 bytes
+    # is 3*10 + 2, so the encoding is always 43 data characters followed by
+    # exactly one '=' pad — 44 characters, matching the vendor's own
+    # independently-computed 47-character total. The alphabet is STANDARD
+    # base64 ([A-Za-z0-9+/] with '=' padding), not base64url, because Apache
+    # Commons Codec's encodeBase64String is the standard encoder and has been
+    # unchunked since Codec 1.5 (and 44 characters is under the 76-character
+    # chunk threshold either way), so the body is always contiguous.
+    #
+    # Scope: only the GENERATED shape is matched. The same schema also admits
+    # USER-SUPPLIED keys — `key.raw` is [:string {:min 12, :max 254}] with a
+    # "must start with 'mb_'" predicate, used by enterprise config files — and
+    # matching that would mean reporting any 12-character string beginning
+    # 'mb_' as a credential. That is knowingly traded away for precision.
+    #
+    # 'mb_' is a weak three-character anchor on its own, so the precision is
+    # carried by the exact 44-character padded body plus two independently
+    # authored boundary guards. The left guard also excludes '-' because
+    # base64url — the one alphabet in which the literal 'mb_' can appear
+    # INSIDE a random-looking run — uses '-' and '_' as its extra two
+    # characters; without it a base64url blob ending in a 'mb_'-prefixed tail
+    # could be claimed. The right guard carries the body charset AND '=', so a
+    # 43-character run that is really the head of a longer base64 payload is
+    # never reported as a whole key ('mb_' + 43 chars + '==' is not a
+    # canonical encoding of 32 bytes and is correctly rejected).
+    #
+    # No entropy gate: the body is a fixed-width random base64 run, so any
+    # floor a placeholder failed would also sink real keys.
+    # Source: https://github.com/metabase/metabase/blob/master/src/metabase/api_keys/models/api_key.clj
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>mb_[0-9A-Za-z+/]{43}=)"
+        r"(?![0-9A-Za-z+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # fixed-width random base64 body; a floor could only sink real keys
+    context_keywords=[
+        "metabase",
+        "METABASE_API_KEY",
+        "MB_API_KEY",
+        "x-api-key",
+        "api/card",
+    ],
+    known_test_values={
+        # Single-character masks — how documentation and redacted logs render
+        # this key. confidence_base sits above the 0.85 FP-wordlist gate, so
+        # these must be pinned here to land at ~0.15 rather than as live keys.
+        "mb_" + "x" * 43 + "=",
+        "mb_" + "X" * 43 + "=",
+        "mb_" + "0" * 43 + "=",
+    },
+    recommendation=(
+        "Delete this key in Metabase under Admin settings > Authentication >"
+        " API keys (or DELETE /api/api-key/:id) and issue a replacement, then"
+        " update METABASE_API_KEY everywhere it is configured — CI, embedding"
+        " backends, and local .env files. The key authenticates as its"
+        " associated group, so audit the instance's view and query logs"
+        " (Admin settings > Tools > Question audit / the query_execution"
+        " table) for activity while it was exposed: anything that group could"
+        " query, including the underlying warehouses Metabase connects to,"
+        " was readable with it."
+    ),
+    tags=["data", "metabase", "analytics", "business-intelligence", "dashboards"],
+)
+
 
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
@@ -1176,4 +1278,7 @@ register(
     # 2026-08-27 — Outline API key (ol_api_ + vendor-pinned 38-char base62 body;
     # the prefixless legacy form is deliberately not registered)
     OUTLINE_API_KEY,
+    # 2026-08-28 — Metabase API key (mb_ + deterministic 44-char padded base64
+    # body; the schema's permissive user-supplied form is deliberately excluded)
+    METABASE_API_KEY,
 )
