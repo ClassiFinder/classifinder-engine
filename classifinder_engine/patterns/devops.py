@@ -1715,6 +1715,135 @@ DOCKER_SWARM_JOIN_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# UNLEASH
+# ===================================================
+
+UNLEASH_API_TOKEN = SecretPattern(
+    id="unleash_api_token",
+    name="Unleash API Token",
+    description=(
+        "Unleash API token — the three-part '<projects>:<environment>.<hash>'"
+        " form, where the hash is exactly 56 lowercase hex characters. The"
+        " projects segment is a single project id, '[]' (a specific set of"
+        " projects) or '*' (all current and future projects). Sent as the"
+        " 'Authorization' header; a client token reads every feature-flag"
+        " configuration in its scope, and an admin token ('*:*.<hash>') is"
+        " full control of the Unleash instance."
+    ),
+    provider="unleash",
+    severity="high",
+    # Structure, body width and charset all come from Unleash's own generator
+    # rather than from observed samples:
+    #   src/lib/services/api-token-service.ts
+    #     generateSecretKey({ projects, environment }):
+    #       const randomStr = crypto.randomBytes(28).toString('hex');
+    #       return `${projects[0]}:${environment}.${randomStr}`
+    #       (with '[]' in place of projects[0] when projects.length > 1)
+    #   src/lib/types/models/api-token.ts
+    #     ALL = '*'   — the all-projects / all-environments scope
+    #
+    # BOTH segments accept '*', not just the first: an ADMIN token is scoped to
+    # ALL for project and environment alike and is minted as '*:*.<hash>'. That
+    # is the highest-severity variant of this credential, so the environment
+    # alternation carries '*' as well — omitting it would silently miss exactly
+    # the token that grants full control of the instance.
+    #
+    # randomBytes(28) -> hex is DETERMINISTICALLY 56 lowercase hex characters,
+    # so the body width is exact rather than a measured range. The vendor's own
+    # documentation agrees independently: docs.getunleash.io publishes three
+    # concrete example tokens (new-checkout-flow:development.<hash>,
+    # []:production.<hash>, *:development.<hash>) whose hashes each measure 56
+    # characters over [0-9a-f].
+    #
+    # THE DOC PROSE SAYING "a 64-character-long hexadecimal string" IS STALE,
+    # and is resolved rather than ignored — it contradicts both the generator
+    # and the same page's own examples. Commit dfb890c63 ("Feat: Api-Tokens",
+    # 2021-03-29) generated a BARE crypto.randomBytes(32).toString('hex') — 64
+    # hex, with no project/environment prefix at all. Commit c4b697b57d
+    # ("Feat/api key scoping", 2021-09-15) replaced it in a single hunk:
+    #     -return crypto.randomBytes(32).toString('hex');
+    #     +const randomStr = crypto.randomBytes(28).toString('hex');
+    #     +return `${project}:${environment}.${randomStr}`;
+    # i.e. the width change and the introduction of the colon+period structure
+    # landed together. The ANCHORED three-part form has therefore ONLY ever
+    # been 56 hex, and the "64" prose describes the pre-scoping bare-hex token.
+    # The width is pinned at {56} and deliberately NOT widened to {56,64}:
+    # widening would match nothing real and only add false-positive surface.
+    #
+    # The LEGACY bare 64-hex form is deliberately NOT registered. Unanchored
+    # 64-hex is indistinguishable from any other hex digest (git object ids,
+    # sha256 sums, session ids), so registering it would be a false-positive
+    # factory. It is knowingly left undetected.
+    #
+    # PERSONAL ACCESS TOKENS are also NOT registered. src/lib/features/pat/
+    # pat-service.ts mints them as `user:${crypto.randomBytes(28).toString(
+    # 'hex')}` — 56 hex with NO period — so this regex cannot match them by
+    # construction. A `user:` + 56-hex alternation would carry ONE delimiter
+    # instead of two and would cost precision, so it is traded away.
+    #
+    # ANCHORING: there is no literal prefix here — the projects segment is a
+    # user-chosen slug — so the precision is carried entirely by the two
+    # MANDATORY delimiters (':' then '.') plus the exact 56-hex body, and by
+    # two independently authored boundary guards. The left guard keeps the
+    # projects segment from starting mid-identifier; the right guard carries
+    # the body charset, so a 56-character run that is really the head of a
+    # longer hex digest is never reported as a whole token.
+    #
+    # No entropy gate: the body is a fixed-width random hex run (Shannon
+    # entropy is capped at 4.0 by the 16-symbol alphabet), so any floor a
+    # placeholder failed would also sink real tokens.
+    # Source: https://github.com/Unleash/unleash/blob/main/src/lib/services/api-token-service.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>(?:\*|\[\]|[A-Za-z0-9_-]{1,64}):(?:\*|[A-Za-z0-9_-]{1,64})\.[0-9a-f]{56})"
+        r"(?![0-9a-f])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # fixed-width random hex body; a floor could only sink real tokens
+    context_keywords=[
+        "unleash",
+        "UNLEASH_API_TOKEN",
+        "getunleash",
+        "feature_flag",
+        "feature-toggle",
+    ],
+    known_test_values={
+        # The vendor's OWN published example hash. docs.getunleash.io prints it
+        # three times — once per scope shape — so it is copied verbatim into
+        # every walkthrough, README and support thread that follows the docs.
+        # confidence_base 0.90 sits above the 0.85 FP-wordlist gate, so the
+        # wordlist never gets a chance to price these down; they are pinned
+        # here instead and land at ~0.15.
+        "new-checkout-flow:development."
+        + "be44368985f7fb3237c584ef"
+        + "86f3d6bdada42ddbd63a019d26955178",
+        "[]:production." + "be44368985f7fb3237c584ef" + "86f3d6bdada42ddbd63a019d26955178",
+        "*:development." + "be44368985f7fb3237c584ef" + "86f3d6bdada42ddbd63a019d26955178",
+        # Single-character masks — how redacted logs and documentation render
+        # the hash once it has been scrubbed.
+        "*:production." + "0" * 56,
+        "*:production." + "a" * 56,
+        "*:production." + "f" * 56,
+        "[]:production." + "0" * 56,
+        "default:development." + "0" * 56,
+    },
+    recommendation=(
+        "Revoke this token in the Unleash admin UI under Configure > API access"
+        " (or DELETE /api/admin/api-tokens/:token) and issue a replacement,"
+        " then update UNLEASH_API_TOKEN everywhere it is configured — SDK"
+        " initialisation, CI, Edge/proxy deployments and local .env files."
+        " Check the scope before assuming the blast radius: a '*:*' admin token"
+        " is full control of the instance, while a project- and"
+        " environment-scoped client token still exposes every flag"
+        " configuration and strategy constraint in its scope, including the"
+        " segment and context-field values that can reveal customer"
+        " identifiers."
+    ),
+    tags=["devops", "unleash", "feature-flag", "feature-toggle"],
+)
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -1773,4 +1902,7 @@ register(
     SETTLEMINT_PERSONAL_ACCESS_TOKEN,
     SETTLEMINT_APPLICATION_ACCESS_TOKEN,
     DOCKER_SWARM_JOIN_TOKEN,
+    # 2026-08-29 — Unleash API token (vendor generator: crypto.randomBytes(28)
+    # hex behind a mandatory '<projects>:<environment>.' structure)
+    UNLEASH_API_TOKEN,
 )
