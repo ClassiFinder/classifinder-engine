@@ -1844,6 +1844,123 @@ UNLEASH_API_TOKEN = SecretPattern(
     tags=["devops", "unleash", "feature-flag", "feature-toggle"],
 )
 
+# ===================================================
+# PORTAINER
+# ===================================================
+
+PORTAINER_API_ACCESS_TOKEN = SecretPattern(
+    id="portainer_api_access_token",
+    name="Portainer API Access Token",
+    description=(
+        "Portainer API access token — the literal 'ptr_' prefix followed by a"
+        " 44-character standard-base64 body (43 data characters plus exactly"
+        " one '=' pad), 48 characters in total. Sent as the 'X-API-Key'"
+        " request header and authenticated as the Portainer user it was minted"
+        " for, with that user's role across every environment the instance"
+        " manages: an administrator's token is control of the Docker, Swarm or"
+        " Kubernetes endpoints behind it — deploy a container, mount the host"
+        " filesystem, read every stack file, registry credential and"
+        " environment variable Portainer holds."
+    ),
+    provider="portainer",
+    severity="high",
+    # Prefix, body width and charset all come from Portainer's own generator
+    # rather than from observed samples:
+    #   api/apikey/service.go
+    #     const portainerAPIKeyPrefix = "ptr_"
+    #     func (a *APIKeyService) GenerateApiKey(user, description) {
+    #       randKey          := GenerateRandomKey(32)
+    #       encodedRawAPIKey := base64.StdEncoding.EncodeToString(randKey)
+    #       prefixedAPIKey   := portainerAPIKeyPrefix + encodedRawAPIKey
+    #       ...
+    #       apiKey := &portainer.APIKey{... Prefix: prefixedAPIKey[:7] ...}
+    #     }
+    #     func GenerateRandomKey(length int) []byte   // io.ReadFull(rand.Reader)
+    #
+    # The body width is therefore DETERMINISTIC, not a measured range: 32 bytes
+    # is 3*10 + 2, so StdEncoding always emits 43 data characters followed by
+    # exactly one '=' pad — 44 characters, 48 with the prefix. `Prefix:
+    # prefixedAPIKey[:7]` corroborates independently that 'ptr_' is part of the
+    # RAW key rather than a display decoration: the stored 7-character lookup
+    # prefix is 'ptr_' plus the first three body characters.
+    #
+    # The alphabet is STANDARD base64 ([A-Za-z0-9+/] with '=' padding), NOT
+    # base64url and NOT RawStdEncoding — base64.StdEncoding is the padded
+    # standard encoder, so '+' and '/' are both reachable body characters and
+    # the single '=' is always present. Dropping either would silently miss
+    # real tokens.
+    #
+    # Only the token itself is matched. The DERIVED digest that Portainer
+    # stores is base64.StdEncoding of a SHA-256 (HashRaw) — a 44-character
+    # padded base64 run with NO 'ptr_' prefix, indistinguishable from any other
+    # base64'd sha256 sum — so it is knowingly left undetected rather than
+    # traded for a false-positive factory, and a test pins that decision.
+    #
+    # 'ptr_' is a WEAK anchor on its own — 'ptr' is the universal abbreviation
+    # for "pointer", so it appears inside ordinary C/C++/Rust identifiers
+    # (raw_ptr_, char_ptr_, shared_ptr_) — so the precision is carried by the
+    # exact 44-character padded body plus two independently authored boundary
+    # guards. The left guard also excludes '-' because base64url is the one
+    # alphabet in which the literal 'ptr_' can appear INSIDE a random-looking
+    # run ('_' is not in the standard alphabet, so a standard-base64 blob can
+    # never contain it); without that guard a base64url payload ending in a
+    # 'ptr_'-prefixed tail could be claimed. The right guard carries the body
+    # charset AND '=', so a 43-character run that is really the head of a
+    # longer base64 payload is never reported as a whole token ('ptr_' + 43
+    # chars + '==' is not a canonical encoding of 32 bytes and is correctly
+    # rejected).
+    #
+    # The 43rd body character is in fact constrained to [AEIMQUYcgkosw048]:
+    # the two leftover bytes leave only four significant bits in the final
+    # 6-bit group. The regex deliberately keeps the BROADER [0-9A-Za-z+/]
+    # superset — the single '=' pad already pins the payload to 3k+2 bytes and,
+    # with 43 data characters, to exactly 32 — so narrowing would buy nothing
+    # the pad does not already enforce while adding a brittle dependency on the
+    # encoder never emitting stray low bits. A test pins the observation.
+    #
+    # No entropy gate: the body is a fixed-width random base64 run, so any
+    # floor a placeholder failed would also sink real tokens.
+    # Source: https://github.com/portainer/portainer/blob/develop/api/apikey/service.go
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>ptr_[0-9A-Za-z+/]{43}=)"
+        r"(?![0-9A-Za-z+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # fixed-width random base64 body; a floor could only sink real tokens
+    context_keywords=[
+        "portainer",
+        "PORTAINER_API_KEY",
+        "X-API-Key",
+        "api/endpoints",
+        "api/stacks",
+    ],
+    known_test_values={
+        # Single-character masks — how documentation and redacted logs render
+        # this token. confidence_base 0.90 sits above the 0.85 FP-wordlist gate
+        # (scanner.py:197), so the wordlist never gets a chance to price these
+        # down; they are pinned here instead and land at ~0.15.
+        "ptr_" + "x" * 43 + "=",
+        "ptr_" + "X" * 43 + "=",
+        "ptr_" + "0" * 43 + "=",
+        "ptr_" + "A" * 43 + "=",
+    },
+    recommendation=(
+        "Remove this token in Portainer under My account > Access tokens (or"
+        " DELETE /api/users/:id/tokens/:tokenId) and issue a replacement, then"
+        " update PORTAINER_API_KEY everywhere it is configured — CI jobs,"
+        " deployment scripts, Terraform/Ansible providers and local .env"
+        " files. Audit the blast radius by the token owner's ROLE, not by the"
+        " token: an administrator's token is control of every Docker, Swarm or"
+        " Kubernetes environment the instance manages, so review container and"
+        " stack activity for the exposure window and rotate anything the"
+        " instance itself holds — registry credentials, stack environment"
+        " variables and Kubernetes secrets were all readable with it."
+    ),
+    tags=["devops", "portainer", "containers", "docker", "kubernetes"],
+)
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -1905,4 +2022,7 @@ register(
     # 2026-08-29 — Unleash API token (vendor generator: crypto.randomBytes(28)
     # hex behind a mandatory '<projects>:<environment>.' structure)
     UNLEASH_API_TOKEN,
+    # 2026-08-30 — Portainer API access token (vendor generator: 'ptr_' +
+    # base64.StdEncoding of 32 random bytes = 43 chars + one '=' pad)
+    PORTAINER_API_ACCESS_TOKEN,
 )
