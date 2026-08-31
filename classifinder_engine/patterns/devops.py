@@ -1961,6 +1961,230 @@ PORTAINER_API_ACCESS_TOKEN = SecretPattern(
     tags=["devops", "portainer", "containers", "docker", "kubernetes"],
 )
 
+# ===================================================
+# CIRCLECI v2 API TOKENS
+# ===================================================
+
+CIRCLECI_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="circleci_personal_access_token",
+    name="CircleCI Personal Access Token",
+    description=(
+        "CircleCI personal API token in the 2023 prefixed format — the"
+        " literal 'CCIPAT_' prefix, 22 base58 characters, an underscore, and"
+        " 40 lowercase hex characters. Acts as the user who minted it across"
+        " every organization and project that user can reach: it can read"
+        " build logs and environment-variable names, trigger and cancel"
+        " pipelines, and manage contexts. The registry's older"
+        " 'circleci_token' pattern covers the LEGACY bare 40-hex token, which"
+        " has no prefix and is only detectable next to a CIRCLE_TOKEN-style"
+        " keyword; this pattern covers the self-identifying replacement."
+    ),
+    provider="circleci",
+    severity="high",
+    # Structure per CircleCI's own changelog announcing the format:
+    # personal tokens carry the 'CCIPAT_' prefix and project tokens
+    # 'CCIPRJ_', each followed by a random component and the legacy 40-hex
+    # token value, joined by an underscore. The 22-character component is
+    # BASE58 — the Bitcoin alphabet, [1-9A-HJ-NP-Za-km-z], which drops the
+    # four visually ambiguous characters 0, O, I and l. Spelling it as
+    # base58 rather than as a loose alphanumeric class is what keeps this
+    # from being a generic '<prefix>_<22 alnum>_<40 hex>' matcher.
+    #
+    # No double-match with the legacy 'circleci_token' pattern: that one
+    # requires a CIRCLECI_TOKEN / CIRCLE_TOKEN keyword followed immediately
+    # by [=:"'\s]+ and then the 40 hex characters. Here the intervening
+    # 'CCIPAT_<base58>_' means hex never begins at the separator, so the
+    # legacy pattern cannot fire on a prefixed token. A test pins that a
+    # prefixed token in a CIRCLE_TOKEN assignment yields exactly one finding.
+    #
+    # No entropy gate: both halves are fixed-width random runs, so any floor
+    # a placeholder failed would also sink real tokens.
+    # Source: https://circleci.com/changelog/new-format-for-api-access-tokens
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>CCIPAT_[1-9A-HJ-NP-Za-km-z]{22}_[a-f0-9]{40})"
+        r"(?![a-f0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # fixed-width random halves; a floor could only sink real tokens
+    context_keywords=[
+        "circleci",
+        "CIRCLE_TOKEN",
+        "CIRCLECI_TOKEN",
+        "circleci.com/api",
+        "personal api token",
+    ],
+    known_test_values={
+        # Single-character masks. confidence_base 0.95 sits above the 0.85
+        # FP-wordlist gate (scanner.py:197), so the wordlist never prices
+        # these down; they are pinned here and land at ~0.15. 'x' and 'X' are
+        # both in the base58 alphabet; '0' is not, so the all-zero mask uses
+        # '1' for the base58 half.
+        "CCIPAT_" + "x" * 22 + "_" + "0" * 40,
+        "CCIPAT_" + "X" * 22 + "_" + "f" * 40,
+        "CCIPAT_" + "1" * 22 + "_" + "a" * 40,
+    },
+    recommendation=(
+        "Revoke this token in CircleCI under User Settings > Personal API"
+        " Tokens and issue a replacement, then update CIRCLE_TOKEN everywhere"
+        " it is configured. Scope the audit to the OWNER, not the token: it"
+        " acted as that user across every organization and project they can"
+        " reach, so review recent pipeline triggers, context changes and"
+        " project-settings edits, and rotate any credential stored in a"
+        " CircleCI context or project environment variable that the user"
+        " could read."
+    ),
+    tags=["devops", "ci", "circleci"],
+)
+
+
+CIRCLECI_PROJECT_ACCESS_TOKEN = SecretPattern(
+    id="circleci_project_access_token",
+    name="CircleCI Project Access Token",
+    description=(
+        "CircleCI project API token in the 2023 prefixed format — the literal"
+        " 'CCIPRJ_' prefix, 22 base58 characters, an underscore, and 40"
+        " lowercase hex characters. Scoped to a single project rather than to"
+        " a user: it can trigger and cancel that project's pipelines and read"
+        " its build artifacts and logs. Lower blast radius than the sibling"
+        " personal token ('CCIPAT_'), which acts as a whole user, but it is"
+        " the token that most often ends up hardcoded in a webhook or a"
+        " deploy script."
+    ),
+    provider="circleci",
+    severity="high",
+    # Same vendor changelog, same generator shape as the personal token: the
+    # prefix names the token's SCOPE ('CCIPRJ_' project, 'CCIPAT_' personal)
+    # and the body is a 22-character base58 component plus the legacy 40-hex
+    # token value, joined by an underscore. Registered as its own pattern
+    # rather than folded into a prefix alternation so the finding names the
+    # scope — the rotation path and the blast radius differ.
+    #
+    # Base58 is [1-9A-HJ-NP-Za-km-z] — the Bitcoin alphabet, without the four
+    # visually ambiguous characters 0, O, I and l.
+    #
+    # No entropy gate: both halves are fixed-width random runs.
+    # Source: https://circleci.com/changelog/new-format-for-api-access-tokens
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>CCIPRJ_[1-9A-HJ-NP-Za-km-z]{22}_[a-f0-9]{40})"
+        r"(?![a-f0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # fixed-width random halves; a floor could only sink real tokens
+    context_keywords=[
+        "circleci",
+        "CIRCLE_TOKEN",
+        "project api token",
+        "circleci.com/api",
+        "pipeline",
+    ],
+    known_test_values={
+        "CCIPRJ_" + "x" * 22 + "_" + "0" * 40,
+        "CCIPRJ_" + "X" * 22 + "_" + "f" * 40,
+        "CCIPRJ_" + "1" * 22 + "_" + "a" * 40,
+    },
+    recommendation=(
+        "Revoke this token in CircleCI under Project Settings > API"
+        " Permissions and issue a replacement, then update every webhook,"
+        " deploy script and external service that presents it. Review the"
+        " project's recent pipeline triggers for runs you did not start, and"
+        " treat any artifact or build log the project produced during the"
+        " exposure window as readable."
+    ),
+    tags=["devops", "ci", "circleci"],
+)
+
+
+# ===================================================
+# DOCKER SWARM UNLOCK KEY
+# ===================================================
+
+DOCKER_SWARM_UNLOCK_KEY = SecretPattern(
+    id="docker_swarm_unlock_key",
+    name="Docker Swarm Unlock Key",
+    description=(
+        "Docker Swarm unlock key — the literal 'SWMKEY-1-' prefix followed by"
+        " 43 unpadded standard-base64 characters. Printed once when autolock"
+        " is enabled on a swarm and required by `docker swarm unlock` before"
+        " a restarted manager will rejoin the cluster. It is the key that"
+        " decrypts the Raft log at rest, so autolock's entire purpose is"
+        " defeated by leaking it: whoever holds it plus a copy of a manager's"
+        " /var/lib/docker/swarm directory can read every Docker secret,"
+        " config and TLS key the swarm stores. Distinct from the JOIN token"
+        " ('SWMTKN-1-'), which adds a node rather than unlocking one."
+    ),
+    provider="docker",
+    severity="high",
+    # Structure per Docker's own swarm-manager locking documentation, which
+    # prints the key `docker swarm init --autolock` emits. 'SWMKEY-1-' is a
+    # literal, and the 43-character body is base64 of a 32-byte key with the
+    # padding stripped — 32 bytes is 3*10 + 2, so a padded encoding would be
+    # 43 data characters plus one '='; the emitted key carries no pad, so the
+    # width is exact rather than a measured range.
+    #
+    # The alphabet is STANDARD base64 ([A-Za-z0-9+/]), not base64url: '+' and
+    # '/' are both reachable body characters, and the documentation's own
+    # sample carries both. Spelling it as base64url would silently miss real
+    # keys.
+    #
+    # Disjoint from DOCKER_SWARM_JOIN_TOKEN by BOTH halves — a different
+    # literal ('SWMKEY-1-' vs 'SWMTKN-1-' / 'SWMTKN-2-[01]-') and a different
+    # alphabet (standard base64 vs lowercase base 36 in two hyphen-separated
+    # fixed-width segments). A test pins that neither claims the other's
+    # value.
+    #
+    # The right guard carries '=' as well as the body charset so a 43-
+    # character run that is really the head of a longer PADDED base64 payload
+    # is never reported as a whole key.
+    #
+    # No entropy gate: the body is a fixed-width random base64 run.
+    # Source: https://docs.docker.com/engine/swarm/swarm_manager_locking/
+    regex=re.compile(
+        r"(?<![0-9A-Za-z+/-])"
+        r"(?P<secret>SWMKEY-1-[0-9A-Za-z+/]{43})"
+        r"(?![0-9A-Za-z+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # fixed-width random base64 body; a floor could only sink real keys
+    context_keywords=[
+        "docker",
+        "swarm",
+        "docker swarm unlock",
+        "autolock",
+        "unlock key",
+        "SWMKEY",
+    ],
+    known_test_values={
+        # Docker's PUBLISHED documentation sample — the key printed in the
+        # swarm-manager locking guide, which is copied verbatim into every
+        # walkthrough that follows it. confidence_base 0.95 sits above the
+        # 0.85 FP-wordlist gate (scanner.py:197), so the wordlist never gets
+        # a chance to price it down; it is pinned here instead and lands at
+        # ~0.15. Assembled by concatenation to keep no contiguous key-shaped
+        # literal in source.
+        "SWMKEY-1-" + "WuYH/IX284+lRcXuoVf38viIDK3HJEKY1" + "3MIHX+tTt8",
+        # Single-character masks.
+        "SWMKEY-1-" + "x" * 43,
+        "SWMKEY-1-" + "0" * 43,
+    },
+    recommendation=(
+        "Rotate the key on a manager node — `docker swarm unlock-key --rotate`"
+        " — which re-encrypts the Raft log and invalidates the leaked value"
+        " immediately; running managers stay up, so there is no outage."
+        " Distribute the new key to whoever restarts managers and remove the"
+        " old one from password managers, runbooks and provisioning scripts."
+        " If a manager's /var/lib/docker/swarm directory could also have been"
+        " copied, assume every Docker secret, config and TLS key in the swarm"
+        " was readable and rotate those too."
+    ),
+    tags=["devops", "docker", "swarm", "cluster", "encryption"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -2025,4 +2249,10 @@ register(
     # 2026-08-30 — Portainer API access token (vendor generator: 'ptr_' +
     # base64.StdEncoding of 32 random bytes = 43 chars + one '=' pad)
     PORTAINER_API_ACCESS_TOKEN,
+    # 2026-08-31 — CircleCI v2 prefixed API tokens ('CCIPAT_' personal,
+    # 'CCIPRJ_' project: 22 base58 + '_' + the legacy 40-hex value) and
+    # the Docker Swarm unlock key ('SWMKEY-1-' + 43 unpadded base64).
+    CIRCLECI_PERSONAL_ACCESS_TOKEN,
+    CIRCLECI_PROJECT_ACCESS_TOKEN,
+    DOCKER_SWARM_UNLOCK_KEY,
 )

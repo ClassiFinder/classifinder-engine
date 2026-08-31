@@ -864,6 +864,91 @@ MONGODB_ATLAS_SERVICE_ACCOUNT_CLIENT_SECRET = SecretPattern(
 )
 
 
+# ===================================================
+# SUPABASE PERSONAL ACCESS TOKEN
+# ===================================================
+
+SUPABASE_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="supabase_personal_access_token",
+    name="Supabase Personal Access Token",
+    description=(
+        "Supabase personal access token — the literal 'sbp_' prefix, an"
+        " optional 'oauth_' infix, then exactly 40 lowercase hex characters."
+        " This is the MANAGEMENT-plane credential, not a project API key: it"
+        " authenticates the Supabase CLI and the Management API as the user"
+        " who minted it, across every organization and project that user can"
+        " reach. With it an attacker can read and rewrite project"
+        " configuration, run arbitrary SQL, mint fresh service-role keys, and"
+        " create or delete projects — a strictly wider blast radius than the"
+        " project-scoped 'sb_secret_' key. The 'oauth_' infix marks a token"
+        " issued through the Supabase OAuth flow rather than the dashboard;"
+        " both spellings authenticate identically."
+    ),
+    provider="supabase",
+    severity="critical",
+    # Structure comes from Supabase's OWN CLI validator rather than from
+    # observed samples — internal/utils declares the token's shape as a
+    # fully anchored regexp:
+    #     AccessTokenPattern = regexp.MustCompile(`^sbp_(oauth_)?[a-f0-9]{40}$`)
+    # so the prefix, the optional 'oauth_' infix, the lowercase-hex alphabet
+    # and the exact 40-character width are all vendor-asserted facts. 40
+    # lowercase hex is a 20-byte random value; the width is exact, not a
+    # measured range.
+    #
+    # The 'oauth_' infix is NOT optional decoration to drop: a token minted
+    # through the Supabase OAuth flow carries it, and a regex without it
+    # would silently miss exactly the integration-issued tokens that live in
+    # CI configuration. It is spelled as a non-capturing optional group so
+    # both forms land under one pattern id.
+    #
+    # Disjoint from the two Supabase patterns already registered — the
+    # project 'sb_secret_' key (base64url body, different prefix) and the
+    # service-role key (a JWT). A test pins that none of the three claims
+    # another's value.
+    #
+    # No entropy gate: a fixed-width random hex run is capped at Shannon
+    # entropy 4.0 by its 16-symbol alphabet, so any floor a placeholder
+    # failed would also sink real tokens.
+    # Source: https://pkg.go.dev/github.com/supabase/cli/internal/utils
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>sbp_(?:oauth_)?[a-f0-9]{40})"
+        r"(?![a-f0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # fixed-width random hex; a floor could only sink real tokens
+    context_keywords=[
+        "supabase",
+        "SUPABASE_ACCESS_TOKEN",
+        "sbp_",
+        "management",
+        "supabase login",
+    ],
+    known_test_values={
+        # Single-character masks — the redaction shape the CLI docs and
+        # screenshots use. confidence_base 0.95 sits above the 0.85
+        # FP-wordlist gate (scanner.py:197), so the wordlist never prices
+        # these down; they are pinned here and land at ~0.15.
+        "sbp_" + "0" * 40,
+        "sbp_" + "a" * 40,
+        "sbp_" + "f" * 40,
+        "sbp_oauth_" + "0" * 40,
+    },
+    recommendation=(
+        "Revoke this token in the Supabase dashboard under Account > Access"
+        " Tokens, then issue a replacement and update SUPABASE_ACCESS_TOKEN"
+        " wherever the CLI runs — CI workflows, deploy scripts and local"
+        " shells. Treat the blast radius as management-plane, not"
+        " project-scoped: anything the owning user could reach was reachable,"
+        " so also rotate the service-role and secret API keys of every project"
+        " in those organizations, and review the projects' Postgres and audit"
+        " logs for the exposure window."
+    ),
+    tags=["database", "supabase", "auth", "management"],
+)
+
+
 register(
     POSTGRES_CONNECTION_STRING,
     MYSQL_CONNECTION_STRING,
@@ -890,4 +975,7 @@ register(
     COCKROACHDB_CLOUD_API_KEY,
     # 2026-08-05 — MongoDB Atlas service-account client secret (mdb_sa_sk_ prefix)
     MONGODB_ATLAS_SERVICE_ACCOUNT_CLIENT_SECRET,
+    # 2026-08-31 — Supabase personal access token (management plane;
+    # vendor CLI validator: ^sbp_(oauth_)?[a-f0-9]{40}$)
+    SUPABASE_PERSONAL_ACCESS_TOKEN,
 )
