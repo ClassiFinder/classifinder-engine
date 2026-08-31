@@ -824,6 +824,151 @@ BLOCK_PROTOCOL_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# GITLAB CI/CD JOB TOKEN
+# ===================================================
+
+GITLAB_CICD_JOB_TOKEN = SecretPattern(
+    id="gitlab_cicd_job_token",
+    name="GitLab CI/CD Job Token",
+    description=(
+        "GitLab CI/CD job token — the 'glcbt-' prefix, a short routing"
+        " segment of up to 5 alphanumeric characters, an underscore, and a"
+        " 20-character base64url body. Injected into every job as CI_JOB_TOKEN"
+        " and valid only while that job runs, which is exactly why it leaks:"
+        " it is echoed into build logs, baked into artifacts, and passed to"
+        " third-party services by scripts that treat it as harmless. While"
+        " live it authenticates against the project's container and package"
+        " registries, can clone dependent repositories, and can trigger"
+        " downstream pipelines."
+    ),
+    provider="gitlab",
+    severity="high",
+    # Prefix per GitLab's own token-prefix table, which lists 'glcbt-' for
+    # the CI/CD job token alongside the prefixes already registered here
+    # (glpat-, glrt-, gldt-, glptt-, glft-, glimt-, glagent-, gloas-,
+    # glsoat-, glffct-). The routing segment is the short alphanumeric run
+    # GitLab places between the prefix and the random body in its routable
+    # token format; it is bounded {1,5} rather than pinned because GitLab
+    # documents the prefix, not the routing width.
+    #
+    # The body is 20 base64url characters, matching the width GitLab uses
+    # across this token family.
+    #
+    # No entropy gate: a 20-character random body behind a vendor-unique
+    # prefix leaves no placeholder an entropy floor would catch that the
+    # prefix does not already exclude.
+    # Source: https://docs.gitlab.com/security/tokens/
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>glcbt-[0-9a-zA-Z]{1,5}_[0-9a-zA-Z_-]{20})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # vendor-unique prefix carries the precision
+    context_keywords=[
+        "gitlab",
+        "CI_JOB_TOKEN",
+        "job token",
+        "ci",
+        "pipeline",
+    ],
+    known_test_values={
+        # Single-character masks — how CI documentation and redacted job logs
+        # render this token. confidence_base 0.95 sits above the 0.85
+        # FP-wordlist gate (scanner.py:197), so the wordlist never prices
+        # these down; they are pinned here and land at ~0.15.
+        "glcbt-1_" + "x" * 20,
+        "glcbt-1_" + "X" * 20,
+        "glcbt-1_" + "0" * 20,
+    },
+    recommendation=(
+        "A job token dies with its job, so the fix is to stop emitting it"
+        " rather than to rotate it: find the step that printed or forwarded"
+        " CI_JOB_TOKEN and remove it, and purge the affected job logs and"
+        " artifacts, which keep the value long after the job ended. If the"
+        " token was still live when it leaked, review the project's container"
+        " and package registries for pushes you did not make and check for"
+        " unexpected downstream pipeline triggers. Under Settings > CI/CD >"
+        " Job token permissions, narrow the allowlist of projects this"
+        " project's tokens may reach."
+    ),
+    tags=["vcs", "gitlab", "ci"],
+)
+
+
+# ===================================================
+# GITHUB OAUTH REFRESH TOKEN
+# ===================================================
+
+GITHUB_OAUTH_REFRESH_TOKEN = SecretPattern(
+    id="github_oauth_refresh_token",
+    name="GitHub OAuth Refresh Token",
+    description=(
+        "GitHub OAuth refresh token — the literal 'ghr_' prefix followed by"
+        " 36 alphanumeric characters. Issued to GitHub Apps that have user"
+        " token expiration enabled, beside the 'ghu_' user-to-server token,"
+        " and exchanged for a fresh user token without the user present."
+        " Severity is critical for the reason it is on any refresh token: it"
+        " outlives the 8-hour user token it renews, so a leaked one is"
+        " durable access to everything that user granted the app until the"
+        " authorization is revoked. Completes the 'gh*_' family already"
+        " registered here — ghp_, gho_, ghu_, ghs_ and github_pat_."
+    ),
+    provider="github",
+    severity="critical",
+    # The 'ghr_' prefix and the 36-character alphanumeric body follow the
+    # same generator shape as the rest of GitHub's 2021 prefixed token
+    # family: a role-naming four-character prefix and a fixed-width random
+    # body. Registered as its own pattern rather than folded into a prefix
+    # alternation so the finding names the token's role — a refresh token is
+    # a longer-lived exposure than the user token it renews, and the
+    # recommendation differs.
+    #
+    # No entropy gate: 'ghr_' is a vendor-unique anchor and the body is a
+    # fixed-width random run, so any floor a placeholder failed would also
+    # sink real tokens.
+    # Source: https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>ghr_[0-9A-Za-z]{36})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,  # vendor-unique prefix + fixed-width random body
+    context_keywords=[
+        "github",
+        "refresh_token",
+        "GITHUB_TOKEN",
+        "oauth",
+        "github app",
+    ],
+    known_test_values={
+        # Single-character masks — the redaction shape GitHub's own docs use.
+        # confidence_base 0.97 is above the 0.85 FP-wordlist gate, so they are
+        # pinned here rather than priced down by the wordlist. Assembled by
+        # concatenation so no scannable literal exists in source — GitHub's
+        # partner scanner recognises this prefix.
+        "ghr_" + "x" * 36,
+        "ghr_" + "X" * 36,
+        "ghr_" + "0" * 36,
+    },
+    recommendation=(
+        "Revoke the app's authorization for the affected user — the user can"
+        " do it under Settings > Applications > Authorized GitHub Apps, and an"
+        " app owner can call the OAuth token-revocation API — which"
+        " invalidates the refresh token and the user token minted from it"
+        " together. Do not wait for the user token to expire: the refresh"
+        " token renews it indefinitely. Then re-run the authorization flow,"
+        " and audit the user's repository, package and Actions activity for"
+        " the exposure window against the scopes the app holds."
+    ),
+    tags=["vcs", "github", "oauth", "auth"],
+)
+
+
 register(
     GITHUB_PAT_CLASSIC,
     GITHUB_PAT_FINE_GRAINED,
@@ -849,4 +994,8 @@ register(
     NUGET_API_KEY,
     CRATES_IO_API_TOKEN,
     BLOCK_PROTOCOL_API_KEY,
+    # 2026-08-31 — GitLab CI/CD job token ('glcbt-') and the GitHub OAuth
+    # refresh token ('ghr_'), completing the 'gh*_' prefix family.
+    GITLAB_CICD_JOB_TOKEN,
+    GITHUB_OAUTH_REFRESH_TOKEN,
 )

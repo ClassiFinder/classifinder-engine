@@ -2526,6 +2526,204 @@ SCALINGO_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# GOOGLE OAUTH CLIENT SECRET
+# ===================================================
+
+GOOGLE_OAUTH_CLIENT_SECRET = SecretPattern(
+    id="google_oauth_client_secret",
+    name="Google OAuth Client Secret",
+    description=(
+        "Google OAuth 2.0 client secret — the literal 'GOCSPX-' prefix"
+        " followed by 28 base64url characters, 35 characters in total. Issued"
+        " alongside a '<numeric>-<hash>.apps.googleusercontent.com' client ID"
+        " in the Google Cloud console and presented on the token endpoint to"
+        " exchange authorization codes for access and refresh tokens. Holding"
+        " it together with a leaked authorization code or refresh token is"
+        " enough to mint access tokens for the end users who consented to the"
+        " app, for every scope the app requested."
+    ),
+    provider="google",
+    severity="high",
+    # The 'GOCSPX-' prefix and the 28-character base64url body are the format
+    # Google has issued since the 2021 console change; the older secrets it
+    # replaced were prefixless and are deliberately not matched, because an
+    # unanchored 24-character base64url run is any random string.
+    #
+    # No entropy gate: the body is a fixed-width random run, so any floor a
+    # placeholder failed would also sink real secrets. The boundary guards are
+    # ClassiFinder's own — 'GOCSPX-' is a strong literal, but the left guard
+    # keeps it from starting mid-identifier and the right guard carries the
+    # body charset so a 28-character head of a longer base64url run is never
+    # claimed as a whole secret.
+    # Source: https://github.com/praetorian-inc/noseyparker/blob/main/crates/noseyparker/data/default/builtin/rules/google.yml
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>GOCSPX-[0-9A-Za-z_-]{28})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # fixed-width random body; a floor could only sink real secrets
+    context_keywords=[
+        "google",
+        "oauth",
+        "client_secret",
+        "GOOGLE_CLIENT_SECRET",
+        "googleusercontent",
+    ],
+    known_test_values={
+        # Single-character masks — how documentation and redacted console
+        # screenshots render this secret. confidence_base 0.95 sits above the
+        # 0.85 FP-wordlist gate (scanner.py:197), so the wordlist never gets a
+        # chance to price these down; they are pinned here instead and land at
+        # ~0.15. Assembled by concatenation so no scannable literal exists in
+        # source — GitHub's partner scanner recognises this prefix.
+        "GOCSPX-" + "x" * 28,
+        "GOCSPX-" + "X" * 28,
+        "GOCSPX-" + "0" * 28,
+        "GOCSPX-" + "a" * 28,
+    },
+    recommendation=(
+        "Reset this secret in the Google Cloud console under APIs & Services >"
+        " Credentials > OAuth 2.0 Client IDs, then redeploy every service that"
+        " presents it. Google supports having two secrets live at once, so"
+        " create the replacement first and disable the old one after the"
+        " rollout rather than taking an outage. Treat any refresh tokens the"
+        " app holds as exposed — with the client secret they can be exchanged"
+        " for user access tokens — and review the project's OAuth consent and"
+        " token activity for the exposure window."
+    ),
+    tags=["cloud", "google", "oauth", "auth"],
+)
+
+
+# ===================================================
+# DIGITALOCEAN OAUTH TOKENS
+# ===================================================
+
+DIGITALOCEAN_OAUTH_ACCESS_TOKEN = SecretPattern(
+    id="digitalocean_oauth_access_token",
+    name="DigitalOcean OAuth Access Token",
+    description=(
+        "DigitalOcean OAuth access token — the literal 'doo_v1_' prefix"
+        " followed by 64 lowercase hex characters. Minted by the OAuth"
+        " authorization-code exchange rather than by hand, and presented as a"
+        " bearer token against the DigitalOcean API with the scopes the"
+        " resource owner granted: read or write across Droplets, Kubernetes"
+        " clusters, Spaces, databases and the account's billing data. The"
+        " sibling personal access token uses 'dop_v1_' and the refresh token"
+        " 'dor_v1_'; all three share the 64-hex body and differ only in the"
+        " prefix character that names the token's role."
+    ),
+    provider="digitalocean",
+    severity="critical",
+    # The three-way 'dop_' / 'doo_' / 'dor_' prefix family and the 64-hex body
+    # are the format DigitalOcean has issued since the v1 token migration.
+    # 64 lowercase hex is a 32-byte random value; the width is exact, not a
+    # measured range, so the regex pins it rather than bounding it.
+    #
+    # No entropy gate: a fixed-width random hex run is capped at Shannon
+    # entropy 4.0 by its 16-symbol alphabet, so any floor a placeholder failed
+    # would also sink real tokens.
+    # Source: https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>doo_v1_[a-f0-9]{64})"
+        r"(?![a-f0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,  # fixed-width random hex; a floor could only sink real tokens
+    context_keywords=[
+        "digitalocean",
+        "do_token",
+        "DIGITALOCEAN_TOKEN",
+        "oauth",
+        "access_token",
+    ],
+    known_test_values={
+        # Single-character masks — the redaction shape documentation and logs
+        # use. confidence_base 0.97 is above the 0.85 FP-wordlist gate, so
+        # they are pinned here rather than priced down by the wordlist.
+        "doo_v1_" + "0" * 64,
+        "doo_v1_" + "a" * 64,
+        "doo_v1_" + "f" * 64,
+    },
+    recommendation=(
+        "Revoke the granting OAuth application's authorization in the"
+        " DigitalOcean control panel under Settings > Applications & API >"
+        " Authorized OAuth Apps, which invalidates this access token and its"
+        " paired refresh token together. Then re-run the authorization flow"
+        " for the integration that needs it. Audit the team's resources for"
+        " the exposure window by the scopes the app was granted — a 'write'"
+        " token can create Droplets and Kubernetes clusters that bill to the"
+        " account, and can read every Spaces key and database credential the"
+        " API exposes."
+    ),
+    tags=["cloud", "digitalocean", "oauth"],
+)
+
+
+DIGITALOCEAN_OAUTH_REFRESH_TOKEN = SecretPattern(
+    id="digitalocean_oauth_refresh_token",
+    name="DigitalOcean OAuth Refresh Token",
+    description=(
+        "DigitalOcean OAuth refresh token — the literal 'dor_v1_' prefix"
+        " followed by 64 lowercase hex characters. Returned beside the"
+        " 'doo_v1_' access token by the authorization-code exchange and used"
+        " to mint fresh access tokens without the resource owner present."
+        " Severity is critical for the same reason it is on any refresh"
+        " token: it does not expire on the access token's schedule, so a"
+        " leaked one is durable access to the granted scopes until the"
+        " authorization itself is revoked."
+    ),
+    provider="digitalocean",
+    severity="critical",
+    # Same generator family as the 'doo_v1_' access token and the 'dop_v1_'
+    # personal access token: a shared 64-hex (32-byte random) body behind a
+    # role-naming prefix. Registered as its own pattern rather than folded
+    # into a prefix alternation so the finding names the token's role — a
+    # leaked refresh token is a longer-lived exposure than an access token
+    # and the recommendation differs.
+    #
+    # No entropy gate, for the same reason as its sibling: a fixed-width hex
+    # run is capped at Shannon entropy 4.0 by its alphabet.
+    # Source: https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>dor_v1_[a-f0-9]{64})"
+        r"(?![a-f0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,  # fixed-width random hex; a floor could only sink real tokens
+    context_keywords=[
+        "digitalocean",
+        "do_token",
+        "DIGITALOCEAN_TOKEN",
+        "oauth",
+        "refresh_token",
+    ],
+    known_test_values={
+        "dor_v1_" + "0" * 64,
+        "dor_v1_" + "a" * 64,
+        "dor_v1_" + "f" * 64,
+    },
+    recommendation=(
+        "Revoke the granting OAuth application's authorization in the"
+        " DigitalOcean control panel under Settings > Applications & API >"
+        " Authorized OAuth Apps — that invalidates the refresh token and every"
+        " access token minted from it — then re-run the authorization flow."
+        " Do not rely on the access token expiring: a refresh token is durable"
+        " access to the granted scopes until the authorization is withdrawn."
+        " Audit the team's Droplets, Kubernetes clusters and billing activity"
+        " for the exposure window."
+    ),
+    tags=["cloud", "digitalocean", "oauth"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -2601,4 +2799,10 @@ register(
     OPENSHIFT_OAUTH_ACCESS_TOKEN,
     SCALINGO_API_TOKEN,
     YANDEX_PASSPORT_OAUTH_TOKEN,
+    # 2026-08-31 — Google OAuth client secret ('GOCSPX-' + 28 base64url)
+    # and the DigitalOcean OAuth access/refresh tokens ('doo_v1_' /
+    # 'dor_v1_' + 64 hex), siblings of the 'dop_v1_' personal token.
+    GOOGLE_OAUTH_CLIENT_SECRET,
+    DIGITALOCEAN_OAUTH_ACCESS_TOKEN,
+    DIGITALOCEAN_OAUTH_REFRESH_TOKEN,
 )

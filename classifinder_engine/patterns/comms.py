@@ -2090,6 +2090,87 @@ ABLY_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# GRAFANA CLOUD ACCESS POLICY TOKEN
+# ===================================================
+
+GRAFANA_CLOUD_API_TOKEN = SecretPattern(
+    id="grafana_cloud_api_token",
+    name="Grafana Cloud API Token",
+    description=(
+        "Grafana Cloud access-policy token — the literal 'glc_' prefix"
+        " followed by a base64 body, optionally padded. Minted against an"
+        " access policy rather than against a user, and presented as the"
+        " password in the HTTP Basic credentials that Alloy, the Grafana"
+        " Agent, Prometheus remote-write and the Loki/Tempo/Mimir clients"
+        " use. Depending on the policy's scopes it can write metrics, logs"
+        " and traces into the stack — or read every series and log line"
+        " already there. Distinct from the 'glsa_' service-account token,"
+        " which authenticates to a single Grafana instance's HTTP API."
+    ),
+    provider="grafana",
+    severity="high",
+    # Prefix per Grafana's own access-policy-token documentation, which
+    # states that tokens start with 'glc_'. The body is base64 of a small
+    # JSON envelope naming the organization, the token name, the key and the
+    # region — which is why the bound is generous ({32,400}) rather than
+    # fixed: the encoded length tracks the length of the stack and region
+    # names inside it. The alphabet is STANDARD base64 ([A-Za-z0-9+/]) with
+    # optional '=' padding, so '+' and '/' are both reachable body
+    # characters.
+    #
+    # entropy_threshold is 0.0 DELIBERATELY, and this is the one field to
+    # leave alone here: the body is base64 of ordinary JSON, so it carries
+    # long runs of predictable structure and does NOT clear the entropy
+    # floors that suit random-body tokens. Any floor high enough to reject a
+    # placeholder would reject real tokens first. The precision is carried by
+    # the 'glc_' prefix, the 32-character minimum body and the two boundary
+    # guards instead.
+    #
+    # Disjoint from GRAFANA_API_KEY ('glsa_' + 32 alphanumeric + '_' + 8 hex)
+    # by prefix and by body shape alike; a test pins that neither claims the
+    # other's value.
+    # Source: https://grafana.com/docs/grafana-cloud/security-and-account-management/authentication-and-permissions/access-policies/using-an-access-policy-token/
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>glc_[0-9A-Za-z+/]{32,400}={0,3})"
+        r"(?![0-9A-Za-z+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # base64-of-JSON body; any floor would sink real tokens first
+    context_keywords=[
+        "grafana",
+        "GRAFANA_CLOUD_API_KEY",
+        "access policy",
+        "remote_write",
+        "alloy",
+    ],
+    known_test_values={
+        # Single-character masks — how documentation and redacted Alloy
+        # configs render this token. confidence_base 0.95 sits above the 0.85
+        # FP-wordlist gate (scanner.py:197), so the wordlist never gets a
+        # chance to price these down; they are pinned here and land at ~0.15.
+        "glc_" + "x" * 32,
+        "glc_" + "X" * 32,
+        "glc_" + "0" * 32,
+    },
+    recommendation=(
+        "Delete this token in the Grafana Cloud portal under Security >"
+        " Access Policies, on the policy that issued it, and create a"
+        " replacement — then update the Alloy, Grafana Agent, Prometheus"
+        " remote-write or Loki/Tempo/Mimir client configuration that presents"
+        " it. Scope the audit to the POLICY the token was minted against: if"
+        " it carried read scopes, treat every metric series, log line and"
+        " trace in those stacks as readable for the exposure window; if it"
+        " carried write scopes, review the stacks for injected or deleted"
+        " data. Re-issue the replacement with the narrowest scopes and an"
+        " expiry date."
+    ),
+    tags=["monitoring", "grafana", "observability"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -2155,4 +2236,7 @@ register(
     # appID.keyID:secret composite anchored on the 43-character
     # base64url 256-bit secret)
     ABLY_API_KEY,
+    # 2026-08-31 — Grafana Cloud access-policy token ('glc_' + base64 of a
+    # JSON envelope), sibling of the 'glsa_' service-account token.
+    GRAFANA_CLOUD_API_TOKEN,
 )
