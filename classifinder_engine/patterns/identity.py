@@ -951,6 +951,109 @@ INTRA42_CLIENT_SECRET = SecretPattern(
 )
 
 
+# ===================================================
+# LOGIN WITH AMAZON — ACCESS TOKEN (2026-09-01)
+# ===================================================
+# Amazon publishes this format in prose rather than by example: an access token
+# is "an alphanumeric code 350 characters or more in length, with a maximum size
+# of 2048 bytes" and access tokens "begin with the characters Atza|".
+#
+# BOTH published bounds describe the WHOLE token, prefix included, so both are
+# restated here for the BODY with the 5-character 'Atza|' subtracted: 345..2043.
+# Requiring 350 body characters would miss a token of exactly 350 characters --
+# the shortest shape the vendor says it mints -- and allowing 2048 body
+# characters would accept one five bytes past the documented ceiling. The token
+# is ASCII, so the byte cap and a character count coincide.
+#
+# The body charset is a deliberate SUPERSET of base64 and base64url. "Alphanumeric"
+# is demonstrably loose: the vendor's own example body carries a hyphen
+# ("Atza|IQEBLjAsAhRmHjNgHpi0U-Dme37rR6CuUpSR..."), and Amazon separately warns
+# that access tokens "contain characters that are outside the allowed range for
+# URLs" and must be URL-encoded. Narrowing to the characters visible in one
+# truncated example would risk missing real tokens; the precision here comes from
+# the vendor-unique 'Atza|' anchor plus a 345-character floor, not the alphabet.
+#
+# '|' is deliberately EXCLUDED from the body, which pins the token to exactly one
+# pipe. No published example carries a second, and admitting '|' would let a
+# 345+ character run swallow neighbouring fields of a pipe-delimited log line.
+#
+# The 'Atzr|' REFRESH token shares the body shape and the 2048-byte ceiling and
+# outlives the access token's 3600 seconds. It is a real, separate credential and
+# is deliberately NOT matched here; a test pins that so it is never silently
+# mislabelled as an access token.
+#
+# The percent-encoded spelling ('Atza%7C...') is knowingly left undetected: the
+# engine has no URL decoder, that gap is engine-wide rather than this pattern's,
+# and a second alternation for it would add prose-matching surface for no anchor.
+
+AMAZON_LWA_ACCESS_TOKEN = SecretPattern(
+    id="amazon_lwa_access_token",
+    name="Login with Amazon Access Token",
+    description=(
+        "Login with Amazon (LwA) OAuth 2.0 access token, anchored on the public"
+        " 'Atza|' prefix followed by 345-2043 further characters. A bearer token"
+        " that authorizes calls against the customer's Amazon profile and every"
+        " scope the customer granted the application -- including the Selling"
+        " Partner API -- for its one-hour lifetime."
+    ),
+    provider="amazon",
+    severity="high",
+    # Prefix, the 350-character floor, the 2048-byte ceiling and the bearer
+    # semantics are Amazon's own published facts. The boundary guards, the
+    # charset superset, the exclusion of '|' from the body, the subtraction of
+    # the 5-character prefix from both published bounds, the confidence tier and
+    # the known_test_values are ClassiFinder's own. '=' is deliberately absent
+    # from the LEFT guard although it is a body character, because
+    # 'access_token=Atza|...' is the most common carrier there is.
+    # Source: https://developer.amazon.com/docs/login-with-amazon/access-token.html
+    regex=re.compile(
+        r"(?<![0-9A-Za-z+/_-])"
+        r"(?P<secret>Atza\|[0-9A-Za-z+/=_-]{345,2043})"
+        r"(?![0-9A-Za-z+/=_-])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier. 'Atza|' is a vendor-unique five-character literal and
+    # the 345-character floor is longer than any incidental run, so the pattern
+    # cannot fire on prose or on a truncated documentation literal. 0.95 is also
+    # a floor rather than a preference: below 0.85 the FP-wordlist penalty
+    # (-0.40) would sink a real token sitting in a test / demo / staging context.
+    confidence_base=0.95,
+    # 0.0 on purpose: the body is a long random run in a fixed alphabet, so any
+    # entropy floor a placeholder failed would also sink real tokens.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "access_token",
+        "login with amazon",
+        "lwa",
+        "amazon",
+        "x-amz-access-token",
+        "bearer",
+    ],
+    known_test_values={
+        # Minimum-width single-character masks -- the shapes redacted logs and
+        # documentation use. Assembled by concatenation. Down-score to ~0.15.
+        # The vendor's own published example needs no entry: it is elided after
+        # 36 body characters and is structurally unmatchable.
+        "Atza" + "|" + "x" * 345,
+        "Atza" + "|" + "X" * 345,
+        "Atza" + "|" + "0" * 345,
+        "Atza" + "|" + "A" * 345,
+    },
+    recommendation=(
+        "Treat the customer's session as compromised: an LwA access token is a"
+        " bearer credential and replaying it needs nothing else. Access tokens"
+        " expire after 3600 seconds and cannot be revoked individually, so"
+        " revoke the application's authorization for the affected customer"
+        " (or rotate the LwA client secret if the token was minted by a leaked"
+        " refresh token), then audit the profile and Selling Partner API calls"
+        " made while it was exposed. Never place the token in a URL, a log line"
+        " or front-end code -- pass it in the Authorization or"
+        " x-amz-access-token header and hold it in a secret manager."
+    ),
+    tags=["identity", "amazon", "oauth", "lwa", "access-token"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -982,4 +1085,8 @@ register(
     # public 'u-' application UID can never match).
     AGE_SECRET_KEY,
     INTRA42_CLIENT_SECRET,
+    # 2026-09-01 — Login with Amazon OAuth access token ('Atza|' +
+    # 345..2043 characters; the 'Atzr|' refresh token is a separate
+    # credential and is deliberately not matched).
+    AMAZON_LWA_ACCESS_TOKEN,
 )
