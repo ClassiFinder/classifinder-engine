@@ -978,9 +978,10 @@ INTRA42_CLIENT_SECRET = SecretPattern(
 # 345+ character run swallow neighbouring fields of a pipe-delimited log line.
 #
 # The 'Atzr|' REFRESH token shares the body shape and the 2048-byte ceiling and
-# outlives the access token's 3600 seconds. It is a real, separate credential and
-# is deliberately NOT matched here; a test pins that so it is never silently
-# mislabelled as an access token.
+# outlives the access token's 3600 seconds. It is a real, separate credential
+# and is matched by its own sibling pattern (AMAZON_LWA_REFRESH_TOKEN, below).
+# This pattern must never claim it; a test pins that so a refresh token is never
+# silently mislabelled as an access token.
 #
 # The percent-encoded spelling ('Atza%7C...') is knowingly left undetected: the
 # engine has no URL decoder, that gap is engine-wide rather than this pattern's,
@@ -1054,6 +1055,131 @@ AMAZON_LWA_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# --- Login with Amazon refresh token -------------------------------------
+#
+# The long-lived half of the Login with Amazon OAuth 2.0 pair. The vendor
+# publishes this format in PROSE rather than by example, and states it as an
+# explicit INHERITANCE from the access token:
+# developer.amazon.com/docs/login-with-amazon/refresh-token.html says "Refresh
+# tokens follow the same format as access tokens, except they begin with the
+# string 'Atzr|'" and "Refresh tokens have a maximum size of 2048 bytes". The
+# 350-character floor is therefore transitively vendor-attested rather than
+# extrapolated: access-token.html states verbatim that "An access token is an
+# alphanumeric code 350 characters or more in length, with a maximum size of
+# 2048 bytes", and the refresh page inherits that format wholesale.
+#
+# The prefix is corroborated INDEPENDENTLY by a worked token-endpoint response
+# on the authorization-code-grant page, which prints an access token and a
+# refresh token side by side:
+#   {"access_token":"Atza|IQEBLjAsAhRmHjNgHpi0U-Dme37rR6CuUpSR...",
+#    "token_type":"bearer","expires_in":3600,
+#    "refresh_token":"Atzr|IQEBLzAtAhRPpMJxdwVz2Nn6f2y-tpJX2DeX..."}
+# So the prefix has both a prose statement and a real example behind it.
+#
+# BOTH published bounds describe the WHOLE token, prefix included, so both are
+# restated here for the BODY with the 5-character 'Atzr|' subtracted: 345..2043
+# -- byte-for-byte the sibling's window, because the vendor says the formats
+# are the same. Requiring 350 body characters would miss a token of exactly 350
+# characters; allowing 2048 body characters would accept one five bytes past
+# the documented ceiling. The token is ASCII, so the byte cap and a character
+# count coincide.
+#
+# The body charset is the same deliberate SUPERSET of base64 and base64url the
+# sibling uses, and it is confirmed for THIS credential rather than borrowed:
+# the vendor's own refresh_token example body carries a hyphen
+# ("...2Nn6f2y-tpJX2DeX"), so "alphanumeric" is demonstrably loose here too.
+# '|' is deliberately EXCLUDED from the body, pinning the token to exactly one
+# pipe, so a 345+ character run can never swallow neighbouring fields of a
+# pipe-delimited log line.
+#
+# SEVERITY is 'critical' where the access token is 'high', and that gap is the
+# vendor's own prose rather than an assertion: "Refresh tokens are valid
+# indefinitely, unless the user has removed the website or mobile app from the
+# list of allowed apps for their account." A leaked refresh token mints fresh
+# access tokens forever, so it is a long-lived credential, not an hour-scale
+# bearer token -- the same reasoning that puts github_oauth_refresh_token at
+# 'critical' beside its hour-scale user token.
+#
+# The sibling AMAZON_LWA_ACCESS_TOKEN anchors on 'Atza|' and cannot match this
+# value; a test pins both directions so neither pattern claims the other's
+# token, and the pair in one token-endpoint response is reported as two
+# distinct findings.
+#
+# The percent-encoded spelling ('Atzr%7C...') is knowingly left undetected, the
+# same engine-wide gap as the sibling: the engine has no URL decoder, and a
+# second alternation would add prose-matching surface for no anchor.
+
+AMAZON_LWA_REFRESH_TOKEN = SecretPattern(
+    id="amazon_lwa_refresh_token",
+    name="Login with Amazon Refresh Token",
+    description=(
+        "Login with Amazon (LwA) OAuth 2.0 refresh token, anchored on the"
+        " public 'Atzr|' prefix followed by 345-2043 further characters. Valid"
+        " indefinitely until the customer removes the application from their"
+        " allowed-apps list, and exchangeable on demand for fresh access"
+        " tokens carrying every scope the customer granted -- including the"
+        " Selling Partner API."
+    ),
+    provider="amazon",
+    severity="critical",
+    # Prefix, the inherited 350-character floor, the 2048-byte ceiling and the
+    # indefinite validity are Amazon's own published facts. The boundary
+    # guards, the charset superset, the exclusion of '|' from the body, the
+    # subtraction of the 5-character prefix from both published bounds, the
+    # confidence tier and the known_test_values are ClassiFinder's own. '=' is
+    # deliberately absent from the LEFT guard although it is a body character,
+    # because 'refresh_token=Atzr|...' is the most common carrier there is.
+    # Source: https://developer.amazon.com/docs/login-with-amazon/refresh-token.html
+    regex=re.compile(
+        r"(?<![0-9A-Za-z+/_-])"
+        r"(?P<secret>Atzr\|[0-9A-Za-z+/=_-]{345,2043})"
+        r"(?![0-9A-Za-z+/=_-])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier, identical to the sibling. 'Atzr|' is a vendor-unique
+    # five-character literal and the 345-character floor is longer than any
+    # incidental run, so the pattern cannot fire on prose or on a truncated
+    # documentation literal. 0.95 is also a floor rather than a preference:
+    # below 0.85 the FP-wordlist penalty (-0.40) would sink a real token
+    # sitting in a test / demo / staging context.
+    confidence_base=0.95,
+    # 0.0 on purpose: the body is a long random run in a fixed alphabet, so any
+    # entropy floor a placeholder failed would also sink real tokens.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "refresh_token",
+        "login with amazon",
+        "lwa",
+        "amazon",
+        "grant_type",
+        "access_token",
+    ],
+    known_test_values={
+        # Minimum-width single-character masks -- the shapes redacted logs and
+        # documentation use. Assembled by concatenation. Down-score to ~0.15.
+        # The vendor's own published example needs no entry: it is elided after
+        # 36 body characters and is structurally unmatchable.
+        "Atzr" + "|" + "x" * 345,
+        "Atzr" + "|" + "X" * 345,
+        "Atzr" + "|" + "0" * 345,
+        "Atzr" + "|" + "A" * 345,
+    },
+    recommendation=(
+        "Treat this as a durable compromise, not a session leak: an LwA refresh"
+        " token is valid indefinitely and mints fresh access tokens on demand,"
+        " so waiting out the access token's 3600 seconds fixes nothing. Have"
+        " the customer remove the application from their allowed-apps list (or"
+        " revoke the application's authorization for that customer) to void the"
+        " token, rotate the LwA client secret if it may have leaked alongside,"
+        " then audit the profile and Selling Partner API calls made while it"
+        " was exposed. Store refresh tokens in a secret manager, never in a"
+        " log line, a URL or front-end code."
+    ),
+    tags=["identity", "amazon", "oauth", "lwa", "refresh-token"],
+)
+
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -1086,7 +1212,11 @@ register(
     AGE_SECRET_KEY,
     INTRA42_CLIENT_SECRET,
     # 2026-09-01 — Login with Amazon OAuth access token ('Atza|' +
-    # 345..2043 characters; the 'Atzr|' refresh token is a separate
-    # credential and is deliberately not matched).
+    # 345..2043 characters).
     AMAZON_LWA_ACCESS_TOKEN,
+    # 2026-09-02 — Login with Amazon OAuth refresh token ('Atzr|' +
+    # the same 345..2043 window, per the vendor's explicit "same format"
+    # inheritance). Valid indefinitely, so severity is critical where the
+    # hour-scale access token is high.
+    AMAZON_LWA_REFRESH_TOKEN,
 )
