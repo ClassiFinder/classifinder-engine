@@ -288,6 +288,83 @@ AZURE_STORAGE_KEY = SecretPattern(
 )
 
 
+AZURE_STORAGE_SAS_TOKEN = SecretPattern(
+    id="azure_storage_sas_token",
+    name="Azure Storage SAS Token",
+    description=(
+        "Azure Storage shared access signature (SAS) token: a delegated,"
+        " time-limited query-string credential. Anchored on the mandatory"
+        " 'sv=' signed-version date literal co-occurring with an 'sig='"
+        " signature — a URL-encoded base64 HMAC-SHA256, 43 characters plus"
+        " one pad — in the same query string. A lone 'sig=' is never matched."
+    ),
+    provider="azure",
+    severity="high",
+    # Two mandatory fields are required TOGETHER inside one bounded, unbroken
+    # query string; neither alone is enough. 'sv' is the signed storage-service
+    # version and is always a date literal (20YY-MM-DD); 'sig' is the credential
+    # itself — base64 of a 32-byte HMAC-SHA256, hence exactly 43 data characters
+    # plus one '=' pad, in either the raw ('+', '/', '=') or the percent-encoded
+    # ('%2B', '%2F', '%3D') spelling. Both orders are accepted: branch 1 reads
+    # sv-then-sig (what every first-party generator emits, since the signature
+    # is appended after the fields it signs), branch 2 reads sig-then-sv through
+    # a non-consuming lookahead, because Azure does not mandate parameter order
+    # and a single named group cannot span both directions.
+    # Format per https://learn.microsoft.com/en-us/rest/api/storageservices/create-service-sas
+    regex=re.compile(
+        r"(?:"
+        r"(?<![0-9A-Za-z_-])sv=20\d{2}-\d{2}-\d{2}"
+        r"[^\s" '"' r"'<>]{0,400}?"
+        r"(?<![0-9A-Za-z_-])sig="
+        r"|"
+        r"(?<![0-9A-Za-z_-])sig="
+        r"(?=(?:[0-9A-Za-z+/]|%2[BbFf]){43}(?:=|%3[Dd])"
+        r"[^\s" '"' r"'<>]{0,400}?(?<![0-9A-Za-z_-])sv=20\d{2}-\d{2}-\d{2})"
+        r")"
+        r"(?P<secret>(?:[0-9A-Za-z+/]|%2[BbFf]){43}(?:=|%3[Dd]))"
+        r"(?![0-9A-Za-z+/=]|%2[BbFf]|%3[Dd])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "blob.core.windows.net",
+        "file.core.windows.net",
+        "queue.core.windows.net",
+        "table.core.windows.net",
+        "dfs.core.windows.net",
+        "SharedAccessSignature",
+        "azure",
+        "sas",
+        "srt=",
+        "ss=",
+        "sr=",
+        "sp=",
+        "se=",
+    ],
+    known_test_values={
+        "A" * 43 + "=",
+        "A" * 43 + "%3D",
+        "a" * 43 + "=",
+        "a" * 43 + "%3D",
+        "X" * 43 + "=",
+        "X" * 43 + "%3D",
+        "x" * 43 + "=",
+        "x" * 43 + "%3D",
+        "0" * 43 + "=",
+        "0" * 43 + "%3D",
+    },
+    recommendation=(
+        "A SAS token cannot be revoked individually. If it was signed with the"
+        " account key, rotate that key in the Azure Portal; if it was signed"
+        " through a stored access policy, delete or expire the policy; if it is"
+        " a user delegation SAS, revoke the delegation key. Prefer short"
+        " expiries and user delegation SAS over account-key-signed tokens."
+    ),
+    tags=["cloud", "azure", "storage", "sas", "delegated"],
+)
+
+
 AZURE_AD_CLIENT_SECRET = SecretPattern(
     id="azure_ad_client_secret",
     name="Azure AD Client Secret",
@@ -2805,4 +2882,8 @@ register(
     GOOGLE_OAUTH_CLIENT_SECRET,
     DIGITALOCEAN_OAUTH_ACCESS_TOKEN,
     DIGITALOCEAN_OAUTH_REFRESH_TOKEN,
+    # 2026-09-03 — Azure Storage SAS token: structurally anchored on the
+    # mandatory 'sv=' signed-version date literal co-occurring with 'sig=' in
+    # one query string. Distinct from AZURE_STORAGE_KEY (the account key).
+    AZURE_STORAGE_SAS_TOKEN,
 )
