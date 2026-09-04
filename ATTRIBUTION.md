@@ -124,13 +124,14 @@ Full license text: https://creativecommons.org/licenses/by/4.0/legalcode
 **Project:** https://github.com/praetorian-inc/noseyparker
 **Maintainer:** Praetorian
 **License:** Apache License 2.0
-**Use in ClassiFinder:** One pattern's token FORMAT was taken from Nosey Parker's built-in rule set:
+**Use in ClassiFinder:** Two patterns' token FORMATS were taken from Nosey Parker's built-in rule set:
 
 | ClassiFinder Pattern | Nosey Parker Source |
 |---|---|
 | `google_oauth_client_secret` | `crates/noseyparker/data/default/builtin/rules/google.yml` (the `GOCSPX-` prefix and the 28-character base64url body) |
+| `azure_app_configuration_connection_string` | `crates/noseyparker/data/default/builtin/rules/azure.yml` (rule `np.azure.2`, "Azure App Configuration Connection String" — the `.azconfig.io` store-endpoint host literal, the `;Id=` identifier in its 4-2-2-then-body shape with a base64 charset and an 18-22 character body, and the `;Secret=` access key as a 36-50 character base64 run closed by a single `=` pad; the rule ships four concrete examples, which is what fixed the charset and the widths) |
 
-The prefix and body width are unprotectable format facts about a credential Google issues; the shipped regex — the `(?<![0-9A-Za-z_-])` / `(?![0-9A-Za-z_-])` boundary guards, the confidence tier, the registered `known_test_values` and the decision to omit Google's prefixless pre-2021 client secret — is independently authored. The Apache-2.0 notice is recorded here because the format was read from that file.
+The format facts above are unprotectable descriptions of credentials Google and Microsoft issue, and Microsoft Learn's App Configuration client-library readme independently documents the same `Endpoint=https://<my-host>.azconfig.io;Id=<Id>;Secret=<Secret>` template — with placeholders only, which is why the catalog rule is cited as the source of the charset and the widths. Everything shipped is independently authored: the `(?<![0-9A-Za-z_-])` left guard and the `(?![0-9A-Za-z+/=])` right guard; the decision NOT to match Microsoft's optional `Endpoint=` prefix at all — an optional leading group would be a pure no-op, because what follows it already begins at `https://` and the lookbehind accepts the `=` that precedes the scheme; the confidence tier and severity; the registered `known_test_values`; and, for `google_oauth_client_secret`, the decision to omit Google's prefixless pre-2021 client secret. The Apache-2.0 notice is recorded here because the formats were read from those files.
 
 Apache-2.0 requires that the license and NOTICE be preserved for any redistributed material. Full license text: https://www.apache.org/licenses/LICENSE-2.0
 

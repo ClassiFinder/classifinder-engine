@@ -2801,6 +2801,83 @@ DIGITALOCEAN_OAUTH_REFRESH_TOKEN = SecretPattern(
 )
 
 
+
+AZURE_APP_CONFIGURATION_CONNECTION_STRING = SecretPattern(
+    id="azure_app_configuration_connection_string",
+    name="Azure App Configuration Connection String",
+    description=(
+        "Azure App Configuration access key, in the connection-string form the"
+        " Azure Portal and 'az appconfig credential list' emit. Three segments"
+        " must co-occur unbroken and in order: the '.azconfig.io' store"
+        " endpoint, ';Id=' with the 4-2-2:body key identifier, and ';Secret='"
+        " with the base64 access key. The captured span is the secret alone, so"
+        " a redacted string keeps its store name and key Id intact."
+    ),
+    provider="azure",
+    severity="critical",
+    # THE CO-OCCURRENCE IS THE PATTERN. No segment here detects on its own: a
+    # bare base64 run behind 'Secret=' is a generic-catch-all shape, and an
+    # '.azconfig.io' hostname is a public endpoint rather than a credential.
+    # Detection requires the endpoint host literal, the ';Id=' identifier and
+    # the ';Secret=' body together in one unbroken string, which is why no
+    # entropy gate is needed and confidence sits in the 0.95 tier.
+    #
+    # THE Id SEGMENTS KEEP '+' AND '/'. Real identifiers are not alphanumeric:
+    # the catalog's own leaked-in-the-wild example is 'Id=+8zC-l4-s0:+CqeGMSCw'
+    # '1jwHIR/eOuC'. Narrowing the Id charset to [A-Za-z0-9] would silently miss
+    # every identifier carrying a base64 sign character.
+    #
+    # THE VENDOR'S 'Endpoint=' PREFIX IS DELIBERATELY NOT MATCHED. Microsoft's
+    # template spells the whole string 'Endpoint=https://<host>.azconfig.io;'
+    # 'Id=<Id>;Secret=<Secret>', but the prefix is absent from real-world
+    # fragments, so it cannot be required. Making it an optional leading group
+    # would be a pure no-op — the alternative branch already begins at
+    # 'https://' — so it is simply omitted; the '=' before 'https' satisfies
+    # the left guard and both spellings detect. A test pins both.
+    #
+    # Source: https://github.com/praetorian-inc/noseyparker/blob/main/crates/noseyparker/data/default/builtin/rules/azure.yml
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"https://[A-Za-z0-9-]{1,50}\.azconfig\.io;"
+        r"Id=[A-Za-z0-9+/]{4}-[A-Za-z0-9+/]{2}-[A-Za-z0-9+/]{2}:[A-Za-z0-9+/]{18,22};"
+        r"Secret=(?P<secret>[A-Za-z0-9+/]{36,50}=)"
+        r"(?![0-9A-Za-z+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # three-segment structural anchor; a floor could only sink real keys
+    context_keywords=[
+        "azconfig.io",
+        "appconfig",
+        "app_configuration",
+        "AppConfigurationClient",
+        "APP_CONFIGURATION_CONNECTION_STRING",
+        "azure",
+        "connection_string",
+    ],
+    known_test_values={
+        # Built by concatenation on purpose: a contiguous literal of this shape
+        # trips GitHub Push Protection on the public engine repository.
+        "A" * 43 + "=",
+        "a" * 43 + "=",
+        "X" * 43 + "=",
+        "x" * 43 + "=",
+        "0" * 43 + "=",
+    },
+    recommendation=(
+        "Regenerate the App Configuration access key immediately:"
+        " 'az appconfig credential regenerate --name <store> --id <key-id>',"
+        " or Access settings > Regenerate in the Azure Portal. Read-only and"
+        " read-write keys are format-identical, so treat the leak as read-write"
+        " until you have matched the Id against the store's credential list."
+        " An App Configuration store routinely holds the downstream connection"
+        " strings and feature flags for an entire application, so audit every"
+        " secret it serves and rotate anything it referenced, and prefer Entra"
+        " ID (Azure AD) role-based access over access keys going forward."
+    ),
+    tags=["cloud", "azure", "appconfig", "configuration"],
+)
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -2886,4 +2963,7 @@ register(
     # mandatory 'sv=' signed-version date literal co-occurring with 'sig=' in
     # one query string. Distinct from AZURE_STORAGE_KEY (the account key).
     AZURE_STORAGE_SAS_TOKEN,
+    # 2026-09-04 — Azure App Configuration connection string: the
+    # '.azconfig.io' store endpoint, ';Id=' and ';Secret=' must co-occur.
+    AZURE_APP_CONFIGURATION_CONNECTION_STRING,
 )
