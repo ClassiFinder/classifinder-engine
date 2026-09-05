@@ -124,14 +124,17 @@ Full license text: https://creativecommons.org/licenses/by/4.0/legalcode
 **Project:** https://github.com/praetorian-inc/noseyparker
 **Maintainer:** Praetorian
 **License:** Apache License 2.0
-**Use in ClassiFinder:** Two patterns' token FORMATS were taken from Nosey Parker's built-in rule set:
+**Use in ClassiFinder:** Three patterns' token FORMATS were taken from Nosey Parker's built-in rule set:
 
 | ClassiFinder Pattern | Nosey Parker Source |
 |---|---|
 | `google_oauth_client_secret` | `crates/noseyparker/data/default/builtin/rules/google.yml` (the `GOCSPX-` prefix and the 28-character base64url body) |
 | `azure_app_configuration_connection_string` | `crates/noseyparker/data/default/builtin/rules/azure.yml` (rule `np.azure.2`, "Azure App Configuration Connection String" — the `.azconfig.io` store-endpoint host literal, the `;Id=` identifier in its 4-2-2-then-body shape with a base64 charset and an 18-22 character body, and the `;Secret=` access key as a 36-50 character base64 run closed by a single `=` pad; the rule ships four concrete examples, which is what fixed the charset and the widths) |
+| `newrelic_license_key` | `crates/noseyparker/data/default/builtin/rules/newrelic.yml` (rule `np.newrelic.1`, "New Relic License Key" — the six-character lowercase-alphanumeric account/region head, the thirty lowercase hex characters, and the literal `NRAL` suffix, forty characters in total; the rule ships a concrete regex AND three concrete examples, one of which opens on the `eu01xx` region head, and that is what fixed the two distinct charsets) |
 
 The format facts above are unprotectable descriptions of credentials Google and Microsoft issue, and Microsoft Learn's App Configuration client-library readme independently documents the same `Endpoint=https://<my-host>.azconfig.io;Id=<Id>;Secret=<Secret>` template — with placeholders only, which is why the catalog rule is cited as the source of the charset and the widths. Everything shipped is independently authored: the `(?<![0-9A-Za-z_-])` left guard and the `(?![0-9A-Za-z+/=])` right guard; the decision NOT to match Microsoft's optional `Endpoint=` prefix at all — an optional leading group would be a pure no-op, because what follows it already begins at `https://` and the lookbehind accepts the `=` that precedes the scheme; the confidence tier and severity; the registered `known_test_values`; and, for `google_oauth_client_secret`, the decision to omit Google's prefixless pre-2021 client secret. The Apache-2.0 notice is recorded here because the formats were read from those files.
+
+The New Relic format could **not** have been fixed from the vendor page alone, which is why the catalog rule is cited as its source. New Relic's own [API keys](https://docs.newrelic.com/docs/apis/intro-apis/new-relic-api-keys/) page still describes a license key as "a 40-character hexadecimal string associated with a New Relic account" — the *length* is right and corroborates the catalog, but the word *hexadecimal* predates the `NRAL` suffix, and it does not describe the non-hex region head at all. GitGuardian ships a dedicated `newrelic_apm_license_key` detector for the same shape, which corroborates it a third time. Everything shipped for that pattern is independently authored: the `(?<![0-9A-Za-z_-])` / `(?![0-9A-Za-z_-])` boundary guards, which are what stop a longer alphanumeric run that merely ENDS in a valid forty characters from being re-aligned and claimed; the decision to match `NRAL` **case-sensitively as uppercase** and the body as lowercase, a deliberate narrowing of the catalog rule's `(?i)` spelling, since every published key pairs a lowercase body with an uppercase suffix and a lower-cased suffix would not authenticate anyway; the decision NOT to ship the bare 40-character hex legacy form (the catalog's own `np.newrelic.2`), which has no structural anchor and belongs to the generic path rather than to a provider pattern; the confidence tier and the *medium* severity, set against `honeycomb_ingest_key` because a license key is write-only; the context keywords; the registered `known_test_values`; and the recommendation, including the vendor-attested fact that an account's original license key cannot be deleted.
 
 Apache-2.0 requires that the license and NOTICE be preserved for any redistributed material. Full license text: https://www.apache.org/licenses/LICENSE-2.0
 
@@ -312,4 +315,4 @@ Run `pip-licenses` against any subproject's lockfile for the exhaustive list.
 
 ---
 
-*Last updated: 2026-09-03* (azure_storage_sas_token added — authored from Microsoft's Azure Storage REST reference; neither Gitleaks nor Nosey Parker ships a SAS rule, so there was no upstream prior art to inherit)
+*Last updated: 2026-09-05* (newrelic_license_key added — format from Nosey Parker rule np.newrelic.1, Apache-2.0; New Relic's own API-keys page corroborates the 40-character length but its "hexadecimal string" phrasing predates the NRAL suffix)

@@ -737,6 +737,105 @@ NEWRELIC_USER_API_KEY = SecretPattern(
     tags=["monitoring", "newrelic"],
 )
 
+NEWRELIC_LICENSE_KEY = SecretPattern(
+    id="newrelic_license_key",
+    name="New Relic License Key",
+    description=(
+        "New Relic license key (ingest key) — a six-character lowercase"
+        " alphanumeric account/region head, thirty lowercase hex characters,"
+        " and the literal uppercase suffix 'NRAL', forty characters in total."
+        " This is the credential almost all New Relic data ingest requires:"
+        " the APM agents, the infrastructure agent, the OTLP endpoint and the"
+        " Log API all send it. Distinct from the NRAK- user key, the NRAA-"
+        " admin key and the NRII-/NRIQ- Insights keys, which are prefixed."
+    ),
+    provider="newrelic",
+    severity="medium",
+    # THE SUFFIX IS THE ANCHOR, and it is the only anchor there is. A license
+    # key carries no vendor prefix — the distinguishing literal sits at the END
+    # of the token, which is why the fixed 40-character width has to do the
+    # rest of the work. 'NRAL' is matched CASE-SENSITIVELY as uppercase, a
+    # deliberate narrowing of the catalog rule's case-insensitive spelling:
+    # every published key pairs a lowercase body with an uppercase suffix, so
+    # requiring the real casing is free precision. A key whose suffix has been
+    # lower-cased would not authenticate against the ingest endpoint anyway, so
+    # nothing that is actually a credential is lost.
+    #
+    # THE HEAD IS [a-z0-9] AND THE BODY IS [a-f0-9] — the two are genuinely
+    # different charsets, not a redundant spelling. US-account keys are hex all
+    # the way through, but regional keys carry a non-hex region head: the
+    # catalog's own example opens 'eu01xx', where 'u' and 'x' are outside the
+    # hex alphabet. Narrowing the head to [a-f0-9] would silently miss every
+    # EU-region key, and widening the body to [a-z0-9] would cost real
+    # precision for keys that are not issued. The head is deliberately left in
+    # its general form rather than enumerated as 'eu01xx' | 6 hex, so a
+    # newly-opened region is detected rather than silently missed — the same
+    # call made for 'hc[a-z]{3}_' in honeycomb_ingest_key.
+    #
+    # THE BARE 40-CHARACTER HEX LEGACY KEY IS DELIBERATELY NOT SHIPPED. New
+    # Relic's own API-keys page still describes a license key as "a
+    # 40-character hexadecimal string associated with a New Relic account" —
+    # the length is right, but the sentence predates the NRAL suffix. That
+    # legacy form has no structural anchor whatsoever: it is indistinguishable
+    # from a SHA-1 digest, a git object id or any other 40-hex identifier, and
+    # detecting it would require a 'license_key:' context assignment. It
+    # belongs to the generic/high-entropy path, not to a provider pattern.
+    #
+    # NO ENTROPY GATE and confidence_base 0.95, the anchored tier: the token is
+    # a fixed-width run in a fixed alphabet, so any floor a placeholder failed
+    # would also sink real keys. 0.95 is a floor rather than a preference —
+    # below 0.85 the FP-wordlist penalty (-0.40) would silently sink a real key
+    # sitting in a 'test' / 'demo' / 'staging' context. Because 0.95 sits above
+    # that gate the wordlist never gets a chance to price a masked value down,
+    # so the all-same-character masks are registered as known_test_values.
+    #
+    # SEVERITY medium, matching honeycomb_ingest_key: a license key is
+    # write-only. It cannot read telemetry, run NRQL or change account
+    # settings — those need the NRAK- user key — so the exposure is
+    # unauthorized data injection and ingest-billing abuse, not data theft.
+    #
+    # Source: Nosey Parker rule np.newrelic.1 (Apache-2.0),
+    # crates/noseyparker/data/default/builtin/rules/newrelic.yml
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>[a-z0-9]{6}[a-f0-9]{30}NRAL)"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "newrelic",
+        "new_relic",
+        "NEW_RELIC_LICENSE_KEY",
+        "NEW_RELIC_INGEST_KEY",
+        "license_key",
+        "licenseKey",
+    ],
+    known_test_values={
+        # Nosey Parker's own documented mask for this rule, and the same value
+        # with the other single character a redacted log tends to use. Built by
+        # repetition rather than written out: New Relic is a GitHub secret
+        # scanning partner, so no contiguous 40-character key-shaped literal is
+        # committed to either repository.
+        "a" * 36 + "NRAL",
+        "0" * 36 + "NRAL",
+    },
+    recommendation=(
+        "Rotate this key from the New Relic API keys page (one.newrelic.com or"
+        " one.eu.newrelic.com > Administration > API keys), or via NerdGraph:"
+        " create a replacement ingest license key, move your agents, OTLP"
+        " exporters and Log API clients onto it, then delete the exposed key."
+        " A license key is write-only — it cannot read your telemetry, run"
+        " NRQL or change account settings — so the exposure is unauthorized"
+        " data injection and ingest-billing abuse rather than data theft, but"
+        " rotate it anyway and check your account for anomalous ingest volume."
+        " Note that the license key originally created for an account cannot"
+        " be deleted; if that is the key exposed, contact New Relic support."
+    ),
+    tags=["monitoring", "newrelic", "observability", "telemetry"],
+)
+
 
 # ===================================================
 # GRAFANA
@@ -2239,4 +2338,8 @@ register(
     # 2026-08-31 — Grafana Cloud access-policy token ('glc_' + base64 of a
     # JSON envelope), sibling of the 'glsa_' service-account token.
     GRAFANA_CLOUD_API_TOKEN,
+    # 2026-09-05 — New Relic license (ingest) key: the registry's only
+    # SUFFIX-anchored New Relic pattern (6 alnum + 30 hex + 'NRAL'), disjoint
+    # from the prefixed NRAK-/NRAA-/NRII- keys above.
+    NEWRELIC_LICENSE_KEY,
 )
