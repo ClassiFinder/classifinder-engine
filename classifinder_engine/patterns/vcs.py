@@ -898,6 +898,89 @@ GITLAB_CICD_JOB_TOKEN = SecretPattern(
 )
 
 
+# 2026-09-06 — the GitLab runner REGISTRATION token, the legacy half of
+# GitLab's runner-token migration. 'GR1348941' is a literal vendor constant,
+# not a family abbreviation: GitLab's own
+# app/models/concerns/runners_token_prefixable.rb sets
+# RUNNERS_TOKEN_PREFIX = 'GR1348941' and explains it as "GR (for Gitlab
+# Runner) combined with the rotation date (20220225) decimal to hex encoded".
+GITLAB_RUNNER_REGISTRATION_TOKEN = SecretPattern(
+    id="gitlab_runner_registration_token",
+    name="GitLab Runner Registration Token",
+    description=(
+        "GitLab runner registration token — the literal 'GR1348941' prefix"
+        " followed by a 20-character urlsafe-base64 body, 29 characters in"
+        " total. Deprecated in GitLab 15.6 and superseded by the 'glrt-'"
+        " runner authentication token, but still live on older self-managed"
+        " instances and still abundant in legacy .gitlab-ci.yml files,"
+        " docker-compose services, Helm values and 'gitlab-runner register'"
+        " invocations. It registers new runners against a project, group or"
+        " instance, so a leaked one lets an attacker attach a runner of their"
+        " own and receive that scope's CI jobs — along with every variable"
+        " those jobs are handed."
+    ),
+    provider="gitlab",
+    severity="medium",
+    # The body is 20 characters of Devise.friendly_token output (urlsafe
+    # base64), which fixes the charset as [0-9A-Za-z_-]. GitLab's own
+    # doc/ci/runners/new_creation_workflow.md publishes a concrete example
+    # whose body contains a hyphen and is exactly 20 characters wide.
+    #
+    # The {20} body width is exact ON PURPOSE. gitlab-runner's error logs emit
+    # a TRUNCATED short form of the token; a loosened quantifier would turn
+    # every such log line into a finding, so the short form is deliberately
+    # not matched.
+    #
+    # No entropy gate: a 20-character random body behind a nine-character
+    # vendor-unique literal leaves no placeholder an entropy floor would catch
+    # that the prefix does not already exclude.
+    # Source: https://gitlab.com/gitlab-org/gitlab/-/blob/master/app/models/concerns/runners_token_prefixable.rb
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>GR1348941[0-9A-Za-z_-]{20})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # vendor-unique literal prefix carries the precision
+    context_keywords=[
+        "gitlab",
+        "runner",
+        "registration",
+        "registration_token",
+        "registration-token",
+        "REGISTRATION_TOKEN",
+        "gitlab-runner",
+        "ci",
+    ],
+    known_test_values={
+        # Single-character masks — how GitLab documentation, tutorials and
+        # redacted docker-compose files render this token. confidence_base
+        # 0.95 sits above the 0.85 FP-wordlist gate (scanner.py:197), so the
+        # wordlist never prices these down; they are pinned here and land at
+        # ~0.15. Written as concatenations so no contiguous
+        # registration-token literal is committed to source.
+        "GR" + "1348941" + "x" * 20,
+        "GR" + "1348941" + "X" * 20,
+        "GR" + "1348941" + "0" * 20,
+    },
+    recommendation=(
+        "Reset this registration token, then migrate off registration tokens"
+        " entirely. Reset it under Settings > CI/CD > Runners for the project"
+        " or group, or in the Admin Area for an instance-wide token; the old"
+        " value dies immediately and already-registered runners keep working,"
+        " because they hold authentication tokens rather than this one. Then"
+        " create runners through the new authentication-token workflow, which"
+        " issues a per-runner 'glrt-' token that can be revoked individually"
+        " — a registration token cannot, which is why GitLab deprecated it."
+        " Audit the scope's runner list for runners you did not register, and"
+        " treat every CI/CD variable the affected jobs could reach as exposed"
+        " for the whole window the token was public."
+    ),
+    tags=["vcs", "gitlab", "runner", "ci", "deprecated"],
+)
+
+
 # ===================================================
 # GITHUB OAUTH REFRESH TOKEN
 # ===================================================
@@ -998,4 +1081,7 @@ register(
     # refresh token ('ghr_'), completing the 'gh*_' prefix family.
     GITLAB_CICD_JOB_TOKEN,
     GITHUB_OAUTH_REFRESH_TOKEN,
+    # 2026-09-06 — the legacy GitLab runner REGISTRATION token ('GR1348941'),
+    # the deprecated counterpart to GITLAB_RUNNER_AUTHENTICATION_TOKEN.
+    GITLAB_RUNNER_REGISTRATION_TOKEN,
 )
