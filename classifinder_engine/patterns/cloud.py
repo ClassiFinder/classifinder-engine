@@ -887,7 +887,9 @@ VAULT_TOKEN = SecretPattern(
 
 # Vault's token prefix is the whole discriminator between its token classes:
 # 'hvs.' service tokens (above), 'hvb.' batch tokens (here) and 'hvr.' recovery
-# tokens. Batch tokens are encrypted blobs rather than storage entries — they
+# tokens (registered below as vault_recovery_token, 2026-09-07 — this comment
+# named it as a gap until then). Batch tokens are encrypted blobs rather than
+# storage entries — they
 # are not renewable, carry no accessor, cannot be listed and cannot create
 # child tokens — which is why this is severity high where vault_token is
 # critical. It is still a bearer credential that authenticates every request it
@@ -2878,6 +2880,266 @@ AZURE_APP_CONFIGURATION_CONNECTION_STRING = SecretPattern(
     tags=["cloud", "azure", "appconfig", "configuration"],
 )
 
+# ===================================================
+# HEROKU 'HRKU-' PLATFORM API KEY (2026-09-07)
+# ===================================================
+
+# Heroku's SECOND API-key format, and a materially different credential shape
+# from HEROKU_API_KEY above. That one is a bare RFC4122 UUID which only becomes
+# detectable when a 'heroku…api…key' context word sits next to it, so a key
+# pasted into a CI log, a curl invocation or a config dump without that word is
+# invisible to it. The 'HRKU-' key carries its own five-character vendor
+# literal, so it is self-anchoring and needs no context at all.
+#
+# THE PREFIX IS 'HRKU-' AND THE BODY IS 60 CHARACTERS — NOT 'HRKU-AA' + 58.
+# Heroku's own changelog item announcing the format states the key is 65
+# characters and publishes a worked example verbatim; 65 - len("HRKU-") = 60.
+# Third-party catalogues that hard-code 'HRKU-AA' are encoding an issuance
+# cohort rather than a format: Heroku documents no 'AA' constant anywhere, and
+# baking it in would silently miss every key minted outside that cohort. The
+# two leading characters buy nothing anyway — five fixed characters plus an
+# exact 60-character body is already a strong anchor.
+#
+# No entropy gate: a 60-character urlsafe-base64 body behind a vendor literal
+# leaves no placeholder an entropy floor would catch that the prefix does not
+# already exclude. confidence_base 0.95 is the prefix-anchored tier and also a
+# floor — below 0.85 the FP-wordlist penalty (-0.40, scanner.py) would sink a
+# real key that happens to sit in a *test* or *staging* file.
+
+HEROKU_API_KEY_V2 = SecretPattern(
+    id="heroku_api_key_v2",
+    name="Heroku API Key (HRKU-)",
+    description=(
+        "Heroku platform API key in the 'HRKU-' format — the literal 'HRKU-'"
+        " prefix followed by a 60-character urlsafe-base64 body, 65 characters"
+        " in total. Unlike the older UUID-shaped Heroku key, this one is"
+        " self-identifying and needs no surrounding context. It authenticates"
+        " the whole Heroku Platform API for the account or authorization that"
+        " minted it: apps, dynos, config vars, add-ons, Postgres credentials"
+        " and team membership."
+    ),
+    provider="heroku",
+    severity="critical",
+    # 65 total characters, per Heroku's own changelog item, whose worked
+    # example is 'HRKU-' plus exactly 60 urlsafe-base64 characters. The
+    # boundary guards, confidence and known_test_values are ClassiFinder's own.
+    # Source: https://devcenter.heroku.com/changelog-items/3175
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>HRKU-[0-9A-Za-z_-]{60})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # the vendor literal carries the precision
+    context_keywords=[
+        "heroku",
+        "HEROKU_API_KEY",
+        "heroku_api_key",
+        "HRKU",
+        "authorization",
+        "platform",
+    ],
+    known_test_values={
+        # Single-character masks — how Heroku tutorials, blog posts and
+        # redacted CI configs render this key. confidence_base 0.95 sits above
+        # the 0.85 FP-wordlist gate (scanner.py), so the wordlist never gets a
+        # chance to price a mask down; they are pinned here and land at ~0.15.
+        # Assembled by concatenation so no contiguous key-shaped literal is
+        # committed to source.
+        "HRKU" + "-" + "x" * 60,
+        "HRKU" + "-" + "X" * 60,
+        "HRKU" + "-" + "0" * 60,
+    },
+    recommendation=(
+        "Revoke this key immediately. If it came from `heroku authorizations`,"
+        " run `heroku authorizations:revoke <id>`; if it is the account's"
+        " global key, run `heroku authorizations:rotate` or rotate it from"
+        " Account Settings. Then audit the account's app list, config vars and"
+        " add-on credentials — a platform key can read every config var on"
+        " every app it can reach, so treat those as exposed too, and rotate"
+        " any Heroku Postgres or Redis credentials it could have surfaced."
+    ),
+    tags=["cloud", "heroku", "platform-api"],
+)
+
+
+# ===================================================
+# HASHICORP VAULT — RECOVERY TOKENS (2026-09-07)
+# ===================================================
+
+# The third and last member of Vault's token-prefix family, and the one the
+# 'hvb.' block above named as a gap: 'hvs.' service tokens, 'hvb.' batch tokens
+# and 'hvr.' recovery tokens.
+#
+# Recovery tokens exist only on auto-unsealed Vault clusters, where the
+# recovery keys replace the unseal keys. A recovery token is generated through
+# the `generate-root` / recovery workflow and is the credential of last resort:
+# it is used to regain root-level control of a cluster whose normal auth is
+# unavailable. That is why severity is critical rather than the batch token's
+# high — a leaked recovery token is a path to root on the cluster, not a scoped
+# bearer credential.
+#
+# Body bounds are copied VERBATIM from vault_batch_token so all three members
+# of the family stay consistent: HashiCorp documents the prefix as being
+# followed by "at least 24 randomly-generated characters", so the floor is the
+# vendor's own wording rather than a measured width, and the trailing
+# (?![A-Za-z0-9]) guard is what makes the greedy run take the whole token
+# instead of a 24-character prefix of it.
+#
+# 'hvr.' cannot overlap either sibling: the three prefixes differ in their
+# third character, so an hvs. token still resolves to vault_token and an hvb.
+# token to vault_batch_token. Tests pin all three directions.
+
+VAULT_RECOVERY_TOKEN = SecretPattern(
+    id="vault_recovery_token",
+    name="HashiCorp Vault Recovery Token",
+    description=(
+        "HashiCorp Vault recovery token — the 'hvr.' prefix followed by at"
+        " least 24 randomly-generated characters. Recovery tokens are issued"
+        " on auto-unsealed clusters, where recovery keys stand in for unseal"
+        " keys, and they are the credential of last resort for regaining"
+        " root-level control of a cluster. A leaked recovery token is a path to"
+        " root on that Vault, and therefore to every secret it stores."
+    ),
+    provider="vault",
+    severity="critical",
+    # Prefix and the "at least 24 randomly-generated characters" body floor are
+    # HashiCorp's own, from its token concepts page — identical bounds to the
+    # 'hvs.' and 'hvb.' siblings above. Guards, confidence and
+    # known_test_values are ClassiFinder's own.
+    # Source: https://developer.hashicorp.com/vault/docs/concepts/tokens
+    regex=re.compile(
+        r"(?P<secret>hvr\.[A-Za-z0-9]{24,})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier, matched to vault_batch_token rather than
+    # vault_token's 0.97 so the two most recently authored members of the
+    # family agree. Deliberately kept at/above 0.85 so the FP-wordlist penalty
+    # (-0.40, scanner.py) can never silently sink a real recovery token that
+    # sits next to the word "test" or "demo".
+    confidence_base=0.95,
+    # 0.0 on purpose: the body is a fixed-charset random run, so any entropy
+    # floor a masked placeholder failed would also sink short real tokens. The
+    # literal 'hvr.' prefix carries the precision instead.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "vault",
+        "VAULT_TOKEN",
+        "hashicorp",
+        "recovery",
+        "generate-root",
+        "hvr",
+    ],
+    known_test_values={
+        # The masked shape that dominates Vault runbooks and issue reports.
+        # Assembled by concatenation so no contiguous token-shaped literal
+        # exists in this repository. Down-scores to ~0.15.
+        "hvr." + "X" * 28,
+        "hvr." + "x" * 24,
+    },
+    recommendation=(
+        "Revoke this token with `vault token revoke` and treat the cluster as"
+        " compromised for the whole window the token was exposed: a recovery"
+        " token exists to regain root-level control, so assume every secret"
+        " the Vault stores was readable. Re-key the recovery shares"
+        " (`vault operator rekey-recovery-key`), rotate the encryption key"
+        " (`vault operator rotate`), and rotate the downstream credentials"
+        " Vault brokers — database, cloud and PKI — rather than only the token."
+        " Then read the audit device for requests carrying it."
+    ),
+    tags=["cloud", "vault", "secrets", "recovery-token"],
+)
+
+
+# ===================================================
+# YANDEX CLOUD API KEY (2026-09-07)
+# ===================================================
+
+# The third Yandex credential in this module, and the LONG-LIVED one. The
+# distinction matters operationally:
+#   - yandex_cloud_iam_token ('t1.')  — ~12h derived bearer token, medium
+#   - yandex_passport_oauth_token ('y[0-3]_') — user credential, critical
+#   - yandex_cloud_api_key ('AQVN')   — service-account API key, here
+# An API key is bound to a service account and does not expire on its own; it
+# authenticates the Speech, Vision and Translate APIs directly, so a leak is
+# billable compute plus data access for as long as nobody rotates it. Severity
+# high: it is a scoped service credential rather than the account-wide Passport
+# token, but it outlives an IAM token by an unbounded margin.
+#
+# The regex is the VENDOR'S OWN. Yandex publishes the character class and the
+# {35,38} width verbatim in its public documentation repository, in the
+# security-standard authentication page, labelled "Yandex.Cloud API Keys
+# (Speechkit, Vision, Translate)". The width is a range rather than a constant
+# because that is what the vendor states — pinning one value would be inventing
+# format.
+#
+# Both boundary guards carry the full body charset, which is what keeps a
+# 35-character window from being carved out of a longer base64url run: inside a
+# JWT payload or a base64 blob every neighbouring character is in the class, so
+# the left guard fails and there is no match. It also means a 43-character
+# AQVN-prefixed run matches nothing at all — greedy 38 fails the right guard,
+# and every shorter backtrack fails it too — which is the correct behaviour for
+# a value that is not a key of this format.
+
+YANDEX_CLOUD_API_KEY = SecretPattern(
+    id="yandex_cloud_api_key",
+    name="Yandex Cloud API Key",
+    description=(
+        "Yandex Cloud service-account API key — the literal 'AQVN' prefix"
+        " followed by 35 to 38 urlsafe-base64 characters. Used to authenticate"
+        " SpeechKit, Vision and Translate API calls on behalf of a service"
+        " account. Unlike a Yandex Cloud IAM token, an API key does not expire"
+        " on its own, so a leaked one keeps working — and keeps billing — until"
+        " it is explicitly deleted."
+    ),
+    provider="yandex_cloud",
+    severity="high",
+    # The prefix, the [A-Za-z0-9_-] body charset and the {35,38} width are
+    # published verbatim by Yandex in its own public documentation repository
+    # (en/_includes/security/standard/authentication.md), labelled
+    # "Yandex.Cloud API Keys (Speechkit, Vision, Translate)". The boundary
+    # guards, confidence and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/yandex-cloud/docs/blob/master/en/_includes/security/standard/authentication.md
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>AQVN[A-Za-z0-9_-]{35,38})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # vendor literal + bounded width carry the precision
+    context_keywords=[
+        "yandex",
+        "yandexcloud",
+        "api_key",
+        "API_KEY",
+        "speechkit",
+        "translate",
+        "yc",
+    ],
+    known_test_values={
+        # Masks that appear in Yandex quickstarts and redacted configs.
+        # confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so the
+        # wordlist never prices these down; pinned here, they land at ~0.15.
+        "AQVN" + "x" * 35,
+        "AQVN" + "X" * 38,
+        "AQVN" + "0" * 36,
+    },
+    recommendation=(
+        "Delete this API key in the Yandex Cloud console under the owning"
+        " service account's API keys, or with"
+        " `yc iam api-key delete --id <id>`, and issue a fresh one. API keys do"
+        " not expire, so the exposure window runs from the leak until the"
+        " delete. Review the service account's roles and billing usage for the"
+        " period the key was public, and prefer short-lived IAM tokens or"
+        " authorized keys for workloads that can obtain them."
+    ),
+    tags=["cloud", "yandex_cloud", "service-account"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -2966,4 +3228,12 @@ register(
     # 2026-09-04 — Azure App Configuration connection string: the
     # '.azconfig.io' store endpoint, ';Id=' and ';Secret=' must co-occur.
     AZURE_APP_CONFIGURATION_CONNECTION_STRING,
+    # 2026-09-07 — Heroku's self-anchoring 'HRKU-' platform API key
+    # (the older heroku_api_key is a context-gated bare UUID), the
+    # third member of the Vault token-prefix family ('hvr.' recovery
+    # tokens, beside 'hvs.' service and 'hvb.' batch), and the
+    # long-lived Yandex Cloud service-account API key ('AQVN').
+    HEROKU_API_KEY_V2,
+    VAULT_RECOVERY_TOKEN,
+    YANDEX_CLOUD_API_KEY,
 )

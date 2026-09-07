@@ -1569,6 +1569,97 @@ MOLLIE_LIVE_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# PLAID ACCESS TOKEN (2026-09-07)
+# ===================================================
+
+# Registered in the PAYMENT module rather than identity because that is what
+# the credential does and where its neighbours already live: a Plaid access
+# token is the per-Item bank credential the rest of the Plaid API is called
+# with — Transactions, Balance, Auth (account and routing numbers) and, where
+# the client is enabled for it, Transfer. The module already holds the other
+# banking-rail credentials (Mercury, Ramp, Mercado Pago, Mollie, Xendit), and
+# an operator triaging a leak reads this next to those, not next to an SSO
+# token.
+#
+# The format is Plaid's own, from its published glossary: 'access-' + the
+# environment + '-' + an RFC4122 UUID. All three environment literals are kept.
+# 'development' was retired as a Plaid environment, but tokens minted against
+# it still exist in old code and old databases, and a detector that only
+# understands current environments would silently miss exactly the stale
+# credentials most likely to still be sitting in a repository.
+#
+# THE PUBLISHED SANDBOX EXAMPLE IS PINNED AS A KNOWN TEST VALUE. Plaid's
+# quickstart, its tutorials and thousands of derivative blog posts print the
+# same 'access-sandbox-…' value verbatim; without the pin it would be a
+# recurring 0.99 finding in documentation. It is registered explicitly rather
+# than left to the FP wordlist because confidence_base 0.95 sits above the
+# wordlist's 0.85 gate (scanner.py), so the wordlist never gets a chance to run.
+#
+# Severity critical, and deliberately NOT downgraded for sandbox tokens: the
+# pattern reports which environment it saw in the value itself, and a rule that
+# priced sandbox tokens lower would be one string substitution away from
+# mispricing a production token.
+
+PLAID_ACCESS_TOKEN = SecretPattern(
+    id="plaid_access_token",
+    name="Plaid Access Token",
+    description=(
+        "Plaid access token — 'access-' followed by the environment"
+        " ('sandbox', 'development' or 'production'), a hyphen, and an RFC4122"
+        " UUID. This is the long-lived per-Item credential every subsequent"
+        " Plaid API call is made with: transactions and balances for the linked"
+        " bank account, account and routing numbers through Auth, and money"
+        " movement through Transfer where the client is enabled for it."
+    ),
+    provider="plaid",
+    severity="critical",
+    # Format per Plaid's own published glossary: an access token is
+    # 'access-<environment>-<UUID>'. The environment literals, the hyphen
+    # separators and the UUID shape are all the vendor's. Guards, confidence
+    # and known_test_values are ClassiFinder's own.
+    # Source: https://plaid.com/docs/quickstart/glossary/
+    regex=re.compile(
+        r"(?<![0-9A-Za-z-])"
+        r"(?P<secret>access-(?:sandbox|development|production)-"
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+        r"(?![0-9A-Za-z-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # literal prefix + environment + UUID structure
+    context_keywords=[
+        "plaid",
+        "access_token",
+        "ACCESS_TOKEN",
+        "PLAID_ACCESS_TOKEN",
+        "item_id",
+        "link_token",
+    ],
+    known_test_values={
+        # Plaid's own quickstart prints this exact sandbox token, and it is
+        # reproduced verbatim across the tutorial ecosystem. Assembled by
+        # concatenation so no contiguous token literal is committed to source.
+        # Lands at ~0.15.
+        "access-" + "sandbox-" + "de3ce8ef-33f8-452c-a685-8671031fc0f6",
+        # Nil / all-f UUID masks, the usual redaction shapes.
+        "access-" + "sandbox-" + "00000000-0000-0000-0000-000000000000",
+        "access-" + "production-" + "00000000-0000-0000-0000-000000000000",
+    },
+    recommendation=(
+        "Rotate the Item's access token via /item/access_token/invalidate,"
+        " which issues a replacement and kills this one, or remove the Item"
+        " entirely with /item/remove if it should no longer be linked. Then"
+        " treat the linked account's data as disclosed for the exposure"
+        " window: balances, transaction history and, if Auth is enabled,"
+        " account and routing numbers. Check Plaid's activity log for calls"
+        " you did not make, and if Transfer is enabled on the client, review"
+        " transfers originated during that window."
+    ),
+    tags=["payment", "plaid", "banking", "fintech"],
+)
+
+
 register(
     STRIPE_LIVE_SECRET_KEY,
     STRIPE_TEST_SECRET_KEY,
@@ -1619,4 +1710,8 @@ register(
     #              with GOCARDLESS_ACCESS_TOKEN (also live_ + alnum).
     MOLLIE_TEST_API_KEY,
     MOLLIE_LIVE_API_KEY,
+    # 2026-09-07 — Plaid access token ('access-<environment>-<UUID>'),
+    # the long-lived per-Item bank credential; all three environment
+    # literals kept because retired 'development' tokens still exist.
+    PLAID_ACCESS_TOKEN,
 )

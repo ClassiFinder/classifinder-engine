@@ -298,10 +298,111 @@ GENERIC_HIGH_ENTROPY = SecretPattern(
 )
 
 
+# ===================================================
+# BCRYPT PASSWORD HASH (2026-09-07)
+# ===================================================
+
+# THIS IS A HASH, NOT A LIVE CREDENTIAL, AND THE WHOLE ENTRY IS BUILT AROUND
+# THAT. A bcrypt digest grants nothing when presented to anything: it is a
+# verifier, not a bearer token. Its value to an attacker is entirely offline —
+# and its value to the person reading the finding is as a SIGNAL: a bcrypt hash
+# in source, in a fixture, in a config file or in a pasted log means either a
+# leaked password table or a hardcoded administrative credential, and both are
+# worth knowing about. Severity is therefore medium, deliberately, and the
+# description and recommendation are written so neither implies an immediate
+# compromise. Overstating this would be worse than missing it.
+#
+# Registered in the GENERIC module rather than a new one. The generic module is
+# where the registry keeps the provider-agnostic structural formats — JWT,
+# Basic auth headers — which is exactly what a bcrypt hash is: a credential
+# shape with no vendor behind it. A dedicated 'hash' module would mean a new
+# registry import and a new corpus category for a single member; the 'hash' tag
+# carries that grouping instead, and a second hash format can join it here.
+#
+# The format is fully fixed and therefore highly precise on its own: '$2' + one
+# of the four minor-version letters + '$' + a two-digit cost + '$' + a 22-
+# character base64 salt and a 31-character digest in bcrypt's own './A-Za-z0-9'
+# alphabet, 53 together, 60 characters in total, always. There is no length
+# range and no entropy gate because there is no variation to accommodate.
+#
+# The canonical published sample (the one in passlib's documentation, which is
+# reproduced across the entire ecosystem) is pinned as a known test value: at
+# confidence_base 0.95 the FP wordlist never runs, so without the pin it would
+# be a permanent high-confidence finding in every tutorial that quotes it.
+
+BCRYPT_PASSWORD_HASH = SecretPattern(
+    id="bcrypt_password_hash",
+    name="bcrypt Password Hash",
+    description=(
+        "A bcrypt password hash — '$2a$', '$2b$', '$2x$' or '$2y$', a two-digit"
+        " cost factor, then a 22-character salt and 31-character digest, 60"
+        " characters in total. This is a one-way hash, not a usable"
+        " credential: it authenticates nothing on its own. It matters as a"
+        " signal — a bcrypt hash in source, in a fixture or in a pasted log"
+        " usually means a leaked password table or a hardcoded administrative"
+        " password, and a low-cost hash of a weak password is crackable"
+        " offline."
+    ),
+    provider="generic",
+    severity="medium",
+    # Format per the bcrypt modular-crypt specification as documented by
+    # passlib: '$2[abxy]$' + a two-digit cost + '$' + 22 characters of salt and
+    # 31 of digest in bcrypt's './A-Za-z0-9' alphabet, 60 characters in total.
+    # Guards, confidence and known_test_values are ClassiFinder's own.
+    # Source: https://passlib.readthedocs.io/en/stable/lib/passlib.hash.bcrypt.html
+    regex=re.compile(
+        r"(?<![./A-Za-z0-9$])"
+        r"(?P<secret>\$2[abxy]\$[0-9]{2}\$[./A-Za-z0-9]{53})"
+        r"(?![./A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # the format is fully fixed; there is nothing to gate
+    context_keywords=[
+        "bcrypt",
+        "password",
+        "password_hash",
+        "hashed_password",
+        "htpasswd",
+        "users",
+        "credentials",
+    ],
+    known_test_values={
+        # The canonical published bcrypt sample. It appears verbatim in
+        # passlib's documentation and is reproduced across the ecosystem, so
+        # without this pin it would be a permanent high-confidence finding in
+        # tutorials. Assembled by concatenation, per repository convention.
+        "$2b$12$" + "R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW",
+        # The same salt and digest also circulate under the older '$2a$'
+        # identifier — that form is the one reproduced in most tutorials, so
+        # pin it too or the commoner of the two stays a high-confidence hit.
+        "$2a$12$" + "R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW",
+        # All-same-character digests, the usual redaction masks.
+        "$2a$10$" + "x" * 53,
+        "$2y$10$" + "0" * 53,
+    },
+    recommendation=(
+        "This is a hash, so nothing is directly usable with it — do not treat"
+        " it as an active credential. Do treat it as an exposure: work out"
+        " whose password it is, force a reset for that account, and remove the"
+        " hash from source control and from any log or fixture that carries"
+        " it. If it came from a database dump, handle it as a password-table"
+        " leak and reset every affected account. Check the cost factor: a hash"
+        " below about cost 10 is meaningfully cheaper to crack offline, and a"
+        " '$2a$' or '$2x$' prefix indicates an old implementation worth"
+        " re-hashing at a higher cost."
+    ),
+    tags=["generic", "hash", "password", "bcrypt"],
+)
+
+
 register(
     JWT_TOKEN,
     BEARER_TOKEN,
     BASIC_AUTH_HEADER,
     GENERIC_API_KEY_ENV,
     GENERIC_HIGH_ENTROPY,
+    # 2026-09-07 — bcrypt password hash. A verifier, not a bearer
+    # credential: severity medium, and the first 'hash'-tagged pattern.
+    BCRYPT_PASSWORD_HASH,
 )

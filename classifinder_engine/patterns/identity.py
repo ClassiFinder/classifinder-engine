@@ -1180,6 +1180,94 @@ AMAZON_LWA_REFRESH_TOKEN = SecretPattern(
 
 
 
+# ===================================================
+# MAPBOX SECRET ACCESS TOKEN (2026-09-07)
+# ===================================================
+
+# The dangerous half of the Mapbox token pair. MAPBOX_API_TOKEN above covers
+# 'pk.' PUBLIC tokens, which are meant to ship in client-side JavaScript and
+# are at most a billing-abuse problem. A SECRET token starts with 'sk.' and is
+# never meant to leave a server: it carries write scopes — tokens:write (mint
+# further tokens), uploads:write, styles:write, datasets:write — so a leak is
+# account takeover of the Mapbox account, not just quota theft. Hence critical
+# where the public token is high.
+#
+# THE ANCHOR IS 'sk.eyJ', NOT 'sk.'. A bare two-character 'sk' plus a dot is a
+# weak anchor with real collision surface. The payload segment of a Mapbox
+# token is base64url of a JSON object, so it ALWAYS begins 'eyJ' — the base64url
+# encoding of '{"' — which turns a two-character prefix into a five-character
+# one for free, and is a fact about the encoding rather than an observation
+# about sampled keys.
+#
+# The dot separator is also what keeps this disjoint from the two other 'sk'
+# credentials in the registry: OpenAI's key is 'sk-' (hyphen) and Stripe's is
+# 'sk_live_' / 'sk_test_' (underscore). Neither can produce 'sk.', and tests
+# pin all three directions along with the 'pk.' sibling.
+#
+# The {29,125} body window puts the whole payload segment at 32..128 characters
+# including the 'eyJ'; the signature is 20..30. Both boundary guards carry the
+# base64url charset so a token is never carved out of a longer run.
+
+MAPBOX_SECRET_ACCESS_TOKEN = SecretPattern(
+    id="mapbox_secret_access_token",
+    name="Mapbox Secret Access Token",
+    description=(
+        "Mapbox SECRET access token — 'sk.' followed by a base64url JSON"
+        " payload (which therefore always opens 'eyJ') and a signature"
+        " segment. Unlike the public 'pk.' token, a secret token is never meant"
+        " to reach a browser: it carries write scopes such as tokens:write,"
+        " uploads:write, styles:write and datasets:write, so a leaked one can"
+        " mint further tokens and take over the Mapbox account rather than"
+        " merely burn its quota."
+    ),
+    provider="mapbox",
+    severity="critical",
+    # Mapbox's own access-token reference states that all secret access tokens
+    # start with 'sk'; the payload is base64url-encoded JSON, which is why it
+    # always begins 'eyJ'. Segment widths, boundary guards, confidence and
+    # known_test_values are ClassiFinder's own.
+    # Source: https://docs.mapbox.com/api/accounts/tokens/
+    regex=re.compile(
+        r"(?<![0-9A-Za-z._-])"
+        r"(?P<secret>sk\.eyJ[0-9A-Za-z_-]{29,125}\.[0-9A-Za-z_-]{20,30})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # 'sk.eyJ' plus two bounded base64url segments
+    context_keywords=[
+        "mapbox",
+        "MAPBOX_TOKEN",
+        "MAPBOX_SECRET_TOKEN",
+        "secret access token",
+        "sk.",
+        "geospatial",
+    ],
+    known_test_values={
+        # Single-character masks in the exact two-segment shape, as Mapbox
+        # tutorials and redacted .env files render a secret token.
+        # confidence_base 0.95 sits above the 0.85 FP-wordlist gate
+        # (scanner.py), so the wordlist never gets a chance to price a mask
+        # down; pinned here, they land at ~0.15. Assembled by concatenation so
+        # no contiguous token-shaped literal is committed to source.
+        "sk." + "eyJ" + "x" * 29 + "." + "x" * 20,
+        "sk." + "eyJ" + "X" * 29 + "." + "X" * 20,
+        "sk." + "eyJ" + "0" * 29 + "." + "0" * 20,
+    },
+    recommendation=(
+        "Delete this token at account.mapbox.com under Access tokens — a"
+        " secret token cannot be rotated in place — and issue a replacement"
+        " scoped to only what the workload needs. Then check the account's"
+        " token list for tokens you did not create: if the leaked token held"
+        " tokens:write, an attacker could have minted persistent ones of their"
+        " own. Review uploads, styles and datasets for unexpected changes, and"
+        " move the replacement into a server-side secret store — a secret"
+        " token must never be shipped to a browser."
+    ),
+    tags=["identity", "mapbox", "geospatial", "secret-token"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -1219,4 +1307,8 @@ register(
     # inheritance). Valid indefinitely, so severity is critical where the
     # hour-scale access token is high.
     AMAZON_LWA_REFRESH_TOKEN,
+    # 2026-09-07 — Mapbox SECRET access token, anchored on 'sk.eyJ' so
+    # it can never be confused with the public 'pk.' token above, with
+    # OpenAI's 'sk-' or with Stripe's 'sk_live_'.
+    MAPBOX_SECRET_ACCESS_TOKEN,
 )
