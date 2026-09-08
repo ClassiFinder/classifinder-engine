@@ -981,6 +981,91 @@ GITLAB_RUNNER_REGISTRATION_TOKEN = SecretPattern(
 )
 
 
+# 2026-09-08 — GitLab's Rails SESSION COOKIE. Unlike every other GitLab
+# pattern registered here, the anchor is not a token prefix: it is the
+# literal first-party cookie NAME, '_gitlab_session=', documented at
+# docs.gitlab.com/development/cookies/ as the cookie Rails uses to track a
+# signed-in session. Whoever holds the value IS the user for the rest of
+# that session.
+GITLAB_SESSION_COOKIE = SecretPattern(
+    id="gitlab_session_cookie",
+    name="GitLab Session Cookie",
+    description=(
+        "GitLab's Rails session cookie — the literal first-party cookie name"
+        " '_gitlab_session=' followed by an optional deployment prefix and a"
+        " 32-character lowercase-hex session id. It is not a scoped token:"
+        " whoever holds it is the signed-in user for the remaining lifetime"
+        " of the session, with no password, no second factor and no scope"
+        " narrowing what they can reach. GitLab's own issue tracker puts it"
+        " plainly — an actor with this cookie 'is able to gain access to the"
+        " user's account and impersonate them'. It leaks the way session"
+        " cookies always leak: pasted 'Cookie:' headers in bug reports,"
+        " captured HAR files, curl reproductions and browser-devtools dumps."
+    ),
+    provider="gitlab",
+    severity="high",
+    # The optional leading segment is GitLab's configurable session-cookie
+    # token prefix — gitlab_rails['session_store_session_cookie_token_prefix'],
+    # empty by default, which GitLab.com's Cells work sets per cell (the
+    # published example is 'cell2-'). Omitting it would MISS every value on a
+    # prefixed deployment, so the shape allows up to 24 leading
+    # [A-Za-z0-9_-] characters and then requires the real body.
+    #
+    # The body is exactly 32 lowercase hex characters. The trailing negative
+    # lookahead means a longer hex run cannot be silently truncated into a
+    # 32-character "match" — the greedy prefix backtracks so the span is the
+    # whole value.
+    #
+    # No entropy gate: the literal cookie name carries all the precision, and
+    # any floor high enough to reject a placeholder would sink real session
+    # ids first.
+    # Source: https://gitlab.com/gitlab-com/gl-infra/production-engineering/-/issues/25621
+    regex=re.compile(
+        r"_gitlab_session="
+        r"(?P<secret>[A-Za-z0-9_-]{0,24}[0-9a-f]{32})"
+        r"(?![0-9a-f])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # the literal cookie name carries the precision
+    context_keywords=[
+        "gitlab",
+        "cookie",
+        "session",
+        "_gitlab_session",
+        "Set-Cookie",
+    ],
+    known_test_values={
+        # Hex masks — how a redacted 'Cookie:' header, a docs example or a
+        # HAR scrubber renders this value. Note the catalogue placeholder
+        # 'xxxx…' cannot reach here at all: 'x' is not a hex character, so
+        # the body class rejects it before scoring. confidence_base 0.95 sits
+        # above the 0.85 FP-wordlist gate (scanner.py:197), so the wordlist
+        # never prices these down; they are pinned here and land at ~0.15.
+        "0" * 32,
+        "a" * 32,
+        "f" * 32,
+        "0123456789abcdef" * 2,
+        "deadbeef" * 4,
+    },
+    recommendation=(
+        "Treat the account as compromised for the whole window the cookie was"
+        " public. Sign out every active session immediately — in GitLab under"
+        " User Settings > Active Sessions, revoking all of them, not just the"
+        " one you recognise — and rotate the account password, which"
+        " invalidates the session server-side rather than merely dropping the"
+        " browser's copy. There is nothing to 'revoke' the way a token is"
+        " revoked: the cookie is the session. Then check Active Sessions and"
+        " the audit events for IPs and devices you do not recognise, and"
+        " rotate any personal access token, SSH key or CI/CD variable that"
+        " account could have read while the session was live. Scrub the"
+        " carrier too — a cookie pasted into an issue, a HAR attachment or a"
+        " curl reproduction stays readable in history after the session dies."
+    ),
+    tags=["vcs", "gitlab", "session", "cookie"],
+)
+
+
 # ===================================================
 # GITHUB OAUTH REFRESH TOKEN
 # ===================================================
@@ -1084,4 +1169,7 @@ register(
     # 2026-09-06 — the legacy GitLab runner REGISTRATION token ('GR1348941'),
     # the deprecated counterpart to GITLAB_RUNNER_AUTHENTICATION_TOKEN.
     GITLAB_RUNNER_REGISTRATION_TOKEN,
+    # 2026-09-08 — GitLab's Rails session cookie, anchored on the literal
+    # first-party cookie name '_gitlab_session=' rather than a token prefix.
+    GITLAB_SESSION_COOKIE,
 )
