@@ -954,6 +954,83 @@ BAIDU_QIANFAN_BCE_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# FIRECRAWL API KEY (2026-09-07)
+# ===================================================
+
+# The body width is not measured from sampled keys — it is derived from the
+# vendor's own server code. Firecrawl's apps/api/src/lib/parseApi.ts strips a
+# leading '^fc-' from the supplied key and then re-inserts UUID dashes with
+# /(.{8})(.{4})(.{4})(.{4})(.{12})/ before looking it up, which only makes
+# sense if what remains is exactly 32 hexadecimal characters: an undashed
+# UUID. So 'fc-' + 32 hex is the vendor's own arithmetic, not an inference.
+#
+# confidence_base is 0.90 rather than the 0.95 prefix-anchored tier, on
+# purpose. 'fc-' is three characters, which is a materially weaker anchor than
+# the four-to-nine-character literals that earn 0.95, and 'fc-' followed by an
+# MD5 is a plausible cache-filename shape. 0.90 still sits comfortably above
+# the 0.85 FP-wordlist gate (scanner.py), so a real key next to the word "test"
+# is not silently sunk; the masks are pinned as known_test_values instead.
+#
+# Severity high rather than critical: the key authenticates Firecrawl's
+# scraping and crawling API for the owning account, so a leak is billable
+# compute and access to the account's crawl history and stored results, but it
+# is not a control-plane credential for anything outside Firecrawl.
+
+FIRECRAWL_API_KEY = SecretPattern(
+    id="firecrawl_api_key",
+    name="Firecrawl API Key",
+    description=(
+        "Firecrawl API key — the literal 'fc-' prefix followed by exactly 32"
+        " hexadecimal characters (an undashed UUID), 35 in total."
+        " Authenticates Firecrawl's scrape, crawl and extract endpoints for the"
+        " owning account, so a leaked key means billable compute on someone"
+        " else's plan and access to that account's crawl jobs and results."
+    ),
+    provider="firecrawl",
+    severity="high",
+    # The 32-hex body is the vendor's own arithmetic: Firecrawl's API server
+    # strips '^fc-' from the supplied key and re-inserts UUID dashes with
+    # /(.{8})(.{4})(.{4})(.{4})(.{12})/, which pins what remains at exactly 32
+    # hexadecimal characters. Guards, confidence and known_test_values are
+    # ClassiFinder's own.
+    # Source: https://github.com/firecrawl/firecrawl/blob/main/apps/api/src/lib/parseApi.ts
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"(?P<secret>fc-[a-f0-9]{32})"
+        r"(?![0-9A-Za-z-])",
+        re.ASCII,
+    ),
+    # 0.90 (structural tier), not 0.95: 'fc-' is a three-character anchor and
+    # 'fc-' + 32 hex is a plausible cache-filename shape. Still above the 0.85
+    # FP-wordlist gate so a real key in a *test* file is never priced down.
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # masks are pinned below rather than gated on entropy
+    context_keywords=[
+        "firecrawl",
+        "FIRECRAWL_API_KEY",
+        "api_key",
+        "crawl",
+        "scrape",
+    ],
+    known_test_values={
+        # The all-zero and all-f undashed UUIDs, which is how Firecrawl's docs,
+        # SDK READMEs and tutorials render a redacted key.
+        "fc-" + "0" * 32,
+        "fc-" + "f" * 32,
+        "fc-" + "a" * 32,
+    },
+    recommendation=(
+        "Revoke this key in the Firecrawl dashboard under API Keys and issue a"
+        " replacement. Then check the account's usage and job history for the"
+        " exposure window — a leaked key is billable against your plan — and"
+        " review any crawl results it could have read, since those may contain"
+        " content from private or authenticated targets you crawled."
+    ),
+    tags=["ai", "firecrawl", "scraping"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -982,4 +1059,7 @@ register(
     BRAINTRUST_API_KEY,
     RUNPOD_API_KEY,
     BAIDU_QIANFAN_BCE_API_KEY,
+    # 2026-09-07 — Firecrawl API key ('fc-' + exactly 32 hex, the width
+    # pinned by the vendor's own parseApi.ts UUID re-dashing).
+    FIRECRAWL_API_KEY,
 )
