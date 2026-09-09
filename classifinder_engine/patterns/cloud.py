@@ -1036,6 +1036,109 @@ FLY_API_TOKEN = SecretPattern(
 )
 
 
+# 2026-09-09 — Fly.io's MACAROON access token, the 'fm2_' form. This is a
+# SIBLING of FLY_API_TOKEN above, not a replacement: 'fo1_' is the older
+# opaque deploy token, while 'fm2_' is the macaroon flyctl and the Fly.io
+# GraphQL API carry today. Fly joins SEVERAL macaroons with commas into one
+# 'Authorization: FlyV1 …' header, so each segment has to be matched on its
+# own rather than as a single anchored value.
+FLY_MACAROON_ACCESS_TOKEN = SecretPattern(
+    id="fly_macaroon_access_token",
+    name="Fly.io Macaroon Access Token",
+    description=(
+        "Fly.io macaroon access token — the vendor-published 'fm2_' prefix"
+        " followed by the base64 of a MsgPack-encoded macaroon. It is the"
+        " credential flyctl and the Fly.io GraphQL API authenticate with"
+        " today, and an org-scoped one can deploy, restart and destroy every"
+        " app and machine in the organisation, read its secrets through the"
+        " platform API and attach to a running machine. Several macaroons are"
+        " comma-joined inside a single 'Authorization: FlyV1 …' header, so"
+        " one leaked header can carry more than one credential."
+    ),
+    provider="fly",
+    severity="critical",
+    # FORMAT, FIRST-PARTY. Fly.io's own macaroon repository states the
+    # encoding verbatim in macaroon-thought.md: each macaroon "is
+    # MsgPack-encoded, then base64'd, then has `fm2_` prepended so it's easy
+    # to grep for them, then joined with commas". So the prefix is a literal
+    # Fly DESIGNED to be greppable, and the body is STANDARD base64 — the
+    # '+/' alphabet, not base64url — with the usual '=' padding. The same
+    # page prints the carrier, 'Authorization: FlyV1 fm2_…,fm2_…', and
+    # annotates its own examples "(Except way longer)", i.e. the toy bodies
+    # in the docs are deliberately not real widths. Fly's token docs
+    # (fly.io/docs/security/tokens/) reference the prefix independently in a
+    # '-t <existing token starting with fm2_>' CLI example.
+    #
+    # THE 100-CHARACTER FLOOR IS A FLOOR, NOT A MEASUREMENT. Fly publishes no
+    # length anywhere, so nothing here pretends to a fixed width: a macaroon
+    # carries a location, a nonce, a key id and an arbitrary list of caveats,
+    # and it GROWS as it is attenuated. The lower bound is corroborated by
+    # gitleaks (MIT), whose flyio-access-token rule uses the same
+    # '{100,}' body floor. Because 'fm2_' is a distinctive vendor literal
+    # rather than a generic shape, a loose bound costs nothing in precision
+    # while a tight one could only cause misses.
+    #
+    # PADDING IS {0,2} AND THE RIGHT GUARD DELIBERATELY EXCLUDES '='.
+    # Standard base64 emits zero, one or two pad characters and never three,
+    # so {0,2} is the correct width; but putting '=' in the trailing lookahead
+    # would turn a malformed over-padded value into a total MISS rather than a
+    # slightly short span, and a miss is the worse failure for a scanner. The
+    # guard therefore carries the body charset only. The body quantifier is
+    # greedy and unbounded, so a long macaroon can never be clipped to its
+    # first 100 characters and half-redacted.
+    #
+    # THE LEFT GUARD OMITS '=' ON PURPOSE. 'FLY_API_TOKEN=fm2_…' is the single
+    # most common carrier there is, so '=' must not block a match — while
+    # '+' and '/' ARE excluded, because '_' is outside the standard base64
+    # alphabet but inside base64url, and that is exactly how 'fm2_' could
+    # otherwise be carved out of the middle of somebody else's base64url blob.
+    # Source: https://github.com/superfly/macaroon/blob/main/macaroon-thought.md
+    regex=re.compile(
+        r"(?<![0-9A-Za-z+/_-])"
+        r"(?P<secret>fm2_[A-Za-z0-9+/]{100,}={0,2})"
+        r"(?![0-9A-Za-z+/])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,  # the vendor literal carries the precision
+    context_keywords=[
+        "fly",
+        "flyctl",
+        "FlyV1",
+        "FLY_API_TOKEN",
+        "fly_token",
+        "macaroon",
+    ],
+    known_test_values={
+        # Single-character masks at the minimum width — how a redacted
+        # 'Authorization' header or a docs placeholder renders this value.
+        # These are load-bearing rather than cosmetic: confidence_base 0.97
+        # sits ABOVE the 0.85 FP-wordlist gate (scanner.py:197), so the
+        # wordlist never gets a chance to price a masked token down, and
+        # without an explicit pin every such placeholder would be a permanent
+        # 0.99 finding. Fly's own 'fm2_Zm9vCg==' / 'fm2_YmFyCg==' examples
+        # need no entry: at eight body characters they are structurally
+        # unmatchable, and a test pins that.
+        "fm2" + "_" + "A" * 100,
+        "fm2" + "_" + "a" * 100,
+        "fm2" + "_" + "0" * 100,
+        "fm2" + "_" + "x" * 100,
+    },
+    recommendation=(
+        "Revoke the token at fly.io/dashboard under Tokens, or with"
+        " 'fly tokens revoke', and issue a replacement narrowed with"
+        " 'fly tokens create deploy --app <app>' rather than an org-wide one."
+        " Revoke EVERY macaroon in the carrier, not just the first: a"
+        " 'FlyV1' header comma-joins several, and each is a separate"
+        " credential. Then treat the organisation's app secrets as disclosed"
+        " — the holder could read and rewrite them through the platform API —"
+        " so rotate those too, and review recent deploys, machine starts and"
+        " SSH/console sessions for activity you do not recognise."
+    ),
+    tags=["cloud", "fly", "deploy", "macaroon"],
+)
+
+
 # ===================================================
 # ALIBABA CLOUD
 # ===================================================
@@ -3160,6 +3263,10 @@ register(
     VAULT_TOKEN,
     PULUMI_ACCESS_TOKEN,
     FLY_API_TOKEN,
+    # 2026-09-09 — the 'fm2_' MACAROON access token, the form flyctl and
+    # the Fly.io GraphQL API carry today, registered alongside the older
+    # 'fo1_' deploy token above rather than replacing it.
+    FLY_MACAROON_ACCESS_TOKEN,
     ALIBABA_ACCESS_KEY,
     VERCEL_ACCESS_TOKEN,
     VERCEL_REFRESH_TOKEN,
