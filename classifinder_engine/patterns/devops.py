@@ -2357,6 +2357,99 @@ PIXIE_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# PANGEA SERVICE TOKEN (2026-09-11)
+# ===================================================
+
+# Pangea sells security services as APIs — Vault, Secure Audit Log, AI Guard,
+# Redact, Embargo, File Scan and more — and every one of them authenticates
+# with a bearer "service token" carrying the literal 'pts_' prefix. The SDKs
+# and the vendor's MCP server read it from a PANGEA_*_TOKEN env family
+# (PANGEA_TOKEN, PANGEA_AUDIT_TOKEN, PANGEA_AI_GUARD_TOKEN, PANGEA_VAULT_TOKEN).
+#
+# THE 32-CHARACTER WIDTH IS THE VENDOR'S, NOT A GUESS. Pangea's docs only ever
+# print real tokens elided — 'pts_qbzbij...ajvp3j' — which fixes the charset
+# (lowercase alphanumerics) but not the length. The vendor's own
+# pangea-mcp-server README fixes the length: it sets PANGEA_VAULT_TOKEN to
+# 'pts_' plus exactly thirty-two zeros. Real values measured in public repos
+# all carry 32-character lowercase-alnum bodies, and Kingfisher (MongoDB,
+# Apache-2.0) rule kingfisher.pangea.1 publishes two examples of the same
+# width; that rule was corroboration only and nothing was ported.
+#
+# BOTH GUARDS ARE LOAD-BEARING BECAUSE 'pts_' IS ONLY FOUR CHARACTERS. It ends
+# plenty of English plurals in snake_case — counts_, prompts_, receipts_,
+# scripts_ — so the left guard refuses any preceding [A-Za-z0-9_]. The right
+# guard refuses the same class, so a 32-character window is never cut out of
+# a longer run and half-redacted. The exact {32} body plus both guards is what
+# lets this carry prefix-anchored confidence without an entropy gate.
+#
+# OUT OF SCOPE ON PURPOSE: the same README sets 'pvi_' (vault item ID) and
+# 'pci_' (config ID) values of identical shape. Those are identifiers, not
+# secrets, and a test pins that neither is claimed here.
+#
+# Severity high: a service token authorizes every Pangea service it was
+# granted — on a Vault-enabled token that means reading the stored secrets
+# and keys themselves, and on an audit token, writing tamper-evident log
+# entries in the owner's name.
+
+PANGEA_SERVICE_TOKEN = SecretPattern(
+    id="pangea_service_token",
+    name="Pangea Service Token",
+    description=(
+        "Pangea service token — the literal 'pts_' prefix followed by exactly"
+        " 32 lowercase alphanumerics, 36 characters in total. It is the"
+        " bearer credential for Pangea's security APIs (Vault, Secure Audit"
+        " Log, AI Guard, Redact and others) and authorizes every service the"
+        " token was granted — on a Vault-enabled token, that includes reading"
+        " the secrets and keys stored there."
+    ),
+    provider="pangea",
+    severity="high",
+    # Prefix and charset from Pangea's own docs, which print real tokens in
+    # elided lowercase-alnum form (pangea.cloud/docs/audit/getting-started/
+    # multiple-configurations). Width from the vendor's MCP server README,
+    # which sets PANGEA_VAULT_TOKEN to 'pts_' + 32 zeros. Guards, confidence
+    # and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/pangeacyber/pangea-mcp-server/blob/main/README.md
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>pts_[a-z0-9]{32})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # the 'pts_' literal plus an exact width anchors it
+    context_keywords=[
+        "pangea",
+        "PANGEA_TOKEN",
+        "PANGEA_AUDIT_TOKEN",
+        "PANGEA_VAULT_TOKEN",
+        "PANGEA_AI_GUARD_TOKEN",
+        "aiguard",
+        "bearer",
+    ],
+    known_test_values={
+        # The vendor's own README placeholder ('pts_' + 32 zeros) and the
+        # common single-character masks. confidence_base 0.95 sits above the
+        # 0.85 FP-wordlist gate, so these are pinned here rather than left to
+        # the wordlist, and land at ~0.15.
+        "pts" + "_" + "0" * 32,
+        "pts" + "_" + "x" * 32,
+        "pts" + "_" + "a" * 32,
+    },
+    recommendation=(
+        "Rotate or delete this token in the Pangea User Console on the"
+        " project's Tokens page, then issue a replacement granted only the"
+        " services that need it. Check which services the token carried: if"
+        " it included Vault, treat every secret and key stored there as"
+        " disclosed and rotate them; if it included Secure Audit Log, review"
+        " the log for entries written during the exposure window. Update"
+        " every PANGEA_*_TOKEN variable that held the old value."
+    ),
+    tags=["devops", "pangea", "security", "api"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -2433,4 +2526,7 @@ register(
     # Apache-2.0 api_key.go).
     DEPENDENCY_TRACK_API_KEY,
     PIXIE_API_KEY,
+    # 2026-09-11 — Pangea service token ('pts_' + exactly 32 lowercase
+    # alphanumerics; width fixed by the vendor's own MCP server README).
+    PANGEA_SERVICE_TOKEN,
 )
