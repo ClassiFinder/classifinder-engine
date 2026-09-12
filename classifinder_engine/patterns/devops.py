@@ -2450,6 +2450,92 @@ PANGEA_SERVICE_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# GUARDSQUARE APPSWEEP API KEY (2026-09-12)
+# ===================================================
+
+# Guardsquare AppSweep is a mobile-app security testing service. Its API key is
+# what the AppSweep Gradle plugin, the Guardsquare/appsweep-action GitHub Action
+# and the Bitrise scan step present to upload an Android build for scanning.
+# It is set in build.gradle / build.gradle.kts (appsweep { apiKey = "..." }),
+# in a secrets.defaults.properties or gradle.properties line, or read from the
+# APPSWEEP_API_KEY environment variable — which is why real keys end up
+# committed inside Android projects.
+#
+# THE 7_32 SPLIT IS EMPIRICAL, AND SAID SO. Guardsquare's own READMEs confirm
+# the product and the APPSWEEP_API_KEY name but never print the key format.
+# Three independent real keys found in unrelated public Android repos (distinct
+# SHA-256 digests, so not one key copied around) all measured exactly
+# 'gs_appsweep_' + 7 alphanumerics + '_' + 32 alphanumerics, mixed case in
+# both segments, 52 characters in total. Third-party catalog examples of other
+# shapes (an 8_23 split, a 24-character unseparated body) are synthetic
+# placeholders and are deliberately NOT accepted; widening the body to fit them
+# would be inventing format. The vendor placeholder 'gs_appsweep_SOME_API_KEY'
+# cannot match the fixed-width composite body.
+#
+# BOTH GUARDS CARRY THE BODY CHARSET PLUS '_' AND '-', so a key is never carved
+# out of a longer identifier or base64url run, and a segment one character too
+# long matches nothing at all rather than being truncated and half-redacted.
+# The 12-character literal plus the fixed composite body is what lets this carry
+# prefix-anchored confidence without an entropy gate.
+#
+# Severity high: the key authorizes uploading builds to the owner's AppSweep
+# organization and reading its scan results — a list of the app's own
+# unremediated security findings.
+
+GUARDSQUARE_APPSWEEP_API_KEY = SecretPattern(
+    id="guardsquare_appsweep_api_key",
+    name="Guardsquare AppSweep API Key",
+    description=(
+        "Guardsquare AppSweep API key — the literal 'gs_appsweep_' prefix"
+        " followed by 7 alphanumerics, an underscore and 32 alphanumerics, 52"
+        " characters in total. It is the credential the AppSweep Gradle plugin"
+        " and CI integrations use to upload Android builds for security"
+        " scanning, and it grants access to the organization's scan results."
+    ),
+    provider="guardsquare",
+    severity="high",
+    # Prefix, carriers and the APPSWEEP_API_KEY name from Guardsquare's own
+    # appsweep-action and Bitrise-step READMEs; the 7_32 body split measured on
+    # three independent real keys in unrelated public Android build files.
+    # Guards, confidence and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/Guardsquare/appsweep-action
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>gs_appsweep_[A-Za-z0-9]{7}_[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # the 12-char literal plus a fixed 7_32 body anchors it
+    context_keywords=[
+        "appsweep",
+        "APPSWEEP_API_KEY",
+        "guardsquare",
+        "apiKey",
+        "gradle",
+    ],
+    known_test_values={
+        # The common single-character masks. confidence_base 0.95 sits above
+        # the 0.85 FP-wordlist gate, so these are pinned here rather than left
+        # to the wordlist, and land at ~0.15.
+        "gs" + "_appsweep_" + "x" * 7 + "_" + "x" * 32,
+        "gs" + "_appsweep_" + "X" * 7 + "_" + "X" * 32,
+        "gs" + "_appsweep_" + "0" * 7 + "_" + "0" * 32,
+        "gs" + "_appsweep_" + "a" * 7 + "_" + "a" * 32,
+    },
+    recommendation=(
+        "Revoke this key in the AppSweep web app under the organization's API"
+        " keys settings, then create a replacement and store it only as a CI"
+        " secret (APPSWEEP_API_KEY) rather than in build.gradle,"
+        " build.gradle.kts or a committed properties file. Review the"
+        " organization's recent uploads and scan results for activity during"
+        " the exposure window, and purge the key from repository history."
+    ),
+    tags=["devops", "guardsquare", "appsweep", "security", "mobile", "api"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -2529,4 +2615,7 @@ register(
     # 2026-09-11 — Pangea service token ('pts_' + exactly 32 lowercase
     # alphanumerics; width fixed by the vendor's own MCP server README).
     PANGEA_SERVICE_TOKEN,
+    # 2026-09-12 — Guardsquare AppSweep API key ('gs_appsweep_' + 7 alnum +
+    # '_' + 32 alnum; split measured on three independent real keys).
+    GUARDSQUARE_APPSWEEP_API_KEY,
 )
