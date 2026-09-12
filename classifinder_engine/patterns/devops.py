@@ -2499,7 +2499,7 @@ GUARDSQUARE_APPSWEEP_API_KEY = SecretPattern(
     # appsweep-action and Bitrise-step READMEs; the 7_32 body split measured on
     # three independent real keys in unrelated public Android build files.
     # Guards, confidence and known_test_values are ClassiFinder's own.
-    # Source: https://github.com/ProNoob1029/Power-Play-Scorer/blob/HEAD/app/build.gradle
+    # Source: https://github.com/Guardsquare/appsweep-action
     regex=re.compile(
         r"(?<![A-Za-z0-9_-])"
         r"(?P<secret>gs_appsweep_[A-Za-z0-9]{7}_[A-Za-z0-9]{32})"
