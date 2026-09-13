@@ -2536,6 +2536,93 @@ GUARDSQUARE_APPSWEEP_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# AXIOM API TOKEN (2026-09-13)
+# ===================================================
+
+# Axiom is a log / event / trace store. Its bearer credentials carry a literal
+# four-letter prefix: 'xaat-' for an API token and 'xapt-' for the older
+# personal token, which the vendor's clients now flag as deprecated but still
+# accept. Both authorize Axiom's ingest and query APIs and are read from
+# AXIOM_TOKEN (NEXT_PUBLIC_AXIOM_TOKEN in next-axiom apps), a Wrangler secret,
+# or an OTLP 'Authorization: Bearer' header.
+#
+# THE PREFIXES AND THE BODY LAYOUT ARE BOTH THE VENDOR'S. axiom-go's
+# internal/config/token.go tests strings.HasPrefix(token, "xaat-") and
+# "xapt-"; axiom-js warns that 'xapt-' personal tokens are deprecated in favour
+# of 'xaat-' API tokens. axiom-go's own config_test.go masks both as the prefix
+# + 'XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX', and Cloudflare's Workers docs page
+# "Export to Axiom" prints the same 8-4-4-4-12 mask: 41 characters in total.
+# The hex is lowercase because that is how a UUID string is rendered. The v4
+# version / variant nibbles are deliberately NOT required — no vendor source
+# says the body is strictly v4, and pinning them would silently miss a key
+# minted any other way.
+#
+# BOTH GUARDS REFUSE [A-Za-z0-9_-]. The dashed UUID body is exactly what the
+# context-gated heroku / hubspot / wise UUID patterns look for; those require
+# a separator directly before the UUID, so the 'xaat-' prefix keeps them off,
+# and the guards keep this pattern from being carved out of a longer
+# hyphenated run. Tests pin a single axiom finding next to those keywords.
+#
+# Severity high: an API token can ingest into, and depending on its scopes
+# query, every dataset it was granted; a personal token acts as the user
+# across every organization they belong to.
+
+AXIOM_API_TOKEN = SecretPattern(
+    id="axiom_api_token",
+    name="Axiom API Token",
+    description=(
+        "Axiom API token — the literal 'xaat-' prefix (or 'xapt-' for the"
+        " deprecated personal token) followed by a lowercase dashed UUID, 41"
+        " characters in total. Authorizes Axiom's ingest and query APIs for"
+        " the datasets it was granted; a personal token acts as its user."
+    ),
+    provider="axiom",
+    severity="high",
+    # Prefixes from axiom-go internal/config/token.go (IsAPIToken 'xaat-',
+    # IsPersonalToken 'xapt-'); 8-4-4-4-12 body from the vendor's own
+    # config_test.go masks, corroborated by Cloudflare's Workers docs at
+    # https://developers.cloudflare.com/workers/observability/exporting-opentelemetry-data/axiom/
+    # Guards, confidence and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/axiomhq/axiom-go/blob/main/internal/config/config_test.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>xa[ap]t-"
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # 'xaat-'/'xapt-' plus UUID structure carries the precision
+    context_keywords=[
+        "axiom",
+        "AXIOM_TOKEN",
+        "NEXT_PUBLIC_AXIOM_TOKEN",
+        "xaat-",
+        "xapt-",
+    ],
+    known_test_values={
+        # The nil UUID and the all-f UUID are how docs and issue reports render
+        # a redacted token. confidence_base 0.95 sits above the 0.85
+        # FP-wordlist gate, so they are pinned here and land at ~0.15.
+        "xa" + "at-" + "00000000-0000-0000-0000-000000000000",
+        "xa" + "at-" + "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        "xa" + "pt-" + "00000000-0000-0000-0000-000000000000",
+        "xa" + "pt-" + "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    },
+    recommendation=(
+        "Delete this token in the Axiom console (the organization's API tokens"
+        " for 'xaat-', your profile's personal tokens for 'xapt-'), then create"
+        " a replacement scoped to"
+        " only the datasets and actions it needs, preferring an 'xaat-' API"
+        " token over a deprecated 'xapt-' personal token. Review the affected"
+        " datasets for unexpected ingest or queries during the exposure window,"
+        " and purge the token from repository history."
+    ),
+    tags=["devops", "axiom", "observability", "logging", "api"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -2618,4 +2705,7 @@ register(
     # 2026-09-12 — Guardsquare AppSweep API key ('gs_appsweep_' + 7 alnum +
     # '_' + 32 alnum; split measured on three independent real keys).
     GUARDSQUARE_APPSWEEP_API_KEY,
+    # 2026-09-13 — Axiom API token ('xaat-', or the deprecated personal
+    # 'xapt-', + a lowercase dashed UUID; prefixes and layout from axiom-go).
+    AXIOM_API_TOKEN,
 )
