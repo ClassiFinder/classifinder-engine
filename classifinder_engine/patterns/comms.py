@@ -2354,6 +2354,166 @@ NYLAS_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# NOTION API TOKEN — 'ntn_' (2026-09-14)
+# ===================================================
+
+# Notion's CURRENT token format. Notion's developer changelog announces that
+# from 25 September 2024 newly generated tokens use the 'ntn_' prefix instead
+# of 'secret_', explicitly to improve compatibility with secret scanners.
+# NOTION_API_KEY above only matches the legacy 'secret_' + 43 form, so every
+# token minted since then was invisible to it.
+#
+# Notion publishes no body length. The shape comes from gitleaks' MIT-licensed
+# 'notion-api-token' rule — 'ntn_' + 11 digits + 35 alphanumerics, a
+# 46-character body, which every example in that rule matches. Because the
+# vendor does not pin it, the alphanumeric tail accepts a modest 33-37 range
+# (a 44-48 character body) instead of the exact split; the 11-digit head is
+# kept as the load-bearing anchor. The right guard refuses any further
+# alphanumeric, so an overlong run matches nothing rather than being cut.
+#
+# Severity high: an integration token reads and writes every page and
+# database the integration was shared with.
+
+NOTION_API_TOKEN_NTN = SecretPattern(
+    id="notion_api_token_ntn",
+    name="Notion API Token (ntn_)",
+    description=(
+        "Notion integration / API token in the current format — the literal"
+        " 'ntn_' prefix, 11 digits, then 33-37 alphanumerics (46-character body"
+        " in practice). Replaced the legacy 'secret_' prefix in September 2024."
+        " Grants access to every page and database shared with the integration."
+    ),
+    provider="notion",
+    severity="high",
+    # Prefix per Notion's developer changelog (ntn_ replaces secret_, 2024-09-25):
+    #   https://developers.notion.com/page/changelog
+    # Body shape from gitleaks (MIT) rule 'notion-api-token', config/gitleaks.toml.
+    # Source: https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>ntn_[0-9]{11}[A-Za-z0-9]{33,37})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # 'ntn_' + 11-digit head carries the precision
+    context_keywords=[
+        "notion",
+        "NOTION_API_KEY",
+        "NOTION_TOKEN",
+        "notion_secret",
+        "Notion-Version",
+        "ntn_",
+    ],
+    known_test_values={
+        # Fills used to redact a token. Built by concatenation so no
+        # contiguous token literal is committed to the public engine repo.
+        "nt" + "n_" + "0" * 46,
+        "nt" + "n_" + "0" * 11 + "x" * 35,
+        "nt" + "n_" + "0" * 11 + "X" * 35,
+    },
+    recommendation=(
+        "Refresh (rotate) this token on the integration's page at"
+        " notion.so/profile/integrations — or delete the integration — and"
+        " update NOTION_TOKEN wherever it is configured. Review which pages and"
+        " databases the integration was connected to and their page history"
+        " for the exposure window, and share the replacement with only the"
+        " pages it needs."
+    ),
+    tags=["saas", "notion"],
+)
+
+
+# ===================================================
+# POWER AUTOMATE / LOGIC APPS WEBHOOK SAS URL (2026-09-14)
+# ===================================================
+
+# The callback URL of a Power Automate (or Azure Logic Apps) 'When an HTTP
+# request is received' trigger — which is also the URL a Microsoft Teams
+# Workflows-based incoming webhook hands out:
+#
+#   https://prod-NN.<region>.logic.azure.com:443/workflows/<32-hex id>
+#     /triggers/<name>/paths/invoke?api-version=...&sp=%2Ftriggers%2Fmanual
+#     %2Frun&sv=1.0&sig=<43 base64url>
+#
+# The URL IS the credential: the 'sig' query parameter is a SAS signature,
+# and Microsoft's own page on regenerating the SAS key says the new key "is
+# reflected in the sig= parameter of the HTTP trigger URL". Anyone holding the
+# whole URL can invoke the flow with any payload. GitHub's secret-scanning
+# partner catalog lists it as 'power_automate_webhook_sas'.
+#
+# Like SLACK_WEBHOOK_URL and TEAMS_WEBHOOK_URL, the secret group is the WHOLE
+# URL, so redaction removes the host, workflow id and signature together.
+# Anchors: the '.logic.azure.com' host, '/workflows/' + a 32-hex id,
+# '/triggers/<name>/paths/invoke', and a 'sig=' parameter of 43 base64url
+# characters (a 32-byte HMAC, unpadded) somewhere in the query string — up to
+# six other parameters may precede it, in any order.
+#
+# DISJOINT FROM azure_storage_sas_token: that pattern requires 'sv=' to be a
+# 20YY-MM-DD date, and a workflow URL carries 'sv=1.0'. A test pins it.
+
+POWER_AUTOMATE_WEBHOOK_SAS_URL = SecretPattern(
+    id="power_automate_webhook_sas_url",
+    name="Power Automate / Logic Apps Webhook SAS URL",
+    description=(
+        "Power Automate or Azure Logic Apps HTTP-trigger callback URL on"
+        " '*.logic.azure.com' — '/workflows/<id>/triggers/<name>/paths/invoke'"
+        " with a SAS 'sig=' signature in the query string. Anyone holding the"
+        " URL can trigger the flow; it is also the URL Teams Workflows webhooks"
+        " use."
+    ),
+    provider="microsoft",
+    severity="high",
+    # Trigger-URL layout and "the new key is reflected in the sig= parameter"
+    # per Microsoft's Power Automate SAS-key page; catalog row
+    # 'power_automate_webhook_sas' in GitHub's supported secret-scanning patterns.
+    # Format per https://learn.microsoft.com/power-automate/regenerate-sas-key
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>https://[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){0,3}"
+        r"\.logic\.azure\.com(?::443)?"
+        r"/workflows/[0-9a-f]{32}/triggers/[A-Za-z0-9_.~%-]{1,80}/paths/invoke"
+        r"(?:/[^\s?#" '"' r"'<>]{0,200})?"
+        r"\?(?:[^\s#&" '"' r"'<>]{1,200}&){0,6}"
+        r"sig=[A-Za-z0-9_-]{43})"
+        r"(?![A-Za-z0-9_%-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # host + workflow id + trigger path + sig are the anchor
+    context_keywords=[
+        "logic.azure.com",
+        "power automate",
+        "powerautomate",
+        "flow",
+        "workflows",
+        "webhook",
+        "teams",
+    ],
+    known_test_values={
+        # A zero-filled redaction of the canonical manual-trigger URL. Split
+        # so no contiguous URL literal is committed to the public engine repo.
+        "https://prod-00.westus.logic" + ".azure.com:443/workflows/" + "0" * 32
+        + "/triggers/manual/paths/invoke?api-version=2016-06-01"
+        + "&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=" + "0" * 43,
+        "https://prod-00.westus.logic" + ".azure.com:443/workflows/" + "0" * 32
+        + "/triggers/manual/paths/invoke?api-version=2016-06-01"
+        + "&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=" + "X" * 43,
+    },
+    recommendation=(
+        "Regenerate the flow's SAS key so the old 'sig=' stops working (the"
+        " Power Automate 'regenerateAccessKey' call, or Logic Apps > Access"
+        " keys > Regenerate), or delete and re-create the HTTP trigger, then"
+        " update every caller — including Teams channels posting through a"
+        " Workflows webhook. Review the flow's run history for invocations you"
+        " did not make, and add a trigger condition or OAuth (Entra ID) trigger"
+        " authentication so the URL alone is no longer enough."
+    ),
+    tags=["comms", "microsoft", "power-automate", "logic-apps", "webhook"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -2429,4 +2589,9 @@ register(
     # 2026-09-14 — Nylas v3 API key ('nyk_v0_' + 64 alnum; prefix from the
     # vendor's own CLI/SDK docs, width measured on independent public samples).
     NYLAS_API_KEY,
+    # 2026-09-14 — Notion's current 'ntn_' token (11 digits + 33-37 alnum;
+    # the legacy 'secret_' form stays NOTION_API_KEY) and the Power Automate /
+    # Logic Apps HTTP-trigger SAS URL (whole-URL secret, like Slack / Teams).
+    NOTION_API_TOKEN_NTN,
+    POWER_AUTOMATE_WEBHOOK_SAS_URL,
 )

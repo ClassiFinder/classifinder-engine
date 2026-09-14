@@ -2623,6 +2623,228 @@ AXIOM_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# CODE CLIMATE TEST REPORTER ID (2026-09-14)
+# ===================================================
+
+# Code Climate's test-coverage upload credential: the "test reporter ID"
+# (CC_TEST_REPORTER_ID, read by the current cc-test-reporter) or, for the
+# older per-language reporters, the "repo token" (CODECLIMATE_REPO_TOKEN).
+# Either is 64 lowercase hex characters with no prefix, so the pattern is
+# KEY-NAME ANCHORED: one of those two variable names, a ':' or '=' separator
+# with optional quotes and whitespace, then exactly 64 hex characters. The
+# format comes from Nosey Parker rule np.codeclimate.1 (Apache-2.0); the
+# guards, the separator set, the confidence tier and the known_test_values
+# are ClassiFinder's own.
+#
+# THE KEY NAME CONTAINS 'TEST', SO THE PRICING WAS CHECKED. The FP wordlist
+# lists 'test' and takes -0.40 off any finding priced under 0.85. The scanner
+# runs the wordlist on the SECRET group only — the hex value, never
+# 'CC_TEST_REPORTER_ID' — so the anchor itself cannot sink a finding. The
+# hex value can, though: the default FP list includes the hex-legal runs
+# '000000' and 'aaaaaa', so a keyword-anchored pattern priced in the usual
+# 0.6-0.8 band would silently lose the occasional real value. confidence_base
+# 0.90 keeps every real value above the gate, where the wordlist never runs;
+# a test proves a realistic value (and one containing '000000') scores >= 0.85.
+#
+# Severity medium: the token only uploads coverage for one repository — but a
+# leaked one lets anyone publish fraudulent coverage and quality signals.
+
+CODECLIMATE_REPORTER_ID = SecretPattern(
+    id="codeclimate_reporter_id",
+    name="Code Climate Test Reporter ID",
+    description=(
+        "Code Climate test reporter ID / repo token — 64 lowercase hex"
+        " characters assigned to CC_TEST_REPORTER_ID (or the legacy"
+        " CODECLIMATE_REPO_TOKEN). Authorizes uploading test-coverage reports"
+        " for the repository it belongs to."
+    ),
+    provider="codeclimate",
+    severity="medium",
+    # Key names + 64-hex body from Nosey Parker rule np.codeclimate.1
+    # (crates/noseyparker/data/default/builtin/rules/codeclimate.yml, Apache-2.0).
+    # Source: https://github.com/praetorian-inc/noseyparker
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?:CC_TEST_REPORTER_ID|CODECLIMATE_REPO_TOKEN)"
+        r"[\"']?[ \t]*(?:=|:)[ \t]*[\"']?"
+        r"(?P<secret>[a-f0-9]{64})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # fixed-width hex is capped at 4.0 bits; the key name carries precision
+    context_keywords=[
+        "codeclimate",
+        "code climate",
+        "cc-test-reporter",
+        "CC_TEST_REPORTER_ID",
+        "CODECLIMATE_REPO_TOKEN",
+        "coverage",
+    ],
+    known_test_values={
+        "0" * 64,
+        "f" * 64,
+        "a" * 64,
+    },
+    recommendation=(
+        "Regenerate the test reporter ID in Code Climate (Repo Settings > Test"
+        " coverage > Test Reporter ID > Regenerate) and update the CI secret"
+        " that sets CC_TEST_REPORTER_ID. Store it as a CI secret rather than in"
+        " a committed workflow or .travis.yml, and review the repository's"
+        " recent coverage uploads for reports you did not send."
+    ),
+    tags=["devops", "codeclimate", "ci", "coverage"],
+)
+
+
+# ===================================================
+# DJANGO SECRET_KEY — 'django-insecure-' (2026-09-14)
+# ===================================================
+
+# 'django-admin startproject' writes SECRET_KEY into settings.py as
+# SECRET_KEY_INSECURE_PREFIX + get_random_secret_key(), i.e. the literal
+# 'django-insecure-' followed by get_random_string(50, chars) with
+#
+#   chars = "abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)"
+#
+# (django/core/management/utils.py). The body is therefore EXACTLY 50
+# characters from that 50-character alphabet: lower-case letters, digits and
+# fourteen punctuation marks. A naive [A-Za-z0-9] body would under-match —
+# most real keys contain '(', ')', '#', '$', '^', '&', '*' or '+' — so the
+# class spells the full alphabet, with '-' escaped, and the right guard uses
+# the same alphabet (plus upper-case letters, which Django never emits) so a
+# 51-character run — or a 50-character run glued to more text — matches
+# nothing.
+#
+# WHY IT IS A SECRET: SECRET_KEY signs sessions, password-reset tokens,
+# messages and anything passed through django.core.signing. Holding it lets
+# an attacker forge those — and, with pickle-based session serializers, reach
+# code execution. The 'insecure' prefix is Django's own warning that the key
+# was generated for development and must be replaced before deployment; a
+# finding means it was not, or that a development key leaked alongside code.
+#
+# THE MATCHED VALUE ALWAYS CONTAINS 'insecure', WHICH IS ON THE FP WORDLIST.
+# A confidence_base under 0.85 would take -0.40 on EVERY real key. 0.95 sits
+# above the gate, so the wordlist never applies; a test pins that.
+
+DJANGO_INSECURE_SECRET_KEY = SecretPattern(
+    id="django_insecure_secret_key",
+    name="Django Secret Key (django-insecure-)",
+    description=(
+        "Django SECRET_KEY as generated by 'django-admin startproject' — the"
+        " literal 'django-insecure-' prefix followed by exactly 50 characters"
+        " from Django's secret-key alphabet (a-z, 0-9 and !@#$%^&*(-_=+))."
+        " Signs sessions, password-reset tokens and signed data."
+    ),
+    provider="django",
+    severity="high",
+    # Prefix (SECRET_KEY_INSECURE_PREFIX) and the 50-character alphabet from
+    # django/core/management/utils.py get_random_secret_key().
+    # Source: https://github.com/django/django/blob/main/django/core/management/utils.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>django-insecure-[a-z0-9!@#$%^&*()_=+\-]{50})"
+        r"(?![A-Za-z0-9!@#$%^&*()_=+\-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # generator-fixed width and alphabet; a floor could only sink real keys
+    context_keywords=[
+        "django",
+        "SECRET_KEY",
+        "DJANGO_SECRET_KEY",
+        "settings.py",
+        "django-insecure-",
+    ],
+    known_test_values={
+        # Single-character fills are how a redacted key gets written down.
+        "django-" + "insecure-" + "x" * 50,
+        "django-" + "insecure-" + "0" * 50,
+        "django-" + "insecure-" + "*" * 50,
+    },
+    recommendation=(
+        "Generate a new key (python -c 'from django.core.management.utils"
+        " import get_random_secret_key; print(get_random_secret_key())'), load"
+        " it from the environment or a secrets manager instead of settings.py,"
+        " and deploy it. Rotating SECRET_KEY invalidates every session and"
+        " password-reset link, which is the point; on Django 4.1+ move the old"
+        " key into SECRET_KEY_FALLBACKS only if you must keep signed data"
+        " valid briefly. Never deploy a 'django-insecure-' key to production."
+    ),
+    tags=["devops", "django", "framework", "signing-key"],
+)
+
+
+# ===================================================
+# LAUNCHDARKLY SDK KEY — 'sdk-' (2026-09-14)
+# ===================================================
+
+# LaunchDarkly's server-side SDK key. The vendor's keys page states "SDK keys
+# always start with the prefix sdk-"; the body is a lowercase dashed UUID in
+# 8-4-4-4-12 groups (real values are v4, but the version / variant nibbles are
+# deliberately not required — no vendor source pins them). The mobile key
+# ('mob-') and the dash-free client-side ID are designed to be public and are
+# NOT matched; neither is the bare UUID.
+#
+# confidence_base 0.90, one notch under the 0.95 prefix tier, because 'sdk-'
+# is a generic-sounding four-character prefix that another vendor could plausibly
+# put in front of a UUID. The full-UUID body and the guards carry the rest of
+# the precision, and 0.90 still sits above the 0.85 FP-wordlist gate.
+#
+# OVERLAP WITH launchdarkly_access_token: that pattern is context-gated
+# ('LAUNCHDARKLY…KEY=' + any 40 characters of [A-Za-z0-9._-]), and 'sdk-' + a
+# UUID is exactly 40 such characters — so before this pattern an SDK key
+# behind LAUNCHDARKLY_SDK_KEY= was mislabelled as a REST access token. Both
+# now fire on the same span; this one prices at 0.90 + context against that
+# one's 0.80 + context, so dedup keeps the specific reading. A test pins it.
+
+LAUNCHDARKLY_SDK_KEY = SecretPattern(
+    id="launchdarkly_sdk_key",
+    name="LaunchDarkly SDK Key",
+    description=(
+        "LaunchDarkly server-side SDK key — the literal 'sdk-' prefix followed"
+        " by a lowercase dashed UUID, 40 characters in total. Lets a server-side"
+        " SDK read every flag and segment in its environment."
+    ),
+    provider="launchdarkly",
+    severity="high",
+    # "SDK keys always start with the prefix sdk-" per LaunchDarkly's keys docs;
+    # the UUID body is the verified shape of real keys.
+    # Format per https://launchdarkly.com/docs/home/account/environment/keys
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>sdk-"
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # 'sdk-' plus UUID structure carries the precision
+    context_keywords=[
+        "launchdarkly",
+        "LAUNCHDARKLY_SDK_KEY",
+        "LD_SDK_KEY",
+        "ldclient",
+        "sdk_key",
+        "sdkKey",
+    ],
+    known_test_values={
+        "sd" + "k-" + "00000000-0000-0000-0000-000000000000",
+        "sd" + "k-" + "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    },
+    recommendation=(
+        "Reset this SDK key in LaunchDarkly (Organization settings > Projects >"
+        " the environment's keys > Reset SDK key; optionally keep the old key"
+        " valid for a short grace period) and redeploy the servers that use"
+        " it. An SDK key exposes every flag rule, segment and targeted context"
+        " in its environment — often including user identifiers and internal"
+        " rollout plans — so it must never ship to a browser or mobile app."
+    ),
+    tags=["devops", "launchdarkly", "feature-flag", "sdk"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -2708,4 +2930,11 @@ register(
     # 2026-09-13 — Axiom API token ('xaat-', or the deprecated personal
     # 'xapt-', + a lowercase dashed UUID; prefixes and layout from axiom-go).
     AXIOM_API_TOKEN,
+    # 2026-09-14 — Code Climate test reporter ID (key-name anchored 64 hex;
+    # Nosey Parker np.codeclimate.1), Django 'django-insecure-' SECRET_KEY
+    # (50 chars from Django's own secret-key alphabet), and the LaunchDarkly
+    # server-side SDK key ('sdk-' + lowercase dashed UUID).
+    CODECLIMATE_REPORTER_ID,
+    DJANGO_INSECURE_SECRET_KEY,
+    LAUNCHDARKLY_SDK_KEY,
 )

@@ -3243,6 +3243,185 @@ YANDEX_CLOUD_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# AZURE IOT HUB SAS TOKEN (2026-09-14)
+# ===================================================
+
+# A SIGNED IoT Hub security token, as opposed to the key that signs it.
+# AZURE_IOT_KEY above detects the 44-character 'AIoT'-signature shared access
+# / device key; this pattern detects what that key MINTS:
+#
+#   SharedAccessSignature sr={URL-encoded resourceURI}&sig={signature}
+#                         &se={expiry}&skn={policyName}
+#
+# Microsoft Learn's IoT Hub SAS article documents the layout field by field:
+# 'sr' is the lower-case URL-encoded resource URI and starts with the hub host
+# name ('<hub>.azure-devices.net', optionally followed by '/devices/<id>'),
+# 'sig' is the URL-encoded base64 of an HMAC-SHA256 — 43 data characters plus
+# one '=' pad, which the vendor's own generators percent-encode as '%3D' —
+# 'se' is the expiry in epoch seconds, and 'skn' names the shared access policy
+# and is ABSENT for a device-scoped token signed with a device key. So 'skn' is
+# not required; everything up to '&se=' is.
+#
+# THE CO-OCCURRENCE IS THE PATTERN: the literal 'SharedAccessSignature sr='
+# scheme, the '.azure-devices.net' host, '&sig=' and '&se=' must all appear in
+# that order in one unbroken token, which is the order every generator on the
+# vendor page emits. No entropy gate is needed. The captured span is the
+# signature alone, so a redacted token keeps its hub and device readable.
+#
+# DISJOINT FROM azure_storage_sas_token, which requires the 'sv=20YY-MM-DD'
+# signed-version date an IoT Hub token never carries. A test pins that.
+#
+# Severity critical: a token minted from the 'iothubowner' or 'service' policy
+# is a hub-wide credential until it expires, and nothing can revoke a single
+# token — only rotating the signing key does.
+
+AZURE_IOT_HUB_SAS_TOKEN = SecretPattern(
+    id="azure_iot_hub_sas_token",
+    name="Azure IoT Hub SAS Token",
+    description=(
+        "Azure IoT Hub shared access signature token — 'SharedAccessSignature"
+        " sr=<hub>.azure-devices.net[/devices/<id>]&sig=<signature>&se=<expiry>'"
+        " with an optional '&skn=<policy>'. The signature is the URL-encoded"
+        " base64 HMAC-SHA256 of the resource URI and expiry; the token grants"
+        " whatever its signing policy or device key allows until it expires."
+    ),
+    provider="azure",
+    severity="critical",
+    # Token layout, field order and the '%3D'-encoded pad per Microsoft Learn's
+    # IoT Hub SAS article (SAS token structure + the vendor's own generators).
+    # Format per https://learn.microsoft.com/azure/iot-hub/authenticate-authorize-sas
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])SharedAccessSignature\s+sr="
+        r"[A-Za-z0-9-]{1,63}\.azure-devices\.net"
+        r"[^\s&" '"' r"'<>]{0,200}"
+        r"&sig=(?P<secret>(?:[A-Za-z0-9+/]|%2[BbFf]){43}(?:=|%3[Dd])?)"
+        r"&se=\d{1,12}(?!\d)",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # four-literal structural anchor; a floor could only sink real tokens
+    context_keywords=[
+        "azure-devices.net",
+        "SharedAccessSignature",
+        "iothub",
+        "skn=",
+        "DeviceId",
+        "azure",
+    ],
+    known_test_values={
+        # The two complete signatures Microsoft Learn prints in its IoT Hub SAS
+        # article (hub-level 'registryRead' token and device-scoped token), in
+        # the encoded, raw and lower-case-encoded spellings. Split so no
+        # contiguous signature literal is committed.
+        "JdyscqTpXdEJs49elIUC" + "cohw2DlFDR3zfH5KqGJo4r4%3D",
+        "JdyscqTpXdEJs49elIUC" + "cohw2DlFDR3zfH5KqGJo4r4%3d",
+        "JdyscqTpXdEJs49elIUC" + "cohw2DlFDR3zfH5KqGJo4r4=",
+        "13y8ejUk2z7PLmvtwR5R" + "qlGBOVwiq7rQR3WZ5xZX3N4%3D",
+        "13y8ejUk2z7PLmvtwR5R" + "qlGBOVwiq7rQR3WZ5xZX3N4%3d",
+        "13y8ejUk2z7PLmvtwR5R" + "qlGBOVwiq7rQR3WZ5xZX3N4=",
+        # Single-character fills used to redact a signature.
+        "A" * 43 + "%3D",
+        "A" * 43 + "=",
+        "X" * 43 + "%3D",
+        "x" * 43 + "%3D",
+        "0" * 43 + "%3D",
+    },
+    recommendation=(
+        "A SAS token cannot be revoked on its own: rotate the key that signed"
+        " it. For a hub-level token (one with '&skn=<policy>'), regenerate that"
+        " shared access policy's key in the Azure Portal (IoT Hub > Shared"
+        " access policies); for a device-scoped token without 'skn', regenerate"
+        " the device's symmetric key. Audit device-to-cloud traffic, twin"
+        " updates and registry changes for the exposure window, and prefer"
+        " short token lifetimes or Entra ID for back-end services."
+    ),
+    tags=["cloud", "azure", "iot", "sas", "delegated"],
+)
+
+
+# ===================================================
+# AZURE SIGNALR CONNECTION STRING (2026-09-14)
+# ===================================================
+
+# Azure SignalR Service access key, in the connection-string form the Azure
+# Portal's Keys blade and 'az signalr key list' emit:
+#
+#   Endpoint=https://<resource_name>.service.signalr.net;AccessKey=<key>;Version=1.0;
+#
+# Microsoft Learn's SignalR connection-string article documents that template,
+# says keys are not case sensitive, lists the optional Port / ClientEndpoint /
+# ServerEndpoint / Version pairs, and describes AccessKey as a Base64 key
+# string that is "similar to a root password for your service". Real keys are
+# 256-bit, i.e. 43 base64 characters plus one '=' pad; the vendor does not
+# state a width, so a modest 40-64 range (plus up to two pads) is accepted
+# rather than an exact one.
+#
+# THE CO-OCCURRENCE IS THE PATTERN, as for the App Configuration connection
+# string above: the literal '.service.signalr.net' endpoint host and an
+# 'AccessKey=' pair in the same unbroken string. Up to three other 'key=value;'
+# pairs may sit between them (a Port or a reverse-proxy endpoint). The
+# 'Endpoint=' prefix itself is not required — the '=' before 'https' satisfies
+# the left guard. Entra ID strings ('AuthType=azure…', no AccessKey) carry no
+# key and cannot match. The captured span is the key alone.
+#
+# DISJOINT FROM azure_storage_key (which keys on 'AccountKey=') and from the
+# 'SharedAccessKey=' identifiable-key patterns; tests pin both.
+
+AZURE_SIGNALR_CONNECTION_STRING = SecretPattern(
+    id="azure_signalr_connection_string",
+    name="Azure SignalR Connection String",
+    description=(
+        "Azure SignalR Service access key in connection-string form —"
+        " 'Endpoint=https://<resource>.service.signalr.net;AccessKey=<base64"
+        " key>;Version=1.0;'. The access key signs the tokens the service"
+        " accepts, so it acts as a root password for the SignalR resource."
+    ),
+    provider="azure",
+    severity="critical",
+    # Template, key names and the base64 AccessKey per Microsoft Learn's
+    # "Connection strings in Azure SignalR Service" article.
+    # Format per https://learn.microsoft.com/azure/azure-signalr/concept-connection-string
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"https://[A-Za-z0-9-]{1,63}\.service\.signalr\.net(?::\d{1,5})?/?;"
+        r"(?:[A-Za-z]{1,20}=[^;\s" '"' r"'<>]{0,200};){0,3}?"
+        r"[Aa]ccess[Kk]ey=(?P<secret>[A-Za-z0-9+/]{40,64}={0,2})"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # two-literal structural anchor; a floor could only sink real keys
+    context_keywords=[
+        "signalr",
+        "service.signalr.net",
+        "AccessKey",
+        "Azure:SignalR:ConnectionString",
+        "AddAzureSignalR",
+        "azure",
+    ],
+    known_test_values={
+        # Built by multiplication on purpose: a contiguous literal of this
+        # shape trips GitHub Push Protection on the public engine repository.
+        "A" * 43 + "=",
+        "a" * 43 + "=",
+        "X" * 43 + "=",
+        "x" * 43 + "=",
+        "0" * 43 + "=",
+    },
+    recommendation=(
+        "Regenerate the leaked key in the Azure Portal (SignalR Service > Keys"
+        " > Regenerate primary/secondary key, or 'az signalr key renew'),"
+        " rolling the secondary first so app servers can cut over, then update"
+        " every 'Azure:SignalR:ConnectionString' setting that carried it. Anyone"
+        " holding the key can mint client and server tokens for every hub on"
+        " the resource. Prefer a managed identity or Entra ID application and"
+        " disable access-key auth entirely where possible."
+    ),
+    tags=["cloud", "azure", "signalr", "realtime"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -3343,4 +3522,10 @@ register(
     HEROKU_API_KEY_V2,
     VAULT_RECOVERY_TOKEN,
     YANDEX_CLOUD_API_KEY,
+    # 2026-09-14 — Azure IoT Hub SAS token ('SharedAccessSignature sr=' +
+    # '.azure-devices.net' + '&sig=' + '&se=', the token AZURE_IOT_KEY mints)
+    # and the Azure SignalR connection string ('.service.signalr.net' +
+    # 'AccessKey=').
+    AZURE_IOT_HUB_SAS_TOKEN,
+    AZURE_SIGNALR_CONNECTION_STRING,
 )
