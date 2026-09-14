@@ -2270,6 +2270,90 @@ GRAFANA_CLOUD_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# NYLAS V3 API KEY (2026-09-14)
+# ===================================================
+
+# Nylas is a communications-platform API: one integration reads and sends
+# email, manages calendars and events, and syncs contacts across the Google,
+# Microsoft, IMAP and Exchange accounts ("grants") connected to a Nylas
+# application. In Nylas v3 the application's API key is the bearer credential
+# for all of it — presented as 'Authorization: Bearer <API_KEY>' — and it is
+# typically read from NYLAS_API_KEY.
+#
+# THE PREFIX IS THE VENDOR'S; THE WIDTH IS MEASURED. Nylas's own CLI and SDK
+# documentation spell the key 'nyk_v0_...' and the CLI format-validates on
+# that prefix, and GitGuardian's public nylas_api_key detector lists the key
+# as prefixed. Nylas's v3 API-key reference describes the key as a bearer
+# token but does not print its shape. The body width was measured on
+# independent public samples: every real value carried exactly 64 characters
+# of [A-Za-z0-9] — no '_' and no '-' — while the only other widths seen were
+# obvious short placeholders. No real value is cited or copied; every literal
+# in tests and corpus is synthetic.
+#
+# BOTH GUARDS REFUSE [A-Za-z0-9_-], so a key is never carved out of a longer
+# identifier or base64url run, and a body one character too long matches
+# nothing rather than being truncated. The leading guard also keeps the regex
+# off the 'nyk_' inside 'snyk_' identifiers. The prefix is exact and
+# case-sensitive; a docs-typo 'nyl_v0_' placeholder is deliberately not
+# accepted.
+#
+# Severity high: a v3 API key acts as the Nylas application, so it can read
+# and send mail, edit calendars and read contacts for every grant the
+# application holds.
+
+NYLAS_API_KEY = SecretPattern(
+    id="nylas_api_key",
+    name="Nylas v3 API Key",
+    description=(
+        "Nylas v3 API key — the literal 'nyk_v0_' prefix followed by 64"
+        " alphanumerics, 71 characters in total. The bearer credential for"
+        " the Nylas v3 API: it acts as the Nylas application and can read and"
+        " send email, manage calendars and read contacts for every connected"
+        " account (grant) that application holds."
+    ),
+    provider="nylas",
+    severity="high",
+    # 'nyk_v0_' prefix per Nylas's own CLI and SDK documentation and
+    # GitGuardian's public nylas_api_key detector page; the 64-character
+    # alphanumeric body was measured on independent public samples. The
+    # vendor's v3 reference below documents the key as a bearer token.
+    # Guards, confidence and known_test_values are ClassiFinder's own.
+    # Source: https://developer.nylas.com/docs/reference/api/manage-api-keys/
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>nyk_v0_[A-Za-z0-9]{64})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # 'nyk_v0_' prefix plus the fixed 64-char body carries the precision
+    context_keywords=[
+        "nylas",
+        "NYLAS_API_KEY",
+        "nyk_v0_",
+        "api_key_secret",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key. confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so
+        # they are pinned here and land at ~0.15.
+        "nyk_v0_" + "x" * 64,
+        "nyk_v0_" + "X" * 64,
+        "nyk_v0_" + "0" * 64,
+    },
+    recommendation=(
+        "Delete this API key in the Nylas Dashboard (the application's API"
+        " Keys page) and create a replacement, then update every service that"
+        " reads NYLAS_API_KEY. A v3 API key acts as the whole application, so"
+        " review every grant it holds for unexpected mail sends, message or"
+        " contact reads and calendar changes during the exposure window, and"
+        " purge the key from repository history."
+    ),
+    tags=["communications", "nylas", "email", "calendar", "api"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -2342,4 +2426,7 @@ register(
     # SUFFIX-anchored New Relic pattern (6 alnum + 30 hex + 'NRAL'), disjoint
     # from the prefixed NRAK-/NRAA-/NRII- keys above.
     NEWRELIC_LICENSE_KEY,
+    # 2026-09-14 — Nylas v3 API key ('nyk_v0_' + 64 alnum; prefix from the
+    # vendor's own CLI/SDK docs, width measured on independent public samples).
+    NYLAS_API_KEY,
 )
