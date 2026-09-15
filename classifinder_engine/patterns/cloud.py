@@ -559,6 +559,96 @@ CLOUDFLARE_ORIGIN_CA_KEY = SecretPattern(
 )
 
 
+# ---------------------------------------------------
+# Cloudflare SCANNABLE API tokens — 'cfut_' / 'cfat_' (2026-09-15)
+# ---------------------------------------------------
+# Cloudflare now mints API tokens in a self-identifying "scannable" format: a
+# 'cfut_' prefix for a user API token or 'cfat_' for an account-owned API
+# token, then 40 alphanumerics, then an 8-character hex checksum (a CRC32, and
+# 32 bits is exactly 8 hex characters) — 53 characters in total. These are
+# the bearer credentials for the Cloudflare API, the tokens Wrangler and the
+# Terraform provider read from CLOUDFLARE_API_TOKEN.
+#
+# THE LEGACY PATTERN ABOVE DOES NOT COVER THIS FORM. cloudflare_api_token is
+# keyword-gated to the old 40-character body and its trailing guard refuses a
+# 53-character run, so before this pattern a scannable token produced nothing
+# (or only a low-confidence generic finding). The legacy pattern and
+# cloudflare_global_api_key are deliberately left unchanged, and the sibling
+# 'cfk_' key is a separate format, deliberately NOT folded in here.
+#
+# The vendor says only "hex" for the checksum and never pins its case, so the
+# regex accepts the safe superset [0-9a-fA-F]. The checksum cannot be
+# validated in a regex (the vendor does not publish what it is computed
+# over); the fixed prefix plus the exact 40 + 8 layout carry the precision.
+# BOTH GUARDS REFUSE [A-Za-z0-9_-], so a token is never carved out of a
+# longer identifier or base64url run, and a body one character too long
+# matches nothing rather than being truncated. The prefix is exact and
+# case-sensitive.
+#
+# Severity critical: a scannable token carries whatever permissions it was
+# scoped with — up to DNS, Workers, R2 and account administration.
+
+CLOUDFLARE_SCANNABLE_API_TOKEN = SecretPattern(
+    id="cloudflare_scannable_api_token",
+    name="Cloudflare Scannable API Token (cfut_/cfat_)",
+    description=(
+        "Cloudflare API token in the scannable format — the literal 'cfut_'"
+        " (user API token) or 'cfat_' (account-owned API token) prefix, then"
+        " 40 alphanumerics and an 8-character hex checksum, 53 characters in"
+        " total. The bearer credential for the Cloudflare API, with whatever"
+        " zone, DNS, Workers, R2 or account permissions the token was granted."
+    ),
+    provider="cloudflare",
+    severity="critical",
+    # Format per Cloudflare's own docs: the token-formats page gives
+    # 'cfut_[40 characters][checksum]' / 'cfat_[40 characters][checksum]'
+    # (developers.cloudflare.com/fundamentals/api/get-started/token-formats/),
+    # and the DLP predefined-profiles page below pins the body as 40
+    # alphanumerics plus an 8-character hex checksum. Guards, confidence and
+    # known_test_values are ClassiFinder's own.
+    # Source: https://developers.cloudflare.com/cloudflare-one/data-loss-prevention/dlp-profiles/predefined-profiles/
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>cf(?:ut|at)_[A-Za-z0-9]{40}[0-9a-fA-F]{8})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # exact prefix plus the fixed 40 + 8 layout carries the precision
+    context_keywords=[
+        "cloudflare",
+        "CLOUDFLARE_API_TOKEN",
+        "CF_API_TOKEN",
+        "wrangler",
+        "cfut_",
+        "cfat_",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # token. confidence_base 0.95 sits above the 0.85 FP-wordlist gate,
+        # so they are pinned here and land at ~0.15. Built by concatenation
+        # so no contiguous token-shaped literal sits in source.
+        "cf" + "ut_" + "x" * 40 + "0" * 8,
+        "cf" + "ut_" + "X" * 40 + "0" * 8,
+        "cf" + "ut_" + "0" * 48,
+        "cf" + "at_" + "x" * 40 + "0" * 8,
+        "cf" + "at_" + "X" * 40 + "0" * 8,
+        "cf" + "at_" + "0" * 48,
+    },
+    recommendation=(
+        "Roll or delete this API token in the Cloudflare dashboard (My Profile"
+        " > API Tokens for a 'cfut_' user token; Manage Account > Account API"
+        " Tokens for a 'cfat_' account-owned token) and issue a replacement"
+        " with the narrowest permissions and an IP filter or TTL where"
+        " possible. Update every service and CI secret that reads"
+        " CLOUDFLARE_API_TOKEN, review the account audit log for DNS, Workers,"
+        " R2 and firewall changes during the exposure window, and purge the"
+        " token from repository history."
+    ),
+    tags=["cloud", "cloudflare", "api"],
+)
+
+
 # ===================================================
 # DOPPLER
 # ===================================================
@@ -3258,6 +3348,9 @@ register(
     CLOUDFLARE_API_TOKEN,
     CLOUDFLARE_GLOBAL_API_KEY,
     CLOUDFLARE_ORIGIN_CA_KEY,
+    # 2026-09-15 — Cloudflare scannable API tokens ('cfut_' user / 'cfat_'
+    # account-owned + 40 alnum + 8-hex checksum; vendor-documented format).
+    CLOUDFLARE_SCANNABLE_API_TOKEN,
     DOPPLER_TOKEN,
     TERRAFORM_CLOUD_TOKEN,
     VAULT_TOKEN,
