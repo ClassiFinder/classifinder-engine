@@ -2845,6 +2845,86 @@ LAUNCHDARKLY_SDK_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# NETBIRD PERSONAL ACCESS TOKEN (2026-09-16)
+# ===================================================
+
+# NetBird is a WireGuard-based overlay network / zero-trust access platform.
+# A personal access token (PAT) is the credential for the NetBird management
+# API (api.netbird.io, or a self-hosted management server): it is presented
+# as 'Authorization: Token nbp_...' and is commonly read from NB_API_TOKEN /
+# NETBIRD_API_TOKEN by scripts, Terraform and CI.
+#
+# THE FORMAT IS THE VENDOR'S OWN GENERATOR. NetBird's BSD-3-licensed
+# management server defines PATPrefix = "nbp_", PATSecretLength = 30,
+# PATChecksumLength = 6 and PATLength = 40. generateNewToken() builds the
+# token as the prefix + a 30-character secret from hashicorp
+# go-secure-stdlib base62.Random ([A-Za-z0-9]) + the CRC32 of that secret,
+# base62-encoded and left-padded to 6 characters with fmt "%06s". The body is
+# therefore always 36 characters of [A-Za-z0-9]. The checksum is not
+# validated here; every literal in tests and corpus is synthetic.
+#
+# BOTH GUARDS REFUSE [A-Za-z0-9_-], so a token is never carved out of a longer
+# identifier or base64url run, and a body one character too long matches
+# nothing rather than being truncated. The prefix is exact and case-sensitive.
+#
+# Severity high: a PAT acts as its user against the management API — peers,
+# groups, access-control policies, routes, DNS settings and setup keys — up
+# to that user's role in the account.
+
+NETBIRD_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="netbird_personal_access_token",
+    name="NetBird Personal Access Token",
+    description=(
+        "NetBird personal access token — the literal 'nbp_' prefix followed by"
+        " a 30-character base62 secret and a 6-character base62 CRC32"
+        " checksum, 40 characters in total. Authenticates the NetBird"
+        " management API as its user: peers, groups, access-control policies,"
+        " routes, DNS and setup keys."
+    ),
+    provider="netbird",
+    severity="high",
+    # PATPrefix 'nbp_', 30-char base62 secret + 6-char base62 CRC32 checksum
+    # (PATLength 40) from the vendor's own generateNewToken(); API usage per
+    # https://docs.netbird.io/api/guides/authentication
+    # Guards, confidence and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/netbirdio/netbird/blob/main/management/server/types/personal_access_token.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>nbp_[A-Za-z0-9]{36})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # 'nbp_' prefix plus the fixed 36-char body carries the precision
+    context_keywords=[
+        "netbird",
+        "NB_API_TOKEN",
+        "NETBIRD_API_TOKEN",
+        "nbp_",
+        "api.netbird.io",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # token. confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so
+        # they are pinned here and land at ~0.15.
+        "nb" + "p_" + "x" * 36,
+        "nb" + "p_" + "X" * 36,
+        "nb" + "p_" + "0" * 36,
+    },
+    recommendation=(
+        "Delete this personal access token in the NetBird dashboard (the"
+        " access-token list of the owning user or service user) and create a"
+        " replacement with the shortest practical expiry,"
+        " then update every script, Terraform workspace or CI secret that reads"
+        " it. Review the account's audit events for unexpected peer, group,"
+        " policy, route or setup-key changes during the exposure window, and"
+        " purge the token from repository history."
+    ),
+    tags=["devops", "netbird", "networking", "vpn", "zero-trust", "api"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -2937,4 +3017,7 @@ register(
     CODECLIMATE_REPORTER_ID,
     DJANGO_INSECURE_SECRET_KEY,
     LAUNCHDARKLY_SDK_KEY,
+    # 2026-09-16 — NetBird personal access token ('nbp_' + 30 base62 secret
+    # + 6 base62 CRC32 checksum; from the vendor's own generateNewToken()).
+    NETBIRD_PERSONAL_ACCESS_TOKEN,
 )
