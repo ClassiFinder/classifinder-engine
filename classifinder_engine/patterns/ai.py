@@ -1031,6 +1031,60 @@ FIRECRAWL_API_KEY = SecretPattern(
 )
 
 
+HELICONE_API_KEY = SecretPattern(
+    id="helicone_api_key",
+    name="Helicone API Key",
+    description=(
+        "Helicone API key — the literal 'sk-helicone' (secret) or 'pk-helicone'"
+        " (write-only) prefix, optional '-eu' / '-cp' / '-rl' region and"
+        " key-kind segments, then four dash-separated groups of exactly 7"
+        " lowercase alphanumerics. Authenticates Helicone's LLM gateway and"
+        " observability APIs for the owning organization, whose request logs"
+        " hold full prompts and completions."
+    ),
+    provider="helicone",
+    severity="high",
+    # Helicone's own worker defines HELICONE_API_KEY_REGEX with explicit
+    # sk-helicone-, pk-helicone-, sk-helicone-eu- and pk-helicone-eu- forms, a
+    # generalized [sp]k(-helicone)?(-eu)?(-cp)? form, and a rate-limited list
+    # with an -rl segment, each followed by 4 x 7 [a-z0-9]. The legacy bare
+    # 'sk-' + 4 x 7 form has no anchor and is deliberately not matched.
+    # Guards, confidence and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/Helicone/helicone/blob/main/worker/src/lib/util/apiKeyRegex.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>[sp]k-helicone(?:-eu)?(?:-cp)?(?:-rl)?"
+        r"-[a-z0-9]{7}-[a-z0-9]{7}-[a-z0-9]{7}-[a-z0-9]{7})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # masks are pinned below rather than gated on entropy
+    context_keywords=[
+        "helicone",
+        "HELICONE_API_KEY",
+        "Helicone-Auth",
+        "api_key",
+        "gateway",
+    ],
+    known_test_values={
+        # Single-character masks as rendered in docs and tutorials.
+        "sk-helicone-" + "-".join(["x" * 7] * 4),
+        "pk-helicone-" + "-".join(["x" * 7] * 4),
+        "sk-helicone-" + "-".join(["0" * 7] * 4),
+        "pk-helicone-" + "-".join(["0" * 7] * 4),
+    },
+    recommendation=(
+        "Delete this key in the Helicone dashboard under Settings > API Keys"
+        " and issue a replacement. Then review the organization's request logs"
+        " for the exposure window: a secret key can read logged prompts and"
+        " completions, and any key can write requests and costs into your"
+        " account. Also rotate any provider keys stored in Helicone's vault."
+    ),
+    tags=["ai", "helicone", "observability", "gateway"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -1062,4 +1116,7 @@ register(
     # 2026-09-07 — Firecrawl API key ('fc-' + exactly 32 hex, the width
     # pinned by the vendor's own parseApi.ts UUID re-dashing).
     FIRECRAWL_API_KEY,
+    # 2026-09-19 — Helicone API key ('sk-helicone' / 'pk-helicone' + optional
+    # -eu/-cp/-rl + 4 x 7 [a-z0-9], per the vendor's own apiKeyRegex.ts).
+    HELICONE_API_KEY,
 )
