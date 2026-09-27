@@ -1448,6 +1448,89 @@ PLANE_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# ORY SESSION TOKEN (2026-09-27)
+# ===================================================
+
+# Ory (Ory Network, and the self-hosted Ory Kratos identity server) issues a
+# session token when a user logs in through an API / native-app flow. The
+# token is presented as 'X-Session-Token: <token>' or
+# 'Authorization: Bearer <token>' against the /sessions/whoami endpoint and
+# every API that trusts an Ory session, so it IS the user's logged-in session.
+#
+# THE FORMAT IS THE VENDOR'S, END TO END. Ory's token-formats page states
+# that session tokens carry the 'ory_st_' prefix. In Ory Kratos
+# (Apache-2.0), x/token_prefixes.go defines OrySessionToken = "ory_st_" and
+# session/session.go mints the token as that prefix plus
+# randx.MustString(32, randx.AlphaNum); ory/x randx defines AlphaNum as
+# [a-zA-Z0-9]. Net: 'ory_st_' + exactly 32 alphanumerics, 39 characters. No
+# real value is cited or copied; every literal in tests and corpus is
+# synthetic.
+#
+# BOTH GUARDS REFUSE [A-Za-z0-9_-], so a token is never carved out of a
+# longer identifier or base64url run (e.g. the 'ory_st_' tail of
+# 'factory_st_...'), and a body one character too long matches nothing
+# rather than being truncated. The prefix is exact and case-sensitive. The
+# sibling Ory prefixes on the same vendor page (ory_lo_ logout, ory_at_ /
+# ory_rt_ / ory_ac_ OAuth2, ory_pat_ / ory_apikey_ API keys, ory_wak_) are
+# separate formats and are deliberately NOT folded in.
+#
+# Severity high: a leaked session token lets its holder act as the logged-in
+# user until the session expires or is revoked.
+
+ORY_SESSION_TOKEN = SecretPattern(
+    id="ory_session_token",
+    name="Ory Session Token",
+    description=(
+        "Ory session token — the literal 'ory_st_' prefix followed by 32"
+        " alphanumerics, 39 characters in total. Issued by Ory Network and"
+        " Ory Kratos for API / native-app logins and presented as"
+        " X-Session-Token or a Bearer token: whoever holds it is the"
+        " logged-in user until the session expires or is revoked."
+    ),
+    provider="ory",
+    severity="high",
+    # 'ory_st_' prefix per Ory's token-formats page; the 32-character
+    # [A-Za-z0-9] body per Ory Kratos (Apache-2.0) x/token_prefixes.go and
+    # session/session.go (randx.MustString(32, randx.AlphaNum)).
+    # Guards, confidence and known_test_values are ClassiFinder's own.
+    # Source: https://www.ory.com/docs/security-compliance/token-formats
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>ory_st_[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # 'ory_st_' prefix plus the fixed 32-char body carries the precision
+    context_keywords=[
+        "ory",
+        "kratos",
+        "session_token",
+        "X-Session-Token",
+        "ORY_SESSION_TOKEN",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # token. confidence_base 0.95 sits above the 0.85 FP-wordlist gate,
+        # so they are pinned here and land at ~0.15.
+        "ory_st_" + "x" * 32,
+        "ory_st_" + "X" * 32,
+        "ory_st_" + "0" * 32,
+    },
+    recommendation=(
+        "Revoke this session immediately — via the Ory Console or the admin"
+        " API (DELETE /admin/sessions/{id}, or revoke all sessions for the"
+        " identity) — so the token stops authenticating. Review the"
+        " identity's recent activity for actions taken with the session"
+        " during the exposure window, and find where the token leaked: a"
+        " session token belongs in client memory or a secure store, never in"
+        " logs, source code or shared configs."
+    ),
+    tags=["identity", "ory", "kratos", "session-token"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -1499,4 +1582,7 @@ register(
     # straight from the vendor's own generate_token() default). No entropy
     # gate: a uuid4 hex body is ~4.0 bits/char by construction.
     PLANE_API_TOKEN,
+    # 2026-09-27 — Ory session token ('ory_st_' + 32 alnum; prefix from the
+    # vendor's token-formats page, body from Ory Kratos session.go).
+    ORY_SESSION_TOKEN,
 )
