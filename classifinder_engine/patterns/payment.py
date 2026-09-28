@@ -1230,6 +1230,65 @@ POLAR_ORGANIZATION_ACCESS_TOKEN = SecretPattern(
 )
 
 
+POLAR_OAUTH2_CLIENT_SECRET = SecretPattern(
+    id="polar_oauth2_client_secret",
+    name="Polar OAuth2 Client Secret",
+    description=(
+        "Polar (polar.sh) OAuth2 client secret — the confidential credential of"
+        " an OAuth2 application registered with Polar ('Login with Polar' and"
+        " third-party apps acting on Polar organizations). It is paired with a"
+        " public 'polar_ci_' client ID and presented at Polar's token endpoint"
+        " to exchange authorization codes and refresh tokens. Polar's server"
+        " mints it with the same generator as the personal and organization"
+        " access tokens: the literal 'polar_cs_' prefix followed by a fixed"
+        " 43-character base62 body (37 random characters plus a 6-character"
+        " base62 CRC32 checksum), 52 characters total. A leaked secret lets an"
+        " attacker impersonate the application and redeem any intercepted"
+        " authorization code or refresh token for access to the customers,"
+        " orders and payouts its users granted, so severity is high."
+    ),
+    provider="polar",
+    severity="high",
+    # Independently authored from Polar's own server source: the OAuth2
+    # constants module defines CLIENT_SECRET_PREFIX = "polar_cs_", and both
+    # authorization_server.py (generate_client_secret) and
+    # service/oauth2_client.py mint it via the shared generate_token helper in
+    # server/polar/kit/crypto.py (37 random base62 characters + a 6-character
+    # base62 CRC32 checksum, zfill(6)). The public 'polar_ci_' client ID is
+    # deliberately not matched. No third-party detector was consulted.
+    # Source: https://github.com/polarsource/polar/blob/main/server/polar/oauth2/constants.py
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])(?P<secret>polar_cs_[0-9A-Za-z]{43})(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # unique prefix + fixed-length checksummed base62 body
+    entropy_threshold=3.0,
+    context_keywords=[
+        "polar",
+        "polar.sh",
+        "POLAR_CLIENT_SECRET",
+        "client_secret",
+        "polar_cs_",
+        "oauth2",
+    ],
+    known_test_values={
+        # Single-character masks, assembled by concatenation so no scannable
+        # secret literal exists in source. Each down-scores to ~0.15.
+        "polar" + "_cs_" + "x" * 43,
+        "polar" + "_cs_" + "X" * 43,
+        "polar" + "_cs_" + "0" * 43,
+    },
+    recommendation=(
+        "Regenerate the client secret for this OAuth2 application in the Polar"
+        " dashboard under the organization's Settings > Developers > OAuth"
+        " applications, and update every deployment that holds it. Review"
+        " recently issued access and refresh tokens for the application and"
+        " revoke any that were not requested by your own integration."
+    ),
+    tags=["payment", "polar", "saas", "oauth"],
+)
+
+
 # ===================================================
 # MERCURY (2026-07-27)
 # ===================================================
@@ -1698,6 +1757,7 @@ register(
     # 2026-07-27 — Polar access tokens (vendor generator sourced, fixed 43-char body)
     POLAR_PERSONAL_ACCESS_TOKEN,
     POLAR_ORGANIZATION_ACCESS_TOKEN,
+    POLAR_OAUTH2_CLIENT_SECRET,
     # 2026-07-27 — Mercury production API token (vendor sourced, '_yrucrem' anchor)
     MERCURY_PRODUCTION_API_TOKEN,
     # 2026-08-03 — Ramp API client secret ('ramp_sec_' + fixed 48-char body)
