@@ -257,6 +257,86 @@ POSTHOG_SECRET_API_TOKEN = SecretPattern(
 )
 
 
+# PostHog OAuth tokens (2026-09-29). PostHog's OAuth 2.0 provider (the flow
+# behind its MCP server, CLI and third-party apps) mints access and refresh
+# tokens with posthog.models.utils.generate_random_oauth_access_token /
+# generate_random_oauth_refresh_token: OAUTH_ACCESS_TOKEN_PREFIX = "pha_" and
+# OAUTH_REFRESH_TOKEN_PREFIX = "phr_", each + generate_random_token() — the
+# same 32-byte generator as phc_ above. Access tokens live 1 hour; refresh
+# tokens 30 days and rotate on use (posthog/settings/web.py OAUTH2_PROVIDER).
+_POSTHOG_BASE57 = "[23456789abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ]"
+
+POSTHOG_OAUTH_ACCESS_TOKEN = SecretPattern(
+    id="posthog_oauth_access_token",
+    name="PostHog OAuth Access Token",
+    description=(
+        "PostHog OAuth 2.0 access token with pha_ prefix and a 44-character base57 body."
+        " A bearer credential for the PostHog API carrying whatever scopes the user"
+        " granted the OAuth application, up to full access."
+    ),
+    provider="posthog",
+    severity="high",
+    # Body charset is PostHog's BASE57 = BASE62 minus the ambiguous characters
+    # 0, 1, O, I and l. Length is exactly 44: generate_random_token(32) forces
+    # the top bit of a 256-bit integer and base-57 encodes it without zero
+    # padding, and 57**43 == 2**250.8 < 2**255 <= value < 2**256 < 57**44.
+    # Tokens minted before the 2026-03-30 base57 switch were base62 without the
+    # forced bit, but with a 1-hour access / 30-day refresh lifetime every one
+    # of them has long expired, so only the current format is matched.
+    # Source: https://github.com/PostHog/posthog/blob/master/posthog/models/utils.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>pha_" + _POSTHOG_BASE57 + r"{44})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["posthog", "access_token", "oauth", "Bearer", "pha_"],
+    known_test_values={"pha_" + "x" * 44, "pha_" + "X" * 44},
+    recommendation=(
+        "Revoke the OAuth application's access in PostHog, or call the OAuth"
+        " token-revocation endpoint, so the paired refresh token is invalidated"
+        " too. Access tokens expire after one hour, but assume the scopes it"
+        " carried were exercised until then."
+    ),
+    tags=["data", "posthog", "analytics", "oauth"],
+)
+
+
+POSTHOG_OAUTH_REFRESH_TOKEN = SecretPattern(
+    id="posthog_oauth_refresh_token",
+    name="PostHog OAuth Refresh Token",
+    description=(
+        "PostHog OAuth 2.0 refresh token with phr_ prefix and a 44-character base57 body."
+        " Exchanged at the token endpoint for new access tokens for up to 30 days."
+    ),
+    provider="posthog",
+    severity="critical",
+    # Same generator, charset and exact 44-character width as pha_ above; only
+    # the prefix differs. Refresh tokens rotate on use and expire after 30 days
+    # (REFRESH_TOKEN_EXPIRE_SECONDS), so only the current base57 form is live.
+    # Source: https://github.com/PostHog/posthog/blob/master/posthog/models/utils.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>phr_" + _POSTHOG_BASE57 + r"{44})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=["posthog", "refresh_token", "oauth", "grant_type", "phr_"],
+    known_test_values={"phr_" + "x" * 44, "phr_" + "X" * 44},
+    recommendation=(
+        "Revoke the OAuth application's access in PostHog, or call the OAuth"
+        " token-revocation endpoint with this refresh token."
+        " A refresh token can mint new access tokens until revoked or expired,"
+        " so rotate it even if the paired access token has already expired."
+    ),
+    tags=["data", "posthog", "analytics", "oauth"],
+)
+
+
 # ===================================================
 # POSTMAN
 # ===================================================
@@ -1318,6 +1398,9 @@ register(
     # 2026-08-07 — PostHog secret API token (phs_), the feature-flag
     # local-evaluation credential; distinct from phc_ and phx_ above
     POSTHOG_SECRET_API_TOKEN,
+    # 2026-09-29 — PostHog OAuth access (pha_) and refresh (phr_) tokens
+    POSTHOG_OAUTH_ACCESS_TOKEN,
+    POSTHOG_OAUTH_REFRESH_TOKEN,
     POSTMAN_API_TOKEN,
     ALGOLIA_API_KEY,
     CONTENTFUL_DELIVERY_API_TOKEN,
