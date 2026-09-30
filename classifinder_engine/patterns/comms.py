@@ -2354,6 +2354,99 @@ NYLAS_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# MATRIX SYNAPSE ACCESS / REFRESH TOKEN (2026-09-30)
+# ===================================================
+
+# Matrix is an open, federated chat protocol; Synapse (element-hq) is its
+# reference homeserver and the one most deployments run. A Synapse access token
+# is the bearer credential for the Matrix client-server API — presented as
+# 'Authorization: Bearer <token>' or '?access_token=<token>' — and bots,
+# bridges and integrations typically read it from MATRIX_ACCESS_TOKEN or an
+# 'access_token:' key in their config. A refresh token mints new access tokens
+# for the same device.
+#
+# THE FORMAT IS THE VENDOR'S. Synapse's own generate_access_token /
+# generate_refresh_token document and build
+#     syt_<base64 local part>_<random string>_<base62 crc check>
+# (and 'syr_' for refresh tokens). The random string is 20 characters drawn
+# from ASCII letters only, and the check is a CRC32 base62-encoded with a
+# minimum width of 6 — a CRC32 is always below 62**6, so it is exactly 6
+# characters of [0-9A-Za-z]. The localpart segment is the user's localpart as
+# UNPADDED STANDARD base64, so it is variable-width and may carry '+' or '/'
+# for non-ASCII localparts; '_' and '-' are also accepted there, harmlessly,
+# because the fixed '_' + 20 letters + '_' + 6 tail is what anchors the match.
+# The localpart segment is bounded at 340 characters (a Matrix user ID is at
+# most 255 bytes). Synapse is AGPL-3.0: it is cited as format evidence only and
+# no code was copied. The Matrix spec treats access tokens as opaque, so the
+# homeserver source is the authoritative reference for this shape.
+#
+# BOTH GUARDS REFUSE [A-Za-z0-9_-], so a token is never carved out of a longer
+# identifier, and a check segment one character too long matches nothing
+# rather than being truncated. The prefix is exact and case-sensitive; other
+# Synapse token kinds (e.g. login tokens) are not claimed.
+#
+# Severity high: an access token acts as its user on the homeserver — it can
+# read and send messages in every room the user is in, join rooms and change
+# account data — and an admin user's token reaches the Synapse admin API.
+
+MATRIX_SYNAPSE_ACCESS_TOKEN = SecretPattern(
+    id="matrix_synapse_access_token",
+    name="Matrix Synapse Access Token",
+    description=(
+        "Matrix access token ('syt_') or refresh token ('syr_') minted by the"
+        " Synapse homeserver — the prefix, the user's localpart as unpadded"
+        " base64, then '_' + 20 letters + '_' + a 6-character base62 check."
+        " The bearer credential for the Matrix client-server API: it acts as"
+        " its user and can read and send messages in every room they belong to."
+    ),
+    provider="matrix",
+    severity="high",
+    # Prefixes, the letters-only 20-character random part and the 6-character
+    # base62 CRC check are documented and built by Synapse's own
+    # generate_access_token / generate_refresh_token (AGPL; format evidence
+    # only, nothing copied). Guards, bounds, confidence and known_test_values
+    # are ClassiFinder's own.
+    # Source: https://github.com/element-hq/synapse/blob/develop/synapse/handlers/auth.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>sy[tr]_[A-Za-z0-9+/_-]{2,340}?_[A-Za-z]{20}_[0-9A-Za-z]{6})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # 'syt_'/'syr_' prefix plus the fixed 20 + 6 tail carries the precision
+    context_keywords=[
+        "matrix",
+        "synapse",
+        "MATRIX_ACCESS_TOKEN",
+        "access_token",
+        "refresh_token",
+        "homeserver",
+    ],
+    known_test_values={
+        # Single-character masks for the localparts docs and tutorials use
+        # (alice / bob / admin) — how redacted configs render these tokens.
+        # confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so they
+        # are pinned here and land at ~0.15.
+        prefix + localpart + "_" + ch * 20 + "_" + ch * 6
+        for prefix in ("syt_", "syr_")
+        for localpart in ("YWxpY2U", "Ym9i", "YWRtaW4")
+        for ch in ("x", "X")
+    },
+    recommendation=(
+        "Log the token out on its homeserver (POST /_matrix/client/v3/logout"
+        " with the token, or delete the device / token via the Synapse admin"
+        " API) and issue a new one, then update every bot, bridge or service"
+        " that reads it. A leaked refresh token must be revoked with its"
+        " device. Review the account's rooms and devices for unexpected"
+        " messages, joins or new sessions during the exposure window, and purge"
+        " the token from repository history."
+    ),
+    tags=["communications", "matrix", "synapse", "chat", "api"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -2429,4 +2522,8 @@ register(
     # 2026-09-14 — Nylas v3 API key ('nyk_v0_' + 64 alnum; prefix from the
     # vendor's own CLI/SDK docs, width measured on independent public samples).
     NYLAS_API_KEY,
+    # 2026-09-30 — Matrix Synapse access / refresh token ('syt_' / 'syr_' +
+    # base64 localpart + '_' + 20 letters + '_' + 6 base62; format per the
+    # vendor's own Synapse generate_access_token).
+    MATRIX_SYNAPSE_ACCESS_TOKEN,
 )
