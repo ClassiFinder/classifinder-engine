@@ -1289,6 +1289,64 @@ POLAR_OAUTH2_CLIENT_SECRET = SecretPattern(
 )
 
 
+POLAR_OAUTH2_ACCESS_TOKEN = SecretPattern(
+    id="polar_oauth2_access_token",
+    name="Polar OAuth2 Access / Refresh Token",
+    description=(
+        "Polar (polar.sh) OAuth2 access or refresh token — the bearer credential"
+        " Polar's OAuth2 server issues to third-party apps that a user or"
+        " organization has authorized. Access tokens carry the literal"
+        " 'polar_at_u_' (user subject) or 'polar_at_o_' (organization subject)"
+        " prefix and refresh tokens 'polar_rt_u_' / 'polar_rt_o_'. The body comes"
+        " from the same generator as the personal and organization access"
+        " tokens: 37 random base62 characters plus a 6-character base62 CRC32"
+        " checksum, exactly 43 [0-9A-Za-z]. An access token acts on the"
+        " granting user or organization across every scope it was issued with"
+        " (customers, orders, refunds, products, benefits); a refresh token"
+        " mints new access tokens until the grant is revoked. Severity is high."
+    ),
+    provider="polar",
+    severity="high",
+    # Independently authored from Polar's own server source: oauth2/constants.py
+    # defines ACCESS_TOKEN_PREFIX = {user: "polar_at_u_", organization:
+    # "polar_at_o_"} and REFRESH_TOKEN_PREFIX = {user: "polar_rt_u_",
+    # organization: "polar_rt_o_"}; oauth2/authorization_server.py mints both via
+    # generate_token(prefix=...), and kit/crypto.py builds the 43-char body
+    # (37 random base62 + 6-char base62 CRC32). No third-party detector consulted.
+    # Source: https://github.com/polarsource/polar/blob/main/server/polar/oauth2/constants.py
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_])(?P<secret>polar_(?:at|rt)_[uo]_[0-9A-Za-z]{43})(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # four exact prefixes + fixed-length checksummed base62 body
+    entropy_threshold=3.0,
+    context_keywords=[
+        "polar",
+        "polar.sh",
+        "POLAR_ACCESS_TOKEN",
+        "access_token",
+        "refresh_token",
+        "Authorization",
+    ],
+    known_test_values={
+        # Single-character masks for all four prefixes, assembled by
+        # concatenation so no scannable token literal exists in source. ~0.15.
+        "polar_" + sub + ch * 43
+        for sub in ("at_u_", "at_o_", "rt_u_", "rt_o_")
+        for ch in ("x", "X", "0")
+    },
+    recommendation=(
+        "Revoke the OAuth2 grant: the user or organization can disconnect the"
+        " app from Polar's settings, or the app owner can call Polar's OAuth2"
+        " token-revocation endpoint (revoking the refresh token also ends its"
+        " access tokens). Then re-run the authorization flow, keep tokens out"
+        " of source and logs, and review recent orders, refunds, and benefit"
+        " grants on the affected account for unauthorized activity."
+    ),
+    tags=["payment", "polar", "saas", "oauth"],
+)
+
+
 # ===================================================
 # MERCURY (2026-07-27)
 # ===================================================
@@ -1758,6 +1816,8 @@ register(
     POLAR_PERSONAL_ACCESS_TOKEN,
     POLAR_ORGANIZATION_ACCESS_TOKEN,
     POLAR_OAUTH2_CLIENT_SECRET,
+    # 2026-10-01 — Polar OAuth2 access / refresh token (polar_at_/polar_rt_ + [uo]_)
+    POLAR_OAUTH2_ACCESS_TOKEN,
     # 2026-07-27 — Mercury production API token (vendor sourced, '_yrucrem' anchor)
     MERCURY_PRODUCTION_API_TOKEN,
     # 2026-08-03 — Ramp API client secret ('ramp_sec_' + fixed 48-char body)
