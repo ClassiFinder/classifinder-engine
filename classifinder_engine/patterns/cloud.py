@@ -3243,6 +3243,87 @@ YANDEX_CLOUD_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# DENO DEPLOY ACCESS TOKEN (2026-10-02)
+# ===================================================
+
+# Deno Deploy is Deno's serverless edge platform (and the Subhosting product
+# built on it). An access token is the bearer credential for the Deno Deploy /
+# Subhosting REST API ('Authorization: Bearer <token>' against api.deno.com),
+# and deployctl and the deployctl GitHub Action read it from
+# DENO_DEPLOY_TOKEN. 'ddo_' is an organization access token; 'ddp_' is a
+# personal access token.
+#
+# THE FORMAT IS THE VENDOR'S. Deno's own Subhosting API authentication page
+# shows a sample organization token: 'ddo_' followed by exactly 36
+# [A-Za-z0-9], 40 characters in total, and the API migration guide lists
+# 'ddo_' as the v2 organization-token prefix. The 'ddp_' personal prefix (the
+# v1 'dd...' prefix the migration guide abbreviates) shares the same
+# 36-character alphanumeric body; that width is corroborated by an
+# open-source (Apache-2.0) detector catalog, nothing copied. Deno documents
+# no checksum, so none is validated.
+#
+# BOTH GUARDS REFUSE [A-Za-z0-9_-], so a token is never carved out of a longer
+# identifier, and a body one character too long matches nothing rather than
+# being truncated. The prefixes are exact and case-sensitive.
+#
+# Severity high: an organization token deploys code to, reconfigures and
+# deletes every app, domain and environment variable in the organization; a
+# personal token does the same across every project its user can reach.
+
+DENO_DEPLOY_ACCESS_TOKEN = SecretPattern(
+    id="deno_deploy_access_token",
+    name="Deno Deploy Access Token",
+    description=(
+        "Deno Deploy organization access token ('ddo_') or personal access"
+        " token ('ddp_') — the prefix followed by exactly 36 alphanumerics, 40"
+        " characters in total. The bearer credential for the Deno Deploy /"
+        " Subhosting API and deployctl: it can deploy code and change apps,"
+        " domains and environment variables."
+    ),
+    provider="deno",
+    severity="high",
+    # 'ddo_' prefix and the 36-character alphanumeric body are shown by Deno's
+    # own Subhosting API authentication docs. Guards, confidence and
+    # known_test_values are ClassiFinder's own.
+    # Source: https://docs.deno.com/subhosting/api/authentication/
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>dd[op]_[A-Za-z0-9]{36})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # exact 'ddo_'/'ddp_' prefix + fixed 36 width carries the precision
+    context_keywords=[
+        "deno",
+        "deployctl",
+        "DENO_DEPLOY_TOKEN",
+        "deno deploy",
+        "subhosting",
+        "api.deno.com",
+    ],
+    known_test_values={
+        # Single-character masks — how redacted configs and docs render these
+        # tokens. confidence_base 0.95 sits above the 0.85 FP-wordlist gate,
+        # so they are pinned here and land at ~0.15.
+        prefix + ch * 36
+        for prefix in ("ddo_", "ddp_")
+        for ch in ("x", "X", "0")
+    },
+    recommendation=(
+        "Revoke the token in the Deno Deploy dashboard (organization settings"
+        " for a 'ddo_' token, account settings for a 'ddp_' token) and create a"
+        " new one, then update every CI secret, deployctl configuration and"
+        " service that reads it (commonly DENO_DEPLOY_TOKEN). Review the"
+        " organization's apps, deployments, domains and environment variables"
+        " for unexpected changes during the exposure window, and purge the"
+        " token from repository history."
+    ),
+    tags=["cloud", "deno", "deno-deploy", "serverless", "api"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -3343,4 +3424,7 @@ register(
     HEROKU_API_KEY_V2,
     VAULT_RECOVERY_TOKEN,
     YANDEX_CLOUD_API_KEY,
+    # 2026-10-02 — Deno Deploy access token ('ddo_' organization / 'ddp_'
+    # personal + 36 alnum; format per the vendor's own Subhosting API docs).
+    DENO_DEPLOY_ACCESS_TOKEN,
 )
