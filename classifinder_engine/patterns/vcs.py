@@ -634,6 +634,68 @@ RUBYGEMS_TOKEN = SecretPattern(
 
 
 # ===================================================
+# PRIVATE PACKAGIST
+# ===================================================
+
+PACKAGIST_AUTHENTICATION_TOKEN = SecretPattern(
+    id="packagist_authentication_token",
+    name="Private Packagist Authentication Token",
+    description=(
+        "Private Packagist (packagist.com) authentication token: one of the"
+        " four type prefixes packagist_ort_ (organization read-only),"
+        " packagist_out_ (organization update), packagist_uut_ (user update) or"
+        " packagist_cut_ (Conductor update), then a 60-hex random part and an"
+        " 8-hex CRC32 checksum. Used by Composer to read, and for update tokens"
+        " to modify, an organization's private PHP package repository."
+    ),
+    provider="packagist",
+    severity="high",
+    # The vendor's docs give the whole format: prefix + 60 hex random part + 8 hex
+    # checksum (CRC32 of prefix + random, zero-padded to 8 via dechex), so the
+    # body is exactly 68 lowercase hex. Legacy tokens and Private Packagist for
+    # Vendors customer tokens are bare 60 hex with no prefix and are deliberately
+    # not matched; the separate packagist_ack_/packagist_acs_ API credentials are
+    # a different format. The guards, confidence tier and test values are ours.
+    # Source: https://packagist.com/docs/composer-authentication
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>packagist_(?:ort|out|uut|cut)_[0-9a-f]{68})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # hex body is ~4.0 bits/char — the 14-char prefix carries the precision
+    context_keywords=[
+        "packagist",
+        "repo.packagist.com",
+        "composer",
+        "auth.json",
+        "http-basic",
+        "COMPOSER_AUTH",
+    ],
+    known_test_values={
+        # Masks that stay inside the [0-9a-f] body charset. confidence_base 0.95
+        # sits above the 0.85 FP-wordlist gate, so they are pinned here (-> ~0.15).
+        prefix + body
+        for prefix in (
+            "packagist_ort_",
+            "packagist_out_",
+            "packagist_uut_",
+            "packagist_cut_",
+        )
+        for body in ("0" * 68, "a" * 68, "f" * 68, "deadbeef" * 8 + "dead")
+    },
+    recommendation=(
+        "Revoke this token in Private Packagist (organization Settings >"
+        " Authentication Tokens, or your user profile for a user token) and"
+        " issue a replacement, then update every auth.json / COMPOSER_AUTH that"
+        " uses it. Update tokens can modify the private package repository."
+    ),
+    tags=["vcs", "packagist", "composer", "registry"],
+)
+
+
+# ===================================================
 # AIRTABLE
 # ===================================================
 
@@ -1257,4 +1319,7 @@ register(
     # 2026-09-14 — Bitbucket Cloud access token ('ATCTT3xFfGN0' + 180 of
     # [A-Za-z0-9_=-]; the access-token sibling of Atlassian's ATATT3 token).
     BITBUCKET_ACCESS_TOKEN,
+    # 2026-10-03 — Private Packagist authentication token
+    # (packagist_ort_/out_/uut_/cut_ + 60 hex + 8 hex CRC32 checksum).
+    PACKAGIST_AUTHENTICATION_TOKEN,
 )
