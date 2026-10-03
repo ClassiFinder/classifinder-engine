@@ -1137,6 +1137,88 @@ GITHUB_OAUTH_REFRESH_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# BITBUCKET ACCESS TOKEN — 'ATCTT' (2026-09-14)
+# ===================================================
+
+# Bitbucket Cloud repository / project / workspace ACCESS TOKENS. They sit in
+# the same Atlassian token envelope as the account API token that
+# ATLASSIAN_API_TOKEN (identity.py) already detects — a fixed twelve-character
+# head, then a base64url-style body closed by '=' plus an eight-character
+# checksum, 192 characters in total — but the head is 'ATCTT3xFfGN0' where
+# the account API token's is 'ATATT3xFfGF0'. Neither the existing Atlassian
+# pattern nor the context-gated BITBUCKET_APP_PASSWORD recognises this family,
+# so before this pattern a leaked access token surfaced only as a generic
+# catch-all finding.
+#
+# THE EVIDENCE IS EMPIRICAL AND IS LABELLED AS SUCH. Atlassian's pages publish
+# neither the prefix nor the length. The twelve-character head is a literal
+# seen on every observed value, and the 192-character total was measured on
+# real public values (41 of 48 were exactly 192; the rest were truncations or
+# elisions). None of those values is cited, linked or copied — every literal
+# in tests and corpus is synthetic.
+#
+# The regex deliberately mirrors ATLASSIAN_API_TOKEN's structure — the same
+# [A-Za-z0-9_=-] body charset and the same right guard — with the head
+# substituted and the body width reduced by the six extra literal head
+# characters (192 - 12 = 180), so the two siblings stay consistent. A left
+# guard is added so the head is never carved out of a longer token; it does
+# NOT exclude '=', so 'BITBUCKET_TOKEN=ATCTT…' still detects.
+#
+# Severity critical: a repository or workspace access token can push code,
+# read private source and, depending on its scopes, administer pipelines.
+
+BITBUCKET_ACCESS_TOKEN = SecretPattern(
+    id="bitbucket_access_token",
+    name="Bitbucket Access Token",
+    description=(
+        "Bitbucket Cloud repository, project or workspace access token — the"
+        " literal 'ATCTT3xFfGN0' head followed by 180 characters of"
+        " [A-Za-z0-9_=-], 192 characters in total, in the same envelope as an"
+        " Atlassian 'ATATT3' API token. Authenticates git and REST API calls"
+        " with the scopes it was created with."
+    ),
+    provider="bitbucket",
+    severity="critical",
+    # Head and 192-character width measured on real public values (41 of 48
+    # exactly 192); Atlassian publishes neither. None is cited or copied.
+    # Independently authored — structural analysis consistent with Atlassian's ATATT token envelope
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>ATCTT3xFfGN0[A-Za-z0-9_\-=]{180})"
+        r"(?![A-Za-z0-9_\-=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.5,  # mirrors ATLASSIAN_API_TOKEN; real bodies sit near 5.9
+    context_keywords=[
+        "bitbucket",
+        "atlassian",
+        "access_token",
+        "BITBUCKET_ACCESS_TOKEN",
+        "x-token-auth",
+        "ATCTT3",
+    ],
+    known_test_values={
+        # Single-character fills are how a redacted token gets written down.
+        # Built by concatenation so no contiguous token literal is committed.
+        "ATCTT3" + "xFfGN0" + "X" * 180,
+        "ATCTT3" + "xFfGN0" + "x" * 180,
+        "ATCTT3" + "xFfGN0" + "0" * 180,
+    },
+    recommendation=(
+        "Revoke this access token in Bitbucket Cloud (Repository, Project or"
+        " Workspace settings > Security > Access tokens), then create a"
+        " replacement with only the scopes it needs and update the CI"
+        " variables, git remotes ('x-token-auth') and deploy scripts that"
+        " present it. Audit the repository's push, pull-request and pipeline"
+        " history for the exposure window: an access token acts as its own"
+        " bot user and can push code and read private source."
+    ),
+    tags=["vcs", "bitbucket", "atlassian", "auth"],
+)
+
+
 register(
     GITHUB_PAT_CLASSIC,
     GITHUB_PAT_FINE_GRAINED,
@@ -1172,4 +1254,7 @@ register(
     # 2026-09-08 — GitLab's Rails session cookie, anchored on the literal
     # first-party cookie name '_gitlab_session=' rather than a token prefix.
     GITLAB_SESSION_COOKIE,
+    # 2026-09-14 — Bitbucket Cloud access token ('ATCTT3xFfGN0' + 180 of
+    # [A-Za-z0-9_=-]; the access-token sibling of Atlassian's ATATT3 token).
+    BITBUCKET_ACCESS_TOKEN,
 )

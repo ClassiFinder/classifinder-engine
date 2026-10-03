@@ -1237,6 +1237,77 @@ METABASE_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# BUILDER.IO PRIVATE API KEY (2026-09-14)
+# ===================================================
+
+# Builder.io is a headless CMS / visual editor. Its PRIVATE API key is, in the
+# vendor's words, "a server-side credential that grants write access to your
+# Builder Content Space" — unlike the space's public API key, which is
+# designed to ship in browser bundles and is deliberately NOT matched here.
+#
+# THE PREFIX IS THE VENDOR'S: Builder's own admin-sdk README tells the reader
+# to "get a private key of the space you want to administer `bpk-xxx`", and
+# Builder's own agent-native server code recognises a private key by the
+# 'bpk-' prefix. The body — exactly 32 lowercase hex characters — is the
+# verified shape of real keys; the vendor does not print one.
+#
+# HAZARD: 'bpk-' IS ALSO SKYSCANNER BACKPACK'S CSS CLASS PREFIX
+# ('bpk-button--large', 'bpk-card__header', 'bpk-link'). The pinned 32-hex
+# body plus guards that refuse [A-Za-z0-9_-] on both sides are what keep
+# Backpack markup out; tests pin a set of Backpack class names. Do not loosen
+# the body to a range or to [a-z0-9].
+
+BUILDER_IO_PRIVATE_API_KEY = SecretPattern(
+    id="builder_io_private_api_key",
+    name="Builder.io Private API Key",
+    description=(
+        "Builder.io private API key — the literal 'bpk-' prefix followed by"
+        " exactly 32 lowercase hex characters. A server-side credential with"
+        " write access to the Builder Content Space it belongs to."
+    ),
+    provider="builder_io",
+    severity="high",
+    # 'bpk-' private-key prefix from the vendor's own admin-sdk README;
+    # "server-side credential that grants write access" from
+    # https://www.builder.io/c/docs/using-your-api-key
+    # Source: https://github.com/BuilderIO/builder/blob/main/packages/admin-sdk/README.md
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>bpk-[a-f0-9]{32})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # fixed-width hex is capped at 4.0 bits; the prefix carries precision
+    context_keywords=[
+        "builder",
+        "builder.io",
+        "BUILDER_PRIVATE_KEY",
+        "BUILDER_API_KEY",
+        "createAdminApiClient",
+        "bpk-",
+    ],
+    known_test_values={
+        # All-zero / all-f / all-a fills are how a redacted key gets written.
+        # confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so they
+        # are pinned here and land at ~0.15.
+        "bp" + "k-" + "0" * 32,
+        "bp" + "k-" + "f" * 32,
+        "bp" + "k-" + "a" * 32,
+    },
+    recommendation=(
+        "Revoke this private key in Builder.io (Account > Space settings >"
+        " Private Keys) and create a replacement, then update the server-side"
+        " configuration that uses it. Never ship a private key to a browser —"
+        " client code should use the space's public API key. Review the"
+        " space's content history for unexpected edits or publishes during the"
+        " exposure window: a private key can write every model in the space."
+    ),
+    tags=["data", "builder_io", "cms", "headless-cms"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -1281,4 +1352,7 @@ register(
     # 2026-08-28 — Metabase API key (mb_ + deterministic 44-char padded base64
     # body; the schema's permissive user-supplied form is deliberately excluded)
     METABASE_API_KEY,
+    # 2026-09-14 — Builder.io private API key ('bpk-' + exactly 32 lowercase
+    # hex; the pinned body keeps Skyscanner Backpack 'bpk-' CSS classes out)
+    BUILDER_IO_PRIVATE_API_KEY,
 )
