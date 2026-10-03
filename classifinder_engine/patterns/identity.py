@@ -1268,6 +1268,101 @@ MAPBOX_SECRET_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# BITWARDEN SECRETS MANAGER ACCESS TOKEN (2026-09-18)
+# ===================================================
+
+# Bitwarden Secrets Manager is Bitwarden's machine-secrets product: a machine
+# account holds access tokens, and the `bws` CLI, the SDKs and the CI
+# integrations (GitHub Actions `bitwarden/sm-action`, Kubernetes operator,
+# Ansible) read one from BWS_ACCESS_TOKEN to fetch every secret the machine
+# account can see.
+#
+# THE SHAPE IS THE VENDOR'S. Bitwarden's access-token help page prints a full
+# token, and the vendor's own parser (bitwarden/sdk-internal,
+# crates/bitwarden-core/src/auth/access_token.rs) fixes the structure: split on
+# ':' into the credential and the encryption key; split the credential on '.'
+# into exactly three parts — a version that must be "0", the access-token id
+# (a UUID) and the client secret; the encryption key is base64 of 16 bytes.
+# Net: '0.' + UUID + '.' + 30 [A-Za-z0-9] + ':' + 24-character standard
+# base64 ending '==', 94 characters.
+#
+# THE SPAN COVERS BOTH HALVES. Before this pattern only generic_api_key_env
+# fired, and its span stopped at ':', leaving the encryption-key half — the
+# part that decrypts the secrets — unredacted.
+#
+# The last body character of a 16-byte base64 value can only be A, Q, g or w
+# (its low four bits are padding), so the key is pinned to 21 characters plus
+# one of those, then '=='. The leading guard refuses [A-Za-z0-9_.-] so a
+# version-like '10.' or a dotted identifier never starts a match; the trailing
+# guard refuses [A-Za-z0-9+/=_-] so a longer base64 run matches nothing rather
+# than being truncated.
+#
+# Severity critical: the token reads (and, with write access, changes) every
+# secret in the projects its machine account is granted.
+
+BITWARDEN_SECRETS_MANAGER_ACCESS_TOKEN = SecretPattern(
+    id="bitwarden_secrets_manager_access_token",
+    name="Bitwarden Secrets Manager Access Token",
+    description=(
+        "Bitwarden Secrets Manager machine-account access token — '0.' + the"
+        " access-token UUID + '.' + a 30-character client secret + ':' + a"
+        " 24-character base64 encryption key, 94 characters in total. Read"
+        " from BWS_ACCESS_TOKEN by the bws CLI, SDKs and CI integrations; it"
+        " both authenticates and decrypts every secret the machine account can"
+        " access."
+    ),
+    provider="bitwarden",
+    severity="critical",
+    # Structure per the vendor's own parser, bitwarden/sdk-internal
+    # crates/bitwarden-core/src/auth/access_token.rs (version "0", UUID id,
+    # client secret, ':' + 16-byte base64 encryption key). Guards,
+    # confidence and known_test_values are ClassiFinder's own.
+    # Source: https://bitwarden.com/help/access-tokens/
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_.-])"
+        r"(?P<secret>0\.[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
+        r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.[A-Za-z0-9]{30}"
+        r":[A-Za-z0-9+/]{21}[AQgw]==)"
+        r"(?![A-Za-z0-9+/=_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # the four-part composite structure carries the precision
+    context_keywords=[
+        "bitwarden",
+        "BWS_ACCESS_TOKEN",
+        "bws",
+        "secrets manager",
+        "access_token",
+        "machine account",
+    ],
+    known_test_values={
+        # The vendor's published examples: the access-tokens help page and
+        # the sdk-internal access_token.rs test fixture.
+        "0.48c78342-1635-48a6-accd-afbe01336365."
+        "C0tMmQqHnAp1h0gL8bngprlPOYutt0:B3h5D+YgLvFiQhWkIq6Bow==",
+        "0.ec2c1d46-6a4b-4751-a310-af9601317f2d."
+        "C2IgxjjLF7qSshsbwe8JGcbM075YXw:X8vbvA0bduihIDe/qrzIQQ==",
+        # Single-character masks. confidence_base 0.95 sits above the 0.85
+        # FP-wordlist gate, so they are pinned here and land at ~0.15.
+        "0.00000000-0000-0000-0000-000000000000." + "0" * 30 + ":" + "A" * 22 + "==",
+        "0.00000000-0000-0000-0000-000000000000." + "x" * 30 + ":" + "A" * 22 + "==",
+        "0.00000000-0000-0000-0000-000000000000." + "X" * 30 + ":" + "A" * 22 + "==",
+    },
+    recommendation=(
+        "Revoke this access token in the Bitwarden Secrets Manager web app"
+        " (Machine accounts > the account > Access tokens) and issue a new one,"
+        " then update every pipeline and host that reads BWS_ACCESS_TOKEN."
+        " The token also carries the key that decrypts the machine account's"
+        " secrets, so rotate every secret in the projects that machine account"
+        " can access, review the event logs for the exposure window, and purge"
+        " the token from repository history."
+    ),
+    tags=["identity", "bitwarden", "secrets-manager", "machine-account"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -1311,4 +1406,8 @@ register(
     # it can never be confused with the public 'pk.' token above, with
     # OpenAI's 'sk-' or with Stripe's 'sk_live_'.
     MAPBOX_SECRET_ACCESS_TOKEN,
+    # 2026-09-18 — Bitwarden Secrets Manager access token ('0.' + UUID +
+    # '.' + 30 alnum + ':' + 16-byte base64 key; structure per the vendor's
+    # own sdk-internal parser). The span covers the encryption-key half.
+    BITWARDEN_SECRETS_MANAGER_ACCESS_TOKEN,
 )
