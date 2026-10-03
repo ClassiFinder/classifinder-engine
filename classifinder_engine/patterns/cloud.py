@@ -3593,6 +3593,111 @@ AZURE_SIGNALR_CONNECTION_STRING = SecretPattern(
 )
 
 
+# ===================================================
+# GOOGLE GEMINI / GCP EXPRESS MODE AUTH KEY (2026-09-17)
+# ===================================================
+
+# Google's NEW Gemini API credential, and the successor to the 'AIza' key.
+# Google calls it an "auth key": unlike a standard API key, which only
+# associates a request with a project for billing and quota, an auth key is
+# bound directly to a Google Cloud service account, so requests made with it
+# are processed under that service account's identity. The same credential is
+# issued by GCP Express Mode, which is why Google's own scanner names it that.
+#
+# THIS IS THE FORM THAT REPLACES 'AIza', NOT A VARIANT OF IT. Google's API-key
+# documentation states that since 2026-05-28 every new key created in Google
+# AI Studio is created as an auth key, and that the Gemini API will reject
+# requests from standard keys in September 2026. The existing gcp_api_key
+# pattern matches 'AIza' + 35 and cannot match this shape at all, so before
+# this pattern a leaked auth key was invisible: verified against the live
+# engine, a bare 53-character 'AQ.Ab' key returned ZERO findings, and behind
+# GEMINI_API_KEY= / GOOGLE_API_KEY= it reached only the generic_api_key_env
+# fallback at 0.84.
+#
+# THE ANCHOR IS DELIBERATELY 'AQ.Ab', NOT 'AQ.Ab8R'. Google's own detector --
+# osv-scalibr's GCP Express Mode detector, cited below -- uses
+# `AQ\.Ab8R[a-zA-Z0-9_-]{46}` with a maximum key length of 53. That is the
+# only source anywhere for the '8R' segment; it was written in July 2025 for
+# Express Mode keys, well before the May 2026 AI Studio rollout, and every
+# independent description of a 2026-issued key says only that it begins
+# 'AQ.Ab'. '8R' is plausibly a version or type marker that can roll, so
+# pinning it would silently miss keys minted under a later marker. Dropping
+# those two characters into the body keeps the SAME 53-character total width
+# and still leaves a strong structural anchor: a five-character literal with
+# a dot at offset 2 -- which no base64url or base64 run can contain -- plus a
+# fixed width. Any key Google's own narrower regex matches also matches this
+# one.
+#
+# The leading guard additionally refuses '.', so the regex cannot start
+# mid-way through a dotted token, and the trailing guard refuses the body
+# charset, so a 54-character run matches nothing rather than being truncated
+# to 53. No existing pattern can collide: the only other 'AQ' literals in the
+# registry are the AWS session-token 'AQoD' prose marker and Yandex's 'AQVN'
+# service-account key, and both require an alphanumeric where this requires a
+# literal dot.
+#
+# Severity critical: an auth key acts as the service account it is bound to,
+# so it spends that project's Gemini quota and reaches whatever else that
+# identity is permitted to touch.
+
+GOOGLE_GEMINI_AUTH_KEY = SecretPattern(
+    id="google_gemini_auth_key",
+    name="Google Gemini / GCP Express Mode Auth Key",
+    description=(
+        "Google Gemini API auth key (also issued by GCP Express Mode) — the"
+        " literal 'AQ.Ab' prefix followed by 48 base64url characters, 53"
+        " characters in total. It is the credential that replaces the 'AIza'"
+        " standard key: it is bound to a Google Cloud service account and"
+        " requests made with it run under that identity. Google AI Studio has"
+        " issued auth keys for every new key since 2026-05-28."
+    ),
+    provider="google",
+    severity="critical",
+    # Prefix, body charset and the 53-character total width per Google's own
+    # GCP Express Mode detector (`AQ\.Ab8R[a-zA-Z0-9_-]{46}`, maxKeyLen 53);
+    # the '8R' segment is single-sourced and is deliberately folded into the
+    # body, which preserves the width. The credential class and its rollout
+    # are documented at https://ai.google.dev/gemini-api/docs/api-key. The
+    # guards, confidence tier and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/google/osv-scalibr/blob/v0.5.2/veles/secrets/gcpexpressmode/detector.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_.-])"
+        r"(?P<secret>AQ\.Ab[A-Za-z0-9_-]{48})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # dotted five-char literal plus a fixed width carries the precision
+    context_keywords=[
+        "google",
+        "gemini",
+        "api_key",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "generativelanguage",
+        "aistudio",
+    ],
+    known_test_values={
+        # Single-character masks — how documentation and redacted console
+        # screenshots render this key. confidence_base 0.95 sits above the
+        # 0.85 FP-wordlist gate, so they are pinned here and land at ~0.15.
+        "AQ" + "." + "Ab" + "x" * 48,
+        "AQ" + "." + "Ab" + "X" * 48,
+        "AQ" + "." + "Ab" + "0" * 48,
+    },
+    recommendation=(
+        "Delete this key in Google AI Studio (API keys) or in the Google Cloud"
+        " console under APIs & Services > Credentials, then create a"
+        " replacement and update every service that reads GEMINI_API_KEY or"
+        " GOOGLE_API_KEY. An auth key is bound to a service account, so also"
+        " review that service account's activity in Cloud Logging and its IAM"
+        " roles for anything beyond Gemini, and check the project's Gemini API"
+        " usage for the exposure window. Purge the key from repository"
+        " history."
+    ),
+    tags=["cloud", "google", "gcp", "gemini", "ai"],
+)
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -3705,4 +3810,8 @@ register(
     # 'AccessKey=').
     AZURE_IOT_HUB_SAS_TOKEN,
     AZURE_SIGNALR_CONNECTION_STRING,
+    # 2026-09-17 — Google's Gemini API auth key ('AQ.Ab' + 48 base64url,
+    # 53 total), also issued by GCP Express Mode. The successor to the
+    # 'AIza' standard key gcp_api_key matches, not a variant of it.
+    GOOGLE_GEMINI_AUTH_KEY,
 )
