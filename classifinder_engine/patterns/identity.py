@@ -1363,6 +1363,91 @@ BITWARDEN_SECRETS_MANAGER_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# PLANE API TOKEN (2026-09-26)
+# ===================================================
+
+# Plane is an open-source project-management tool — issues, cycles, modules,
+# pages and work items — run at app.plane.so or self-hosted. A workspace API
+# token is the credential for Plane's REST API: it is presented in the
+# 'X-API-Key' header and it acts as the member who minted it, across every
+# project in the workspace that member can reach.
+#
+# THE FORMAT IS THE VENDOR'S OWN GENERATOR, not an inference. Plane's APIToken
+# model defines generate_token() as literally 'plane_api_' + uuid4().hex, and
+# the model's token field takes that function as its default. Python's
+# uuid4().hex is exactly 32 lowercase hex characters, so a token is the
+# 10-character literal prefix plus [0-9a-f]{32} — 42 characters in total. The
+# vendor's API reference shows the same 'plane_api_<token>' form alongside the
+# X-API-Key header.
+#
+# NO ENTROPY GATE, DELIBERATELY. A uuid4 hex body sits at ~4.0 bits per
+# character by construction, so any entropy floor would false-negative every
+# real token; the 10-character literal prefix carries the precision on its own.
+# For the same reason there is no length+entropy bonus.
+#
+# BOTH GUARDS REFUSE [A-Za-z0-9_-], so a token is never carved out of a longer
+# identifier or hex run, and a 33-character body matches nothing rather than
+# being truncated to 32. The prefix is exact and lowercase.
+#
+# Severity high: the token reads and writes issues, comments, cycles, modules,
+# labels and attachments for every project the minting member can reach, and
+# Plane issues carry whatever the team writes into them.
+
+PLANE_API_TOKEN = SecretPattern(
+    id="plane_api_token",
+    name="Plane API Token",
+    description=(
+        "Plane workspace API token — the literal 'plane_api_' prefix followed"
+        " by a 32-character lowercase hex uuid4 body, 42 characters in total."
+        " Presented in the 'X-API-Key' header against Plane's REST API"
+        " (app.plane.so or a self-hosted instance), it acts as the member who"
+        " minted it and can read and write issues, comments, cycles, modules"
+        " and attachments across that member's projects."
+    ),
+    provider="plane",
+    severity="high",
+    # 'plane_api_' + uuid4().hex per Plane's own APIToken model: generate_token()
+    # returns exactly that string and is the token field's default, and Python's
+    # uuid4().hex is 32 lowercase hex characters. The guards, the confidence tier
+    # and the known_test_values are ClassiFinder's own.
+    # Source: https://github.com/makeplane/plane/blob/preview/apps/api/plane/db/models/api.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>plane_api_[0-9a-f]{32})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # uuid4 hex is ~4.0 bits/char — the 10-char prefix carries the precision
+    context_keywords=[
+        "plane",
+        "plane_api",
+        "PLANE_API_TOKEN",
+        "api.plane.so",
+    ],
+    known_test_values={
+        # Masks and placeholders that stay inside the [0-9a-f] body charset —
+        # how docs and redacted configs render this token. confidence_base 0.95
+        # sits above the 0.85 FP-wordlist gate, so they are pinned here and land
+        # at ~0.15.
+        "plane_api_" + "0" * 32,
+        "plane_api_" + "a" * 32,
+        "plane_api_" + "f" * 32,
+        "plane_api_" + "deadbeef" * 4,
+    },
+    recommendation=(
+        "Revoke this token in Plane under Workspace Settings > API tokens (or"
+        " the self-hosted instance's equivalent) and issue a replacement, then"
+        " update every service that reads PLANE_API_TOKEN. The token acts as"
+        " the member who created it, so review the workspace's projects for"
+        " issues, comments, cycles or attachments created or changed during the"
+        " exposure window, and purge the token from repository history."
+    ),
+    tags=["identity", "plane", "project-management", "api"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -1410,4 +1495,8 @@ register(
     # '.' + 30 alnum + ':' + 16-byte base64 key; structure per the vendor's
     # own sdk-internal parser). The span covers the encryption-key half.
     BITWARDEN_SECRETS_MANAGER_ACCESS_TOKEN,
+    # 2026-09-26 — Plane workspace API token ('plane_api_' + uuid4().hex,
+    # straight from the vendor's own generate_token() default). No entropy
+    # gate: a uuid4 hex body is ~4.0 bits/char by construction.
+    PLANE_API_TOKEN,
 )
