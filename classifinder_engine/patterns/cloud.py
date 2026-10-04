@@ -649,6 +649,91 @@ CLOUDFLARE_SCANNABLE_API_TOKEN = SecretPattern(
 )
 
 
+# ---------------------------------------------------
+# Cloudflare SCANNABLE Global API Key — 'cfk_' (2026-10-04)
+# ---------------------------------------------------
+# Cloudflare now mints the Global API Key in the same self-identifying
+# "scannable" shape as its API tokens: a 'cfk_' prefix, then 40 alphanumerics,
+# then an 8-character hex checksum (a CRC32 — 32 bits is exactly 8 hex
+# characters) — 52 characters in total. Cloudflare's DLP profile labels the
+# detection "Cloudflare User API Key". It is the key sent in the X-Auth-Key
+# header alongside X-Auth-Email, commonly read from CLOUDFLARE_API_KEY.
+#
+# NEITHER EXISTING CLOUDFLARE PATTERN COVERS THIS FORM. cloudflare_global_api_key
+# is keyword-gated to the legacy 37-character lowercase-hex body, and
+# cloudflare_scannable_api_token matches only the 'cfut_' / 'cfat_' prefixes.
+# Both are deliberately left unchanged; this is a separate pattern because the
+# key is a different credential class (account-wide, not scoped) with a
+# different remediation.
+#
+# The vendor says only "hex" for the checksum and never pins its case, so the
+# regex accepts the safe superset [0-9a-fA-F]. The checksum cannot be
+# validated in a regex; the fixed prefix plus the exact 40 + 8 layout carry
+# the precision. BOTH GUARDS REFUSE [A-Za-z0-9_-], so a key is never carved
+# out of a longer identifier or base64url run, and a body one character too
+# long matches nothing rather than being truncated. The prefix is exact and
+# case-sensitive.
+#
+# Severity critical: the Global API Key is tied to the user account and
+# carries that user's full access to every account and zone they can reach.
+
+CLOUDFLARE_SCANNABLE_GLOBAL_API_KEY = SecretPattern(
+    id="cloudflare_scannable_global_api_key",
+    name="Cloudflare Scannable Global API Key (cfk_)",
+    description=(
+        "Cloudflare Global API Key in the scannable format — the literal 'cfk_'"
+        " prefix, then 40 alphanumerics and an 8-character hex checksum, 52"
+        " characters in total. Sent as X-Auth-Key with the account email, it"
+        " carries the user's FULL access to every account and zone they can"
+        " reach. Treat any leak as a major incident."
+    ),
+    provider="cloudflare",
+    severity="critical",
+    # Format per Cloudflare's own docs: the token-formats page gives
+    # 'cfk_[40 characters][checksum]' for the Global API Key
+    # (developers.cloudflare.com/fundamentals/api/get-started/token-formats/),
+    # and the DLP predefined-profiles page below pins the body as 40
+    # alphanumerics plus an 8-character hex checksum. Guards, confidence and
+    # known_test_values are ClassiFinder's own.
+    # Source: https://developers.cloudflare.com/cloudflare-one/data-loss-prevention/dlp-profiles/predefined-profiles/
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>cfk_[A-Za-z0-9]{40}[0-9a-fA-F]{8})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # exact prefix plus the fixed 40 + 8 layout carries the precision
+    context_keywords=[
+        "cloudflare",
+        "CLOUDFLARE_API_KEY",
+        "CF_API_KEY",
+        "X-Auth-Key",
+        "global_api_key",
+        "cfk_",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key. confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so
+        # they are pinned here and land at ~0.15. Built by concatenation so
+        # no contiguous key-shaped literal sits in source.
+        "cf" + "k_" + "x" * 40 + "0" * 8,
+        "cf" + "k_" + "X" * 40 + "0" * 8,
+        "cf" + "k_" + "0" * 48,
+    },
+    recommendation=(
+        "Roll this Global API Key immediately in the Cloudflare dashboard"
+        " (My Profile > API Tokens > Global API Key > Change) — rolling"
+        " invalidates the leaked key. Update every service and CI secret that"
+        " reads CLOUDFLARE_API_KEY, review the audit log of every account the"
+        " user belongs to for DNS, Workers, R2, firewall and membership changes"
+        " during the exposure window, purge the key from repository history,"
+        " and migrate integrations to scoped API tokens."
+    ),
+    tags=["cloud", "cloudflare", "global"],
+)
+
+
 # ===================================================
 # DOPPLER
 # ===================================================
@@ -3716,6 +3801,9 @@ register(
     # 2026-09-15 — Cloudflare scannable API tokens ('cfut_' user / 'cfat_'
     # account-owned + 40 alnum + 8-hex checksum; vendor-documented format).
     CLOUDFLARE_SCANNABLE_API_TOKEN,
+    # 2026-10-04 — Cloudflare scannable Global API Key ('cfk_' + 40 alnum +
+    # 8-hex checksum; vendor-documented format).
+    CLOUDFLARE_SCANNABLE_GLOBAL_API_KEY,
     DOPPLER_TOKEN,
     TERRAFORM_CLOUD_TOKEN,
     VAULT_TOKEN,
