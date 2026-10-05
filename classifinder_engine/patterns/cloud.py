@@ -734,6 +734,94 @@ CLOUDFLARE_SCANNABLE_GLOBAL_API_KEY = SecretPattern(
 )
 
 
+# ---------------------------------------------------
+# Akamai EdgeGrid client secret (2026-10-05)
+# ---------------------------------------------------
+# Akamai's EdgeGrid API credentials are a set of four values: host,
+# client_token, access_token and client_secret. The vendor's EdgeGrid docs
+# give the .edgerc file form ('client_secret = <base64>', with
+# 'akab-...' client/access tokens and an 'akab-....luna.akamaiapis.net' host)
+# and the AKAMAI_CLIENT_SECRET / AKAMAI_<SECTION>_CLIENT_SECRET environment
+# variables. The client_secret is standard base64 of 32 bytes: 43 characters
+# of [A-Za-z0-9+/] plus one '=' pad, 44 in total.
+#
+# THE SECRET ALONE IS A GENERIC SHAPE, SO THE REGEX IS CONTEXT-ANCHORED. It
+# fires only when the base64 value is (1) the value of an AKAMAI_*CLIENT_SECRET
+# variable, or (2) the value of a client_secret / client-secret key with an
+# Akamai marker — an 'akab-' token or a '.luna.akamaiapis.net' host — within
+# 400 characters BEFORE or AFTER it in the same section (the window cannot
+# cross a '[' so it never borrows a marker from the next .edgerc section). A
+# bare 44-character base64 string, or an OAuth client_secret with no Akamai
+# marker nearby, matches nothing. Only the 44-character value is the span.
+#
+# Severity critical: with the matching tokens the secret signs any Akamai API
+# call the API client is granted — CDN/property config, purges, DNS, security.
+
+AKAMAI_EDGEGRID_CLIENT_SECRET = SecretPattern(
+    id="akamai_edgegrid_client_secret",
+    name="Akamai EdgeGrid Client Secret",
+    description=(
+        "Akamai EdgeGrid API client_secret — 44-character base64 (43 + '=')"
+        " found as the value of AKAMAI_CLIENT_SECRET, or as client_secret in an"
+        " .edgerc-style block alongside an 'akab-' token or a"
+        " '.luna.akamaiapis.net' host. With the client and access tokens it"
+        " signs any Akamai API call the API client is granted."
+    ),
+    provider="akamai",
+    severity="critical",
+    # Format per Akamai's own EdgeGrid docs: the .edgerc keys, the akab-
+    # client/access tokens and luna.akamaiapis.net host, the AKAMAI_*
+    # environment variables, and a base64 client_secret (the vendor example
+    # is 43 base64 + '='). Context anchoring and guards are ClassiFinder's own.
+    # Source: https://techdocs.akamai.com/developer/docs/edgegrid
+    regex=re.compile(
+        r"(?:"
+        r"AKAMAI_(?:[A-Z0-9]+_)*?CLIENT_SECRET[\"']?[ \t]*[=:][ \t]*[\"']?"
+        r"|"
+        r"(?:akab-[a-z0-9]{8,64}-[a-z0-9]{4,64}|\.luna\.akamaiapis\.net)"
+        r"[^\[]{0,400}?client[_-]secret[\"']?[ \t]*[=:][ \t]*[\"']?"
+        r"|"
+        r"client[_-]secret[\"']?[ \t]*[=:][ \t]*[\"']?"
+        r"(?=[A-Za-z0-9+/]{43}=[^\[]{0,400}?"
+        r"(?:akab-[a-z0-9]{8,64}-[a-z0-9]{4,64}|\.luna\.akamaiapis\.net))"
+        r")"
+        r"(?P<secret>[A-Za-z0-9+/]{43}=)"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,  # the AKAMAI_ variable or the akab-/luna marker carries the precision
+    context_keywords=[
+        "akamai",
+        "edgegrid",
+        ".edgerc",
+        "akab-",
+        "akamaiapis.net",
+        "client_token",
+        "access_token",
+    ],
+    known_test_values={
+        # Akamai's own documentation example secret and the masks the vendor
+        # SDK sample .edgerc files use. confidence_base 0.92 sits above the
+        # 0.85 FP-wordlist gate, so they are pinned here (-> ~0.15).
+        "C113nt53KR3TN6N90yVuAgICxIRwsObLi0E67/N8eRN=",
+        "x" * 43 + "=",
+        "X" * 43 + "=",
+        "A" * 43 + "=",
+    },
+    recommendation=(
+        "Delete this API client's credential in Akamai Control Center"
+        " (Identity & Access > API clients > Credentials) and create a new one,"
+        " then update every .edgerc file, CI secret and AKAMAI_* environment"
+        " variable that holds it. Review the API client's activity for"
+        " property, DNS, purge and security-configuration changes made during"
+        " the exposure window."
+    ),
+    tags=["cloud", "akamai", "cdn", "edgegrid"],
+)
+
+
+
 # ===================================================
 # DOPPLER
 # ===================================================
@@ -3804,6 +3892,9 @@ register(
     # 2026-10-04 — Cloudflare scannable Global API Key ('cfk_' + 40 alnum +
     # 8-hex checksum; vendor-documented format).
     CLOUDFLARE_SCANNABLE_GLOBAL_API_KEY,
+    # 2026-10-05 — Akamai EdgeGrid client_secret (base64 43 + '='), context-
+    # anchored on AKAMAI_*CLIENT_SECRET or a nearby akab- token / luna host.
+    AKAMAI_EDGEGRID_CLIENT_SECRET,
     DOPPLER_TOKEN,
     TERRAFORM_CLOUD_TOKEN,
     VAULT_TOKEN,
