@@ -2924,6 +2924,138 @@ NETBIRD_PERSONAL_ACCESS_TOKEN = SecretPattern(
     tags=["devops", "netbird", "networking", "vpn", "zero-trust", "api"],
 )
 
+# ===================================================
+# CONFIGCAT SDK KEY (2026-10-05)
+# ===================================================
+# ConfigCat SDK keys identify a config + environment and let an SDK download
+# that config's feature-flag JSON. Current keys are
+# 'configcat-sdk-1/' + 22 characters + '/' + 22 characters. The vendor's own
+# JS SDK validates exactly that (src/ConfigCatClient.ts isValidSdkKey():
+# three '/'-separated components, the first === "configcat-sdk-1", the other
+# two of keyLength = 22), and its sample code shows the base64url alphabet
+# ('-' appears in 'PKDVCLf-Hq-h-kCzMp-L7Q'), so each component is
+# [A-Za-z0-9_-]{22} (16 bytes, base64url, unpadded).
+#
+# The LEGACY unprefixed form (22 + '/' + 22) is deliberately NOT matched:
+# with no prefix it is indistinguishable from an arbitrary two-segment path.
+# The guards refuse [A-Za-z0-9_-] around the key, so a 23-character component
+# matches nothing; a following '/' (the CDN config-file URL) is allowed.
+#
+# Severity LOW: the vendor documents the SDK key as read-only (it can only
+# download the config JSON) and expects it to ship inside frontend/mobile
+# apps. A leak discloses flag names, values and targeting rules, nothing more.
+
+CONFIGCAT_SDK_KEY = SecretPattern(
+    id="configcat_sdk_key",
+    name="ConfigCat SDK Key",
+    description=(
+        "ConfigCat SDK key — 'configcat-sdk-1/' followed by two 22-character"
+        " base64url components separated by '/'. Read-only: it downloads one"
+        " config's feature-flag JSON (flag names, values, targeting rules) and"
+        " is routinely embedded in frontend apps, so severity is low."
+    ),
+    provider="configcat",
+    severity="low",
+    # Format per the vendor's own SDK validator (isValidSdkKey in
+    # js-unified-sdk src/ConfigCatClient.ts: "configcat-sdk-1" + two
+    # components of keyLength 22) and its samples (base64url alphabet).
+    # Guards, confidence and test values are ClassiFinder's own.
+    # Source: https://github.com/configcat/js-unified-sdk/blob/master/src/ConfigCatClient.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>configcat-sdk-1/[A-Za-z0-9_-]{22}/[A-Za-z0-9_-]{22})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # the literal 'configcat-sdk-1/' prefix plus fixed 22/22 layout carries the precision
+    context_keywords=["configcat", "CONFIGCAT_SDK_KEY", "getClient", "sdkKey"],
+    known_test_values={
+        # The vendor's own sample-code key, plus masks. Pinned at ~0.15
+        # because confidence_base 0.95 sits above the 0.85 FP-wordlist gate.
+        "configcat-sdk-1/PKDVCLf-Hq-h-kCzMp-L7Q/tiOvFw5gkky9LFu1Duuvzw",
+        "configcat-sdk-1/" + "x" * 22 + "/" + "x" * 22,
+        "configcat-sdk-1/" + "X" * 22 + "/" + "X" * 22,
+        "configcat-sdk-1/" + "0" * 22 + "/" + "0" * 22,
+    },
+    recommendation=(
+        "SDK keys are read-only and often public by design, but if this config"
+        " should stay private, rotate the key in the ConfigCat Dashboard (SDK"
+        " Keys > generate a secondary key, migrate the apps, then delete the old"
+        " one) and serve flag evaluation from your backend instead of shipping"
+        " the key to clients."
+    ),
+    tags=["devops", "configcat", "feature-flags"],
+)
+
+
+# ===================================================
+# CHIEF TOOLS ACCESS TOKEN (2026-10-05)
+# ===================================================
+# Chief Tools (Account Chief and the chief.app product suite) issues API
+# bearer tokens whose prefix names the credential type. The vendor's token
+# docs list exactly four: 'ctp_' personal access token, 'ctt_' team access
+# token, 'cto_' OAuth access token, 'ctr_' OAuth refresh token.
+#
+# The body comes from the vendor founder's MIT random-tokens library
+# (stayallive/random-tokens, src/RandomToken.php): PARSE_REGEX is
+# prefix '_' + 30..242 [a-zA-Z0-9] random + 6 [a-zA-Z0-9] checksum (base62
+# CRC32, left-padded to 6). Net: prefix + 36..248 base62. The checksum is not
+# validated here.
+#
+# The 3-letter prefixes are short, so: BOTH GUARDS REFUSE [A-Za-z0-9_-]
+# (never carved out of a longer identifier, an over-long run matches
+# nothing), and the body must contain at least one digit — a camelCase
+# identifier such as 'ctp_getAllCustomerTransactionsForAccount' does not
+# match, while a 36-character random base62 body lacks a digit only ~0.2% of
+# the time.
+#
+# Severity high: the token acts as the user / team / OAuth client across the
+# Chief Tools APIs it is scoped to; a refresh token mints new access tokens.
+
+CHIEF_TOOLS_ACCESS_TOKEN = SecretPattern(
+    id="chief_tools_access_token",
+    name="Chief Tools Access Token",
+    description=(
+        "Chief Tools API token — 'ctp_' (personal), 'ctt_' (team), 'cto_'"
+        " (OAuth access) or 'ctr_' (OAuth refresh) followed by 36-248 base62"
+        " characters (random part plus a 6-character CRC32 checksum). Sent as"
+        " a Bearer token to the Chief Tools APIs on behalf of the user or team."
+    ),
+    provider="chief_tools",
+    severity="high",
+    # Prefixes per the vendor's token docs ("Recognize Chief Tools tokens");
+    # body per the MIT random-tokens library PARSE_REGEX (30-242 random + 6
+    # checksum, [a-zA-Z0-9]). Digit requirement, guards and confidence are ours.
+    # Source: https://docs.chief.tools/developers/authentication
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>ct[ptor]_(?=[A-Za-z]{0,247}[0-9])[A-Za-z0-9]{36,248})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # prefix + length window + digit requirement carry the precision
+    context_keywords=["chief", "chief.app", "chief.tools", "CHIEF_", "Bearer"],
+    known_test_values={
+        # Masks inside the body charset (each carries a digit so it matches).
+        # confidence_base 0.90 sits above the 0.85 FP-wordlist gate, so they
+        # are pinned here and land at ~0.15.
+        "ct" + kind + "_" + body
+        for kind in ("p", "t", "o", "r")
+        for body in ("0" * 36, "x" * 30 + "000000", "X" * 30 + "000000")
+    },
+    recommendation=(
+        "Revoke the token in Account Chief (API tokens for personal tokens, the"
+        " team's settings for team tokens, or the connected-apps page for OAuth"
+        " grants), issue a replacement with the narrowest scopes, and review the"
+        " account or team for activity during the exposure window."
+    ),
+    tags=["devops", "chief-tools", "api-token"],
+)
+
+
+
 
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
@@ -3020,4 +3152,9 @@ register(
     # 2026-09-16 — NetBird personal access token ('nbp_' + 30 base62 secret
     # + 6 base62 CRC32 checksum; from the vendor's own generateNewToken()).
     NETBIRD_PERSONAL_ACCESS_TOKEN,
+    # 2026-10-05 — ConfigCat SDK key ('configcat-sdk-1/' + 22 + '/' + 22,
+    # per the vendor SDK's isValidSdkKey(); read-only, severity low) and Chief
+    # Tools access token (ctp_/ctt_/cto_/ctr_ + 36-248 base62).
+    CONFIGCAT_SDK_KEY,
+    CHIEF_TOOLS_ACCESS_TOKEN,
 )

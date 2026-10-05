@@ -1848,6 +1848,72 @@ WOOCOMMERCE_CONSUMER_SECRET = SecretPattern(
 
 
 
+# ===================================================
+# RAINFOREST PAY API KEY (2026-10-05)
+# ===================================================
+# Rainforest (rainforestpay.com) is a payment-facilitation API for software
+# platforms. Its API reference states that API keys "are prefixed with
+# apikey_ in production and sbx_apikey_ in sandbox", and the vendor's API-keys
+# guide shows a create-key response whose api_key is 'apikey_' + 64
+# lowercase hex. Net: optional 'sbx_' + 'apikey_' + exactly 64 lowercase hex.
+#
+# 'apikey_' alone reads like a generic word, so precision comes from the exact
+# 64-lowercase-hex body plus BOTH GUARDS REFUSING [A-Za-z0-9_-]. The left guard
+# is what keeps this disjoint from Paddle's 'pdl_live_apikey_' /
+# 'pdl_sdbx_apikey_' keys: the 'apikey_' inside them is preceded by '_', so it
+# can never start a match (and Paddle's 'sdbx' is not 'sbx').
+#
+# Severity critical: API keys generally carry broad permissions over the
+# platform's merchants, payins, refunds and deposits (the vendor's own
+# guidance is that they must never reach a browser).
+
+RAINFOREST_PAY_API_KEY = SecretPattern(
+    id="rainforest_pay_api_key",
+    name="Rainforest Pay API Key",
+    description=(
+        "Rainforest (rainforestpay.com) API key — 'apikey_' (production) or"
+        " 'sbx_apikey_' (sandbox) followed by exactly 64 lowercase hex"
+        " characters. A long-lived server credential with broad permissions"
+        " over merchants, payins, refunds and deposits."
+    ),
+    provider="rainforest",
+    severity="critical",
+    # The vendor's API reference gives the 'apikey_' / 'sbx_apikey_' prefixes
+    # (docs.rainforestpay.com/reference/authentication); the API-keys guide's
+    # create-key response shows the 64-lowercase-hex body. Guards, confidence
+    # and test values are ClassiFinder's own.
+    # Source: https://docs.rainforestpay.com/docs/api-keys
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>(?:sbx_)?apikey_[0-9a-f]{64})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # hex body is ~4.0 bits/char — the exact prefix + 64-hex layout carries the precision
+    context_keywords=["rainforest", "rainforestpay", "api.rainforestpay.com", "RAINFOREST_API_KEY", "Bearer"],
+    known_test_values={
+        # The vendor's documentation example and hex masks. confidence_base
+        # 0.90 sits above the 0.85 FP-wordlist gate, so they are pinned (~0.15).
+        "api" + "key_1ad1c535b0c0093e7b9bf093d7e3444cd0e2ddefab36199216f555c3efa65d63",
+    } | {
+        env + "api" + "key_" + fill * 64
+        for env in ("", "sbx_")
+        for fill in ("0", "a", "f")
+    },
+    recommendation=(
+        "Delete or disable this API key via the Rainforest API"
+        " (DELETE /v1/api_keys/{api_key_id}) or the Platform Portal, create a"
+        " replacement scoped by statements and constraints to what the"
+        " integration needs, and update every server that uses it. Review"
+        " payins, refunds, deposit-method and merchant changes made during the"
+        " exposure window."
+    ),
+    tags=["payment", "rainforest", "fintech"],
+)
+
+
+
 
 register(
     STRIPE_LIVE_SECRET_KEY,
@@ -1909,4 +1975,7 @@ register(
     # 2026-10-05 — WooCommerce REST API consumer secret ('cs_' + exactly
     # 40 lowercase hex, from the vendor's own wc_rand_hash()).
     WOOCOMMERCE_CONSUMER_SECRET,
+    # 2026-10-05 — Rainforest Pay API key ('apikey_' / 'sbx_apikey_' + 64
+    # lowercase hex; vendor docs). Left guard keeps it out of Paddle keys.
+    RAINFOREST_PAY_API_KEY,
 )
