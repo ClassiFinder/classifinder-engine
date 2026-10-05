@@ -2925,6 +2925,89 @@ NETBIRD_PERSONAL_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# FLAGSMITH SERVER-SIDE ENVIRONMENT KEY — 'ser.' (2026-10-05)
+# ===================================================
+
+# Flagsmith (open-source feature flags / remote config) issues two keys per
+# environment. The client-side key is a bare shortuuid, public by design and
+# NOT matched (nothing anchors it). The server-side key is the secret one: it
+# lets a server-side SDK run local evaluation, which downloads the whole
+# environment document — every flag, segment rule and identity override.
+#
+# THE FORMAT IS THE VENDOR'S OWN GENERATOR. Flagsmith's BSD-3-licensed API
+# defines SERVER_API_KEY_PREFIX = "ser." and generate_server_api_key()
+# returns that prefix + create_hash(), which is shortuuid.uuid(): a UUID
+# encoded in shortuuid's default 57-character alphabet (digits 2-9 and
+# letters without I, O and l), always padded to 22 characters. The key is
+# therefore exactly 26 characters.
+#
+# 'ser.' IS A SHORT PREFIX THAT ENDS ORDINARY WORDS ('user.', 'parser.',
+# 'browser.'), so the left guard also refuses '.' and '-': a dotted attribute
+# path never matches. The body must be exactly 22 characters of the base57
+# alphabet — an identifier carrying 0, 1, I, O, l or '_' fails — and the
+# right guard means a 23rd character matches nothing. A Shannon-entropy floor
+# of 3.5 bits (the minimum seen over 100,000 generated keys) prices
+# repetitive, word-like bodies down. confidence_base 0.85 sits one notch
+# under the LaunchDarkly 'sdk-' key because the prefix is weaker.
+#
+# Severity medium: read access to one environment's flag configuration and
+# identity data; it cannot change flags or reach the admin API.
+
+FLAGSMITH_SERVER_SIDE_ENVIRONMENT_KEY = SecretPattern(
+    id="flagsmith_server_side_environment_key",
+    name="Flagsmith Server-side Environment Key",
+    description=(
+        "Flagsmith server-side environment key — the literal 'ser.' prefix"
+        " followed by a 22-character shortuuid (base57), 26 characters in"
+        " total. Lets a server-side SDK download the environment's full flag,"
+        " segment and identity-override document."
+    ),
+    provider="flagsmith",
+    severity="medium",
+    # SERVER_API_KEY_PREFIX 'ser.' + create_hash() (= shortuuid.uuid(), 22
+    # chars of the default base57 alphabet) from the vendor's own
+    # generate_server_api_key(); usage per
+    # https://docs.flagsmith.com/integrating-with-flagsmith/sdks/server-side
+    # Guards, confidence, entropy floor and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/Flagsmith/flagsmith/blob/main/api/environments/api_keys.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_.-])"
+        r"(?P<secret>ser\.[2-9A-HJ-NP-Za-km-z]{22})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=3.5,  # real keys measure >= 3.5 bits; word-like bodies fall below
+    context_keywords=[
+        "flagsmith",
+        "FLAGSMITH_SERVER_KEY",
+        "FLAGSMITH_ENVIRONMENT_KEY",
+        "environment_key",
+        "environmentKey",
+        "X-Environment-Key",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key ('2' is shortuuid's padding character). Built by concatenation
+        # so no contiguous key-shaped literal sits in source.
+        "se" + "r." + "x" * 22,
+        "se" + "r." + "X" * 22,
+        "se" + "r." + "2" * 22,
+    },
+    recommendation=(
+        "Delete this server-side environment key in Flagsmith (Environment"
+        " settings > Keys > Server-side Environment Keys), create a"
+        " replacement and update every service that reads it. A server-side"
+        " key exposes the environment's entire flag configuration, segment"
+        " rules and identity overrides, so never ship it to a browser or"
+        " mobile app — client code uses the public client-side key. Purge the"
+        " key from repository history."
+    ),
+    tags=["devops", "flagsmith", "feature-flag", "sdk"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3020,4 +3103,7 @@ register(
     # 2026-09-16 — NetBird personal access token ('nbp_' + 30 base62 secret
     # + 6 base62 CRC32 checksum; from the vendor's own generateNewToken()).
     NETBIRD_PERSONAL_ACCESS_TOKEN,
+    # 2026-10-05 — Flagsmith server-side environment key ('ser.' + 22
+    # shortuuid base57; from the vendor's own generate_server_api_key()).
+    FLAGSMITH_SERVER_SIDE_ENVIRONMENT_KEY,
 )
