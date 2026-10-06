@@ -2607,6 +2607,91 @@ POWER_AUTOMATE_WEBHOOK_SAS_URL = SecretPattern(
 )
 
 
+# ===================================================
+# MIRO OAUTH ACCESS / REFRESH TOKEN — 'eyJtaXJvLm9yaWdpbiI6' (2026-10-06)
+# ===================================================
+
+# Miro (online whiteboard) issues OAuth 2.0 access and refresh tokens that
+# carry no vendor prefix in the usual sense, but every one starts with the
+# same base64url header: base64 of the JSON fragment {"miro.origin":"<region>"}
+# (for example 'eu01' or 'us01'), then '_', then a random base64url tail.
+# The fixed 20-character opening 'eyJtaXJvLm9yaWdpbiI6' is base64 of
+# '{"miro.origin":' and is unique to Miro, so it anchors the token as
+# strongly as a literal prefix.
+#
+# THE SHAPE IS THE VENDOR'S OWN PUBLISHED RESPONSE. Miro's REST API reference
+# for 'Get new access token using refresh token' shows a JSON response whose
+# access_token and refresh_token are both '<header>_<27-char tail>'. The
+# header remainder after the fixed opening is the base64 of the region
+# string ('ImV1MDEifQ' for eu01 — 10 characters for a 4-character region);
+# {6,20} leaves room for longer region names. The tail range {24,28} brackets
+# the documented 27 characters.
+#
+# NOT A JWT: there are no '.' separators, so jwt_token never fires. Both
+# guards refuse [A-Za-z0-9_-], so a 29th tail character matches nothing
+# rather than being truncated.
+#
+# Severity high: the access token acts as the user on every board the app is
+# scoped to for an hour, and the identically shaped refresh token mints new
+# access tokens for 60 days. One pattern covers both.
+
+MIRO_OAUTH_ACCESS_TOKEN = SecretPattern(
+    id="miro_oauth_access_token",
+    name="Miro OAuth Access Token",
+    description=(
+        "Miro OAuth 2.0 access or refresh token — a base64url header encoding"
+        " {\"miro.origin\":\"<region>\"} (always opening 'eyJtaXJvLm9yaWdpbiI6'),"
+        " an underscore, then a random base64url tail. Grants API access to the"
+        " user's Miro boards within the app's scopes."
+    ),
+    provider="miro",
+    severity="high",
+    # Shape '<base64 {"miro.origin":"eu01"}>_<27 base64url>' for both the
+    # access_token and refresh_token in the vendor's own response example.
+    # Guards, header/tail ranges, confidence and known_test_values are
+    # ClassiFinder's own.
+    # Source: https://developers.miro.com/reference/get-new-access-token-using-refresh-token
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>eyJtaXJvLm9yaWdpbiI6[A-Za-z0-9]{6,20}_[A-Za-z0-9_-]{24,28})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "miro",
+        "MIRO_ACCESS_TOKEN",
+        "MIRO_TOKEN",
+        "MIRO_REFRESH_TOKEN",
+        "api.miro.com",
+        "access_token",
+        "refresh_token",
+    ],
+    known_test_values={
+        # Miro's own API-reference response examples (access_token and
+        # refresh_token). Registered so the documented values down-score to
+        # ~0.15. Built by concatenation so no contiguous token literal sits in
+        # source.
+        "eyJtaXJvLm9yaWdpbiI6" + "ImV1MDEifQ" + "_" + "o-P91OccaII0A63CDSK--x21xiI",
+        "eyJtaXJvLm9yaWdpbiI6" + "ImV1MDEifQ" + "_" + "-PIBKmE9rzQuL3bUeAvUEGFEhLk",
+        # Single-character masks over the eu01 / us01 headers.
+        "eyJtaXJvLm9yaWdpbiI6" + "ImV1MDEifQ" + "_" + "x" * 27,
+        "eyJtaXJvLm9yaWdpbiI6" + "ImV1MDEifQ" + "_" + "X" * 27,
+        "eyJtaXJvLm9yaWdpbiI6" + "InVzMDEifQ" + "_" + "x" * 27,
+        "eyJtaXJvLm9yaWdpbiI6" + "InVzMDEifQ" + "_" + "X" * 27,
+    },
+    recommendation=(
+        "Revoke this token through Miro's revoke-token endpoint (or uninstall"
+        " and reinstall the app for the affected team), then update every"
+        " service that holds it. A leaked refresh token keeps minting access"
+        " tokens for up to 60 days, so revoke it too. Store Miro tokens in a"
+        " secrets manager and purge them from repository history."
+    ),
+    tags=["comms", "miro", "collaboration", "oauth"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -2691,4 +2776,8 @@ register(
     # Logic Apps HTTP-trigger SAS URL (whole-URL secret, like Slack / Teams).
     NOTION_API_TOKEN_NTN,
     POWER_AUTOMATE_WEBHOOK_SAS_URL,
+    # 2026-10-06 — Miro OAuth access / refresh token (base64 header of
+    # {"miro.origin":"<region>"} + '_' + base64url tail; shape per the
+    # vendor's own API-reference response example).
+    MIRO_OAUTH_ACCESS_TOKEN,
 )
