@@ -3008,6 +3008,81 @@ FLAGSMITH_SERVER_SIDE_ENVIRONMENT_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# IONIC APPFLOW PERSONAL ACCESS TOKEN — 'ion_' (2026-10-07)
+# ===================================================
+
+# Ionic (Appflow cloud builds, Portals and the Ionic CLI) issues personal
+# access tokens that authenticate the CLI and CI jobs as the user, usually
+# through the IONIC_TOKEN environment variable. Ionic's own Portals docs say
+# the token "follows the format of ion_XXXXXXXXXXXXX"; the docs do not state
+# the body width or alphabet.
+#
+# WIDTH AND ALPHABET ARE NOT VENDOR-STATED. Exactly 42 [A-Za-z0-9] comes from
+# the Betterleaks (MIT) rule 'ionic-personal-access-token' and agrees with
+# the independent Kingfisher rule 'kingfisher.ionic.1' and with the widths
+# measured on public values.
+#
+# 'ion_' is a SHORT prefix and a common identifier tail ('version_',
+# 'action_', 'permission_'), so the left guard refuses [A-Za-z0-9_-] and the
+# right guard refuses the same set: a 43rd body character matches nothing
+# rather than being truncated. Because the prefix is short, confidence sits at
+# 0.90 — below the 0.95 tier for long vendor prefixes, still above the 0.85
+# FP-wordlist gate so a real body containing 'test' is not sunk.
+#
+# Severity high: the token acts as the user across their Appflow apps
+# (builds, deploys, signing credentials) and Portals registry access.
+
+IONIC_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="ionic_personal_access_token",
+    name="Ionic Appflow Personal Access Token",
+    description=(
+        "Ionic Appflow / Portals personal access token — the literal 'ion_'"
+        " prefix followed by 42 alphanumerics. Authenticates the Ionic CLI and"
+        " CI jobs (usually via IONIC_TOKEN) as the user who created it."
+    ),
+    provider="ionic",
+    severity="high",
+    # Prefix 'ion_' per the vendor's own Portals CLI docs ("follows the format
+    # of ion_XXXXXXXXXXXXX", used as IONIC_TOKEN). Width {42} and charset per
+    # the Betterleaks (MIT) rule ionic-personal-access-token. Guards,
+    # confidence and known_test_values are ClassiFinder's own.
+    # Source: https://ionic.io/docs/portals/cli/configuration
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>ion_[A-Za-z0-9]{42})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "ionic",
+        "IONIC_TOKEN",
+        "appflow",
+        "portals",
+        "ionic.io",
+        "personal access token",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # token. Built by concatenation so no contiguous token-shaped literal
+        # sits in source.
+        "io" + "n_" + "x" * 42,
+        "io" + "n_" + "X" * 42,
+        "io" + "n_" + "0" * 42,
+    },
+    recommendation=(
+        "Delete this personal access token in the Ionic dashboard (Personal"
+        " Settings > Personal Access Tokens), create a replacement and update"
+        " every CI secret or machine that sets IONIC_TOKEN. Review recent"
+        " Appflow builds and deploys for activity you do not recognise, store"
+        " the token in a secrets manager and purge it from repository history."
+    ),
+    tags=["devops", "ionic", "appflow", "ci-cd", "mobile"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3106,4 +3181,7 @@ register(
     # 2026-10-05 — Flagsmith server-side environment key ('ser.' + 22
     # shortuuid base57; from the vendor's own generate_server_api_key()).
     FLAGSMITH_SERVER_SIDE_ENVIRONMENT_KEY,
+    # 2026-10-07 — Ionic Appflow personal access token ('ion_' + 42 base62;
+    # prefix per the vendor's Portals docs, width per Betterleaks, MIT).
+    IONIC_PERSONAL_ACCESS_TOKEN,
 )
