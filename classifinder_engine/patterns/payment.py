@@ -1914,6 +1914,89 @@ RAINFOREST_PAY_API_KEY = SecretPattern(
 
 
 
+# ===================================================
+# CASHFREE PAYMENTS SECRET KEY — 'cfsk_ma_prod_' / 'cfsk_ma_test_' (2026-10-08)
+# ===================================================
+
+# Cashfree Payments (India) authenticates its Payment Gateway / Payouts APIs
+# with an App ID (x-client-id) and a Secret Key (x-client-secret). The Secret
+# Key starts with 'cfsk_ma_prod_' in production and 'cfsk_ma_test_' in the
+# sandbox, then 32 lowercase hex, '_' and 8 lowercase hex. Header usage per
+# https://www.cashfree.com/docs/api-reference/authentication.
+#
+# THE PREFIX IS NOT VENDOR-DOCUMENTED: Cashfree's own docs show placeholders
+# only. 'cfsk_ma_prod_' is stated by an integrator's public help doc, and the
+# 32 + 8 lowercase-hex layout was measured on public values (every complete
+# instance had exactly that shape; the measured sources are deliberately not
+# named because they hold live keys).
+#
+# The literal prefix, the environment literal and the two fixed-width hex
+# segments make this structurally anchored, so confidence is 0.95 with no
+# entropy gate. 0.95 also sits above the 0.85 FP-wordlist gate, so the
+# 'test' literal in a sandbox key does not sink it. Guards refuse
+# [A-Za-z0-9_-] on both sides: a longer key matches nothing rather than
+# being truncated.
+#
+# Severity critical: a production secret key creates orders, refunds and
+# (with Payouts) moves money. A sandbox key is matched by the same pattern;
+# it cannot move real funds, which the recommendation spells out.
+
+CASHFREE_SECRET_KEY = SecretPattern(
+    id="cashfree_secret_key",
+    name="Cashfree Payments Secret Key",
+    description=(
+        "Cashfree Payments API secret key (x-client-secret) — 'cfsk_ma_prod_'"
+        " (production) or 'cfsk_ma_test_' (sandbox) followed by 32 lowercase"
+        " hex, '_' and 8 lowercase hex. Paired with the App ID to call the"
+        " Payment Gateway and Payouts APIs."
+    ),
+    provider="cashfree",
+    severity="critical",
+    # Prefix per an integrator's public Cashfree setup guide ("The Secret Key
+    # usually starts with cfsk_ma_prod_"); Cashfree's own docs show
+    # placeholders only. The 32 + 8 lowercase-hex layout was measured on
+    # public values. Guards, confidence and known_test_values are
+    # ClassiFinder's own.
+    # Source: https://sitesplaced.com/help/payments-and-orders/connect-cashfree
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>cfsk_ma_(?:prod|test)_[0-9a-f]{32}_[0-9a-f]{8})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # hex segments are ~4.0 bits/char — the fixed layout carries the precision
+    context_keywords=[
+        "cashfree",
+        "CASHFREE_SECRET_KEY",
+        "x-client-secret",
+        "x-client-id",
+        "cashfree.com",
+        "secret key",
+    ],
+    known_test_values={
+        # Single-character hex masks — how docs and redacted configs render
+        # this key. 0.95 sits above the 0.85 FP-wordlist gate, so they are
+        # pinned (~0.15). Built by concatenation so no contiguous key-shaped
+        # literal sits in source (Cashfree is a GitHub secret-scanning partner).
+        "cf" + "sk_ma_" + env + "_" + fill * 32 + "_" + fill * 8
+        for env in ("prod", "test")
+        for fill in ("0", "a", "f")
+    },
+    recommendation=(
+        "Regenerate the secret key in the Cashfree Merchant Dashboard"
+        " (Developers > API Keys) for the affected environment, update every"
+        " server that sends it as x-client-secret, and review orders, refunds,"
+        " payouts and beneficiary changes made during the exposure window."
+        " A 'cfsk_ma_test_' key is a sandbox credential and cannot move real"
+        " funds, but should still be rotated and purged from history. Store the"
+        " key in a secrets manager and never ship it to a client app."
+    ),
+    tags=["payment", "cashfree", "fintech", "india"],
+)
+
+
+
 
 register(
     STRIPE_LIVE_SECRET_KEY,
@@ -1978,4 +2061,7 @@ register(
     # 2026-10-05 — Rainforest Pay API key ('apikey_' / 'sbx_apikey_' + 64
     # lowercase hex; vendor docs). Left guard keeps it out of Paddle keys.
     RAINFOREST_PAY_API_KEY,
+    # 2026-10-08 — Cashfree Payments secret key ('cfsk_ma_prod_' /
+    # 'cfsk_ma_test_' + 32 hex + '_' + 8 hex; prefix per an integrator doc).
+    CASHFREE_SECRET_KEY,
 )
