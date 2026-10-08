@@ -1084,6 +1084,65 @@ HELICONE_API_KEY = SecretPattern(
     tags=["ai", "helicone", "observability", "gateway"],
 )
 
+# ===================================================
+# HACK CLUB AI API KEY (2026-10-05)
+# ===================================================
+# Hack Club AI (ai.hackclub.com) is an OpenAI-compatible LLM proxy. In the
+# vendor's own server source (hackclub/ai src/routes/api.tsx — read for the
+# format facts only; no code copied), a key is minted as
+#   `sk-hc-v1-${crypto.randomUUID()}${crypto.randomUUID()}` with '-' removed,
+# i.e. 'sk-hc-v1-' + two lowercase-hex UUIDv4s = exactly 64 lowercase hex.
+# (The UUIDv4 version/variant nibbles are NOT enforced, so a future switch to
+# plain random hex is still caught.)
+#
+# DISJOINT FROM OPENAI: openai_api_key needs 'sk-' followed by 32+
+# alphanumerics, which stops at the '-' after 'hc', so 'sk-hc-v1-...' never
+# satisfies it. BOTH GUARDS REFUSE [A-Za-z0-9_-], so a 65-hex run matches
+# nothing.
+#
+# Severity high: the key spends the owner's quota on the proxy's models.
+
+HACKCLUB_AI_API_KEY = SecretPattern(
+    id="hackclub_ai_api_key",
+    name="Hack Club AI API Key",
+    description=(
+        "Hack Club AI API key — the literal 'sk-hc-v1-' prefix followed by"
+        " exactly 64 lowercase hex characters (two dash-stripped UUIDv4s). Used"
+        " as an OpenAI-compatible Bearer key against ai.hackclub.com; whoever"
+        " holds it spends the owner's model quota."
+    ),
+    provider="hackclub",
+    severity="high",
+    # Format per the vendor's own server source (hackclub/ai, api.tsx: the
+    # 'sk-hc-v1-' prefix plus two crypto.randomUUID() with dashes removed),
+    # read for format facts only. Guards, confidence and test values are ours.
+    # Source: https://github.com/hackclub/ai/blob/main/src/routes/api.tsx
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>sk-hc-v1-[0-9a-f]{64})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # hex body is ~4.0 bits/char — the 9-char prefix carries the precision
+    context_keywords=["hackclub", "ai.hackclub.com", "HACKCLUB_AI_API_KEY", "Bearer"],
+    known_test_values={
+        # Hex masks. confidence_base 0.95 sits above the 0.85 FP-wordlist gate,
+        # so they are pinned here and land at ~0.15.
+        "sk-" + "hc-v1-" + fill * 64
+        for fill in ("0", "a", "f")
+    },
+    recommendation=(
+        "Revoke this key on the Hack Club AI dashboard (ai.hackclub.com, API"
+        " keys) and create a replacement, then update every client and CI"
+        " secret that uses it. Review the key's usage for requests you did not"
+        " make during the exposure window."
+    ),
+    tags=["ai", "hackclub", "llm"],
+)
+
+
+
 
 register(
     OPENAI_API_KEY,
@@ -1119,4 +1178,7 @@ register(
     # 2026-09-19 — Helicone API key ('sk-helicone' / 'pk-helicone' + optional
     # -eu/-cp/-rl + 4 x 7 [a-z0-9], per the vendor's own apiKeyRegex.ts).
     HELICONE_API_KEY,
+    # 2026-10-05 — Hack Club AI API key ('sk-hc-v1-' + 64 lowercase hex;
+    # from the vendor's own key generator). Disjoint from openai_api_key.
+    HACKCLUB_AI_API_KEY,
 )

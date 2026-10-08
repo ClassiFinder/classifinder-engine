@@ -734,6 +734,158 @@ CLOUDFLARE_SCANNABLE_GLOBAL_API_KEY = SecretPattern(
 )
 
 
+# ---------------------------------------------------
+# Akamai EdgeGrid client secret (2026-10-05)
+# ---------------------------------------------------
+# Akamai's EdgeGrid API credentials are a set of four values: host,
+# client_token, access_token and client_secret. The vendor's EdgeGrid docs
+# give the .edgerc file form ('client_secret = <base64>', with
+# 'akab-...' client/access tokens and an 'akab-....luna.akamaiapis.net' host)
+# and the AKAMAI_CLIENT_SECRET / AKAMAI_<SECTION>_CLIENT_SECRET environment
+# variables. The client_secret is standard base64 of 32 bytes: 43 characters
+# of [A-Za-z0-9+/] plus one '=' pad, 44 in total.
+#
+# THE SECRET ALONE IS A GENERIC SHAPE, SO THE REGEX IS CONTEXT-ANCHORED. It
+# fires only when the base64 value is (1) the value of an AKAMAI_*CLIENT_SECRET
+# variable, or (2) the value of a client_secret / client-secret key with an
+# Akamai marker — an 'akab-' token or a '.luna.akamaiapis.net' host — within
+# 400 characters BEFORE or AFTER it in the same section (the window cannot
+# cross a '[' so it never borrows a marker from the next .edgerc section). A
+# bare 44-character base64 string, or an OAuth client_secret with no Akamai
+# marker nearby, matches nothing. Only the 44-character value is the span.
+#
+# Severity critical: with the matching tokens the secret signs any Akamai API
+# call the API client is granted — CDN/property config, purges, DNS, security.
+
+AKAMAI_EDGEGRID_CLIENT_SECRET = SecretPattern(
+    id="akamai_edgegrid_client_secret",
+    name="Akamai EdgeGrid Client Secret",
+    description=(
+        "Akamai EdgeGrid API client_secret — 44-character base64 (43 + '=')"
+        " found as the value of AKAMAI_CLIENT_SECRET, or as client_secret in an"
+        " .edgerc-style block alongside an 'akab-' token or a"
+        " '.luna.akamaiapis.net' host. With the client and access tokens it"
+        " signs any Akamai API call the API client is granted."
+    ),
+    provider="akamai",
+    severity="critical",
+    # Format per Akamai's own EdgeGrid docs: the .edgerc keys, the akab-
+    # client/access tokens and luna.akamaiapis.net host, the AKAMAI_*
+    # environment variables, and a base64 client_secret (the vendor example
+    # is 43 base64 + '='). Context anchoring and guards are ClassiFinder's own.
+    # Source: https://techdocs.akamai.com/developer/docs/edgegrid
+    regex=re.compile(
+        r"(?:"
+        r"AKAMAI_(?:[A-Z0-9]+_)*?CLIENT_SECRET[\"']?[ \t]*[=:][ \t]*[\"']?"
+        r"|"
+        r"(?:akab-[a-z0-9]{8,64}-[a-z0-9]{4,64}|\.luna\.akamaiapis\.net)"
+        r"[^\[]{0,400}?client[_-]secret[\"']?[ \t]*[=:][ \t]*[\"']?"
+        r"|"
+        r"client[_-]secret[\"']?[ \t]*[=:][ \t]*[\"']?"
+        r"(?=[A-Za-z0-9+/]{43}=[^\[]{0,400}?"
+        r"(?:akab-[a-z0-9]{8,64}-[a-z0-9]{4,64}|\.luna\.akamaiapis\.net))"
+        r")"
+        r"(?P<secret>[A-Za-z0-9+/]{43}=)"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,  # the AKAMAI_ variable or the akab-/luna marker carries the precision
+    context_keywords=[
+        "akamai",
+        "edgegrid",
+        ".edgerc",
+        "akab-",
+        "akamaiapis.net",
+        "client_token",
+        "access_token",
+    ],
+    known_test_values={
+        # Akamai's own documentation example secret and the masks the vendor
+        # SDK sample .edgerc files use. confidence_base 0.92 sits above the
+        # 0.85 FP-wordlist gate, so they are pinned here (-> ~0.15).
+        "C113nt53KR3TN6N90yVuAgICxIRwsObLi0E67/N8eRN=",
+        "x" * 43 + "=",
+        "X" * 43 + "=",
+        "A" * 43 + "=",
+    },
+    recommendation=(
+        "Delete this API client's credential in Akamai Control Center"
+        " (Identity & Access > API clients > Credentials) and create a new one,"
+        " then update every .edgerc file, CI secret and AKAMAI_* environment"
+        " variable that holds it. Review the API client's activity for"
+        " property, DNS, purge and security-configuration changes made during"
+        " the exposure window."
+    ),
+    tags=["cloud", "akamai", "cdn", "edgegrid"],
+)
+
+
+
+# ---------------------------------------------------
+# UpCloud API token — 'ucat_' (2026-10-05)
+# ---------------------------------------------------
+# UpCloud API tokens replace Basic Auth on api.upcloud.com: sent as
+# 'Authorization: Bearer ucat_...', read by upctl / Terraform / the SDKs from
+# UPCLOUD_TOKEN. The vendor's "Managing API tokens" guide shows the token as
+# 'ucat_' + a 26-character value (ucat_01DQE3AJDEBFEKECFM558TGH2F), and the
+# vendor's MIT Go SDK test (upcloud/token_test.go) uses the same 26-character
+# shape (ucat_01DEADBEEFDEADBEEFDEADBEEF). The 26-character uppercase body
+# starting '01' is a ULID: Crockford base32 (no I, L, O, U), first character
+# 0-7. The vendor never names ULID, so this is inferred from both examples.
+#
+# BOTH GUARDS REFUSE [A-Za-z0-9_-], so a token is never carved out of a
+# longer identifier and a 27-character body matches nothing. The prefix is
+# exact and case-sensitive. Both vendor examples are known_test_values.
+#
+# Severity critical: an account token can create, modify and delete every
+# server, storage, network and managed service it is scoped to.
+
+UPCLOUD_API_TOKEN = SecretPattern(
+    id="upcloud_api_token",
+    name="UpCloud API Token",
+    description=(
+        "UpCloud API token — the literal 'ucat_' prefix followed by a"
+        " 26-character ULID (Crockford base32). Sent as a Bearer token to"
+        " api.upcloud.com and read from UPCLOUD_TOKEN by upctl, Terraform and"
+        " the SDKs; it can manage every resource the token is scoped to."
+    ),
+    provider="upcloud",
+    severity="critical",
+    # Format per UpCloud's own guide ('ucat_' + 26-character example) and the
+    # vendor's MIT Go SDK test fixture (upcloud-go-api upcloud/token_test.go).
+    # ULID charset/first-character bound, guards and confidence are ours.
+    # Source: https://upcloud.com/docs/guides/managing-api-tokens/
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>ucat_[0-7][0-9A-HJKMNP-TV-Z]{25})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # exact prefix plus the fixed 26-char ULID body carries the precision
+    context_keywords=["upcloud", "UPCLOUD_TOKEN", "upctl", "api.upcloud.com", "Bearer"],
+    known_test_values={
+        # The vendor's own documentation and SDK-test examples, plus masks.
+        # confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so they
+        # are pinned here and land at ~0.15.
+        "uc" + "at_01DQE3AJDEBFEKECFM558TGH2F",
+        "uc" + "at_01DEADBEEFDEADBEEFDEADBEEF",
+        "uc" + "at_" + "0" * 26,
+        "uc" + "at_01" + "X" * 24,
+    },
+    recommendation=(
+        "Delete this token in the UpCloud Control Panel (People > API tokens)"
+        " or via DELETE /1.3/account/tokens/{id}, create a replacement with the"
+        " narrowest scope and expiry, and update UPCLOUD_TOKEN everywhere it is"
+        " set. Review the account's resource and billing activity for changes"
+        " made during the exposure window."
+    ),
+    tags=["cloud", "upcloud", "api-token"],
+)
+
+
+
 # ===================================================
 # DOPPLER
 # ===================================================
@@ -3804,6 +3956,12 @@ register(
     # 2026-10-04 — Cloudflare scannable Global API Key ('cfk_' + 40 alnum +
     # 8-hex checksum; vendor-documented format).
     CLOUDFLARE_SCANNABLE_GLOBAL_API_KEY,
+    # 2026-10-05 — Akamai EdgeGrid client_secret (base64 43 + '='), context-
+    # anchored on AKAMAI_*CLIENT_SECRET or a nearby akab- token / luna host.
+    AKAMAI_EDGEGRID_CLIENT_SECRET,
+    # 2026-10-05 — UpCloud API token ('ucat_' + 26-char ULID; vendor docs +
+    # vendor SDK test).
+    UPCLOUD_API_TOKEN,
     DOPPLER_TOKEN,
     TERRAFORM_CLOUD_TOKEN,
     VAULT_TOKEN,

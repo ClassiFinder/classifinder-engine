@@ -1776,6 +1776,144 @@ PLAID_ACCESS_TOKEN = SecretPattern(
     tags=["payment", "plaid", "banking", "fintech"],
 )
 
+# ===================================================
+# WOOCOMMERCE REST API CONSUMER SECRET (2026-10-05)
+# ===================================================
+# WooCommerce issues REST API credentials as a consumer key / consumer secret
+# pair. In the vendor's own source (GPL plugin, read for the format only),
+# includes/class-wc-auth.php mints them as 'ck_' . wc_rand_hash() and
+# 'cs_' . wc_rand_hash(), and includes/wc-core-functions.php defines
+# wc_rand_hash() as bin2hex(random_bytes(20)). Net: 'cs_' + exactly 40
+# lowercase hex, 43 characters. Only the SECRET is matched; the 'ck_' key is
+# a context keyword.
+#
+# 'cs_' is a short, common prefix, so the guards do the work: BOTH REFUSE
+# [A-Za-z0-9_-], so 'cs_' is never carved out of a longer identifier
+# (e.g. 'docs_<sha1>') and a 41-hex run matches nothing. The pure-hex body
+# cannot be a Stripe Checkout Session id ('cs_live_' / 'cs_test_' + base62):
+# 'l', 'i', 'v', 't', 's' are not hex.
+#
+# Severity high: the pair authenticates as the WordPress user that created it,
+# with read or read/write access to orders, customers (PII) and products.
+
+WOOCOMMERCE_CONSUMER_SECRET = SecretPattern(
+    id="woocommerce_consumer_secret",
+    name="WooCommerce REST API Consumer Secret",
+    description=(
+        "WooCommerce REST API consumer secret — the literal 'cs_' prefix"
+        " followed by exactly 40 lowercase hex characters. Paired with its 'ck_'"
+        " consumer key it authenticates to /wp-json/wc/v3 as the WordPress user"
+        " that created it, exposing orders, customer PII and products."
+    ),
+    provider="woocommerce",
+    severity="high",
+    # The vendor's source mints the secret as 'cs_' . wc_rand_hash(), and
+    # wc_rand_hash() (includes/wc-core-functions.php) is
+    # bin2hex(random_bytes(20)) — exactly 40 lowercase hex. Guards,
+    # confidence and test values are ClassiFinder's own.
+    # Source: https://github.com/woocommerce/woocommerce/blob/trunk/plugins/woocommerce/includes/class-wc-auth.php
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>cs_[0-9a-f]{40})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # hex body is ~4.0 bits/char — the exact 'cs_' + 40-hex layout carries the precision
+    context_keywords=[
+        "woocommerce",
+        "consumer_secret",
+        "consumer_key",
+        "WOOCOMMERCE_CONSUMER_SECRET",
+        "wc/v3",
+        "ck_",
+    ],
+    known_test_values={
+        # Masks inside the [0-9a-f] body charset. confidence_base 0.90 sits
+        # above the 0.85 FP-wordlist gate, so they are pinned here (-> ~0.15).
+        "cs_" + "0" * 40,
+        "cs_" + "a" * 40,
+        "cs_" + "f" * 40,
+        "cs_" + "0123456789abcdef" * 2 + "01234567",
+    },
+    recommendation=(
+        "Revoke this key in WordPress admin (WooCommerce > Settings > Advanced"
+        " > REST API) and create a replacement, then update every integration"
+        " that uses the ck_/cs_ pair. Review orders, customers and products for"
+        " changes made through the REST API during the exposure window, and"
+        " treat customer data as disclosed if the key had read access."
+    ),
+    tags=["payment", "woocommerce", "ecommerce", "wordpress"],
+)
+
+
+
+# ===================================================
+# RAINFOREST PAY API KEY (2026-10-05)
+# ===================================================
+# Rainforest (rainforestpay.com) is a payment-facilitation API for software
+# platforms. Its API reference states that API keys "are prefixed with
+# apikey_ in production and sbx_apikey_ in sandbox", and the vendor's API-keys
+# guide shows a create-key response whose api_key is 'apikey_' + 64
+# lowercase hex. Net: optional 'sbx_' + 'apikey_' + exactly 64 lowercase hex.
+#
+# 'apikey_' alone reads like a generic word, so precision comes from the exact
+# 64-lowercase-hex body plus BOTH GUARDS REFUSING [A-Za-z0-9_-]. The left guard
+# is what keeps this disjoint from Paddle's 'pdl_live_apikey_' /
+# 'pdl_sdbx_apikey_' keys: the 'apikey_' inside them is preceded by '_', so it
+# can never start a match (and Paddle's 'sdbx' is not 'sbx').
+#
+# Severity critical: API keys generally carry broad permissions over the
+# platform's merchants, payins, refunds and deposits (the vendor's own
+# guidance is that they must never reach a browser).
+
+RAINFOREST_PAY_API_KEY = SecretPattern(
+    id="rainforest_pay_api_key",
+    name="Rainforest Pay API Key",
+    description=(
+        "Rainforest (rainforestpay.com) API key — 'apikey_' (production) or"
+        " 'sbx_apikey_' (sandbox) followed by exactly 64 lowercase hex"
+        " characters. A long-lived server credential with broad permissions"
+        " over merchants, payins, refunds and deposits."
+    ),
+    provider="rainforest",
+    severity="critical",
+    # The vendor's API reference gives the 'apikey_' / 'sbx_apikey_' prefixes
+    # (docs.rainforestpay.com/reference/authentication); the API-keys guide's
+    # create-key response shows the 64-lowercase-hex body. Guards, confidence
+    # and test values are ClassiFinder's own.
+    # Source: https://docs.rainforestpay.com/docs/api-keys
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>(?:sbx_)?apikey_[0-9a-f]{64})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # hex body is ~4.0 bits/char — the exact prefix + 64-hex layout carries the precision
+    context_keywords=["rainforest", "rainforestpay", "api.rainforestpay.com", "RAINFOREST_API_KEY", "Bearer"],
+    known_test_values={
+        # The vendor's documentation example and hex masks. confidence_base
+        # 0.90 sits above the 0.85 FP-wordlist gate, so they are pinned (~0.15).
+        "api" + "key_1ad1c535b0c0093e7b9bf093d7e3444cd0e2ddefab36199216f555c3efa65d63",
+    } | {
+        env + "api" + "key_" + fill * 64
+        for env in ("", "sbx_")
+        for fill in ("0", "a", "f")
+    },
+    recommendation=(
+        "Delete or disable this API key via the Rainforest API"
+        " (DELETE /v1/api_keys/{api_key_id}) or the Platform Portal, create a"
+        " replacement scoped by statements and constraints to what the"
+        " integration needs, and update every server that uses it. Review"
+        " payins, refunds, deposit-method and merchant changes made during the"
+        " exposure window."
+    ),
+    tags=["payment", "rainforest", "fintech"],
+)
+
+
+
 
 register(
     STRIPE_LIVE_SECRET_KEY,
@@ -1834,4 +1972,10 @@ register(
     # the long-lived per-Item bank credential; all three environment
     # literals kept because retired 'development' tokens still exist.
     PLAID_ACCESS_TOKEN,
+    # 2026-10-05 — WooCommerce REST API consumer secret ('cs_' + exactly
+    # 40 lowercase hex, from the vendor's own wc_rand_hash()).
+    WOOCOMMERCE_CONSUMER_SECRET,
+    # 2026-10-05 — Rainforest Pay API key ('apikey_' / 'sbx_apikey_' + 64
+    # lowercase hex; vendor docs). Left guard keeps it out of Paddle keys.
+    RAINFOREST_PAY_API_KEY,
 )

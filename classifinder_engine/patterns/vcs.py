@@ -696,6 +696,80 @@ PACKAGIST_AUTHENTICATION_TOKEN = SecretPattern(
 
 
 # ===================================================
+# PRIVATE PACKAGIST API SECRET (2026-10-05)
+# ===================================================
+# Private Packagist's REST API authenticates with an API key + API secret pair
+# (the vendor's PHP client calls $client->authenticate('api-key',
+# 'api-secret')). Since the vendor's April 2025 changelog entry, "The API key
+# has a packagist_ack_ prefix and the secret a packagist_acs_ prefix." Only
+# the SECRET is matched — the packagist_ack_ key id is the public half and is
+# used as a context keyword, not as its own pattern.
+#
+# The vendor does not publish the body width. The body is lowercase hex like
+# every other Private Packagist credential; observed secrets carry 64-96 hex
+# (typically 80). Because the 14-character 'packagist_acs_' prefix carries the
+# precision, the regex accepts a safe 32-128 superset rather than pinning an
+# undocumented width. BOTH GUARDS REFUSE [A-Za-z0-9_-], so a secret is never
+# carved out of a longer identifier and an over-long or non-hex run matches
+# nothing. packagist_authentication_token (ort_/out_/uut_/cut_) is unchanged.
+#
+# Severity critical: the API key + secret pair carries the organization's
+# full API access — packages, credentials, teams, members and tokens.
+
+PACKAGIST_API_SECRET = SecretPattern(
+    id="packagist_api_secret",
+    name="Private Packagist API Secret",
+    description=(
+        "Private Packagist (packagist.com) REST API secret — the literal"
+        " 'packagist_acs_' prefix followed by lowercase hex. Paired with its"
+        " 'packagist_ack_' API key it grants the organization's full API access:"
+        " packages, stored credentials, teams, members and authentication tokens."
+    ),
+    provider="packagist",
+    severity="critical",
+    # The vendor's changelog defines the 'packagist_acs_' (secret) and
+    # 'packagist_ack_' (key) prefixes; the lowercase-hex body matches the
+    # vendor's other credentials, and the 32-128 width window is ClassiFinder's
+    # own safe superset of the observed 64-96. Guards, confidence and test
+    # values are ours.
+    # Source: https://packagist.com/docs/changelog
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>packagist_acs_[0-9a-f]{32,128})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # hex body is ~4.0 bits/char — the 14-char prefix carries the precision
+    context_keywords=[
+        "packagist",
+        "packagist_ack_",
+        "PACKAGIST_API_SECRET",
+        "api_secret",
+        "authenticate",
+        "private-packagist",
+    ],
+    known_test_values={
+        # Masks that stay inside the [0-9a-f] body charset. confidence_base 0.95
+        # sits above the 0.85 FP-wordlist gate, so they are pinned here (-> ~0.15).
+        "packagist_acs_" + fill * width
+        for fill in ("0", "a", "f")
+        for width in (64, 80, 96)
+    },
+    recommendation=(
+        "Delete this API credential in Private Packagist (organization"
+        " Settings > API Access) and create a replacement, then update every"
+        " integration that uses the key/secret pair. Review the organization's"
+        " audit log for package, credential, team and token changes made during"
+        " the exposure window, and rotate any authentication tokens or stored"
+        " credentials the API could have read or created."
+    ),
+    tags=["vcs", "packagist", "composer", "registry", "api-secret"],
+)
+
+
+
+# ===================================================
 # AIRTABLE
 # ===================================================
 
@@ -1322,4 +1396,8 @@ register(
     # 2026-10-03 — Private Packagist authentication token
     # (packagist_ort_/out_/uut_/cut_ + 60 hex + 8 hex CRC32 checksum).
     PACKAGIST_AUTHENTICATION_TOKEN,
+    # 2026-10-05 — Private Packagist API secret ('packagist_acs_' + hex;
+    # prefix from the vendor's changelog). The 'packagist_ack_' key id is
+    # a context keyword only.
+    PACKAGIST_API_SECRET,
 )

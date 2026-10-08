@@ -1473,7 +1473,8 @@ PLANE_API_TOKEN = SecretPattern(
 # rather than being truncated. The prefix is exact and case-sensitive. The
 # sibling Ory prefixes on the same vendor page (ory_lo_ logout, ory_at_ /
 # ory_rt_ / ory_ac_ OAuth2, ory_pat_ / ory_apikey_ API keys, ory_wak_) are
-# separate formats and are deliberately NOT folded in.
+# separate formats and are deliberately NOT folded in (ory_at_ / ory_rt_ are
+# matched by ory_oauth2_token below).
 #
 # Severity high: a leaked session token lets its holder act as the logged-in
 # user until the session expires or is revoked.
@@ -1530,6 +1531,89 @@ ORY_SESSION_TOKEN = SecretPattern(
     tags=["identity", "ory", "kratos", "session-token"],
 )
 
+# ===================================================
+# ORY OAUTH2 ACCESS / REFRESH TOKEN (2026-10-05)
+# ===================================================
+
+# Ory Hydra (and Ory Network's OAuth2 service) issues opaque OAuth2 access and
+# refresh tokens through fosite's HMAC-SHA strategy. Ory's token-formats page
+# lists the 'ory_at_' (access token) and 'ory_rt_' (refresh token) prefixes.
+#
+# THE BODY IS THE VENDOR'S, END TO END. In Ory Hydra (Apache-2.0),
+# fosite/handler/oauth2/strategy_hmacsha_prefixed.go prepends
+# fmt.Sprintf("ory_%s_", part) with part "at" / "rt" to the token that
+# fosite/token/hmac/hmacsha.go mints as
+#   base64url-no-pad(RandomBytes(entropy)) + "." + base64url-no-pad(HMAC)
+# where the HMAC is HMAC-SHA512/256 (32 bytes -> exactly 43 characters) and
+# Hydra's fositex/config.go pins GetTokenEntropy() to 32 (32 random bytes ->
+# exactly 43 characters). Net: prefix + 43 [A-Za-z0-9_-] + '.' + 43
+# [A-Za-z0-9_-], 94 characters. No real value is cited or copied; every
+# literal in tests and corpus is synthetic.
+#
+# BOTH GUARDS REFUSE [A-Za-z0-9_-], so a token is never carved out of a
+# longer identifier (e.g. the 'ory_at_' tail of 'factory_at_...') and a
+# segment one character too long matches nothing. The short-lived
+# authorization code ('ory_ac_') is deliberately NOT matched; neither are
+# JWT-strategy access tokens, which carry no prefix.
+#
+# Severity high: an access token authorizes API calls as the user/client
+# until it expires; a refresh token mints new access tokens until revoked.
+
+ORY_OAUTH2_TOKEN = SecretPattern(
+    id="ory_oauth2_token",
+    name="Ory OAuth2 Access / Refresh Token",
+    description=(
+        "Ory (Hydra / Ory Network) opaque OAuth2 token — the literal 'ory_at_'"
+        " (access token) or 'ory_rt_' (refresh token) prefix, then a 43-character"
+        " base64url random key, a '.', and a 43-character base64url HMAC"
+        " signature. An access token authorizes API calls until it expires; a"
+        " refresh token mints new access tokens until it is revoked."
+    ),
+    provider="ory",
+    severity="high",
+    # Prefixes per Ory's token-formats page; the 43 '.' 43 base64url body per
+    # Ory Hydra (Apache-2.0) fosite/token/hmac/hmacsha.go (32-byte key,
+    # HMAC-SHA512/256 signature, RawURLEncoding) with fositex/config.go
+    # GetTokenEntropy() = 32. Guards, confidence and test values are ours.
+    # Source: https://www.ory.com/docs/security-compliance/token-formats
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>ory_(?:at|rt)_[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # exact prefix plus the fixed 43 '.' 43 layout carries the precision
+    context_keywords=[
+        "ory",
+        "hydra",
+        "access_token",
+        "refresh_token",
+        "Bearer",
+        "oauth2",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render these
+        # tokens. confidence_base 0.95 sits above the 0.85 FP-wordlist gate,
+        # so they are pinned here and land at ~0.15.
+        "ory_" + kind + "_" + fill * 43 + "." + fill * 43
+        for kind in ("at", "rt")
+        for fill in ("x", "X", "0", "A")
+    },
+    recommendation=(
+        "Revoke the token through Ory's OAuth2 revocation endpoint"
+        " (POST /oauth2/revoke) or the admin API (revoke the client's or"
+        " subject's consent sessions), which also invalidates the refresh-token"
+        " chain. Review API activity performed with the token during the"
+        " exposure window and find where it leaked: OAuth2 tokens belong in"
+        " client memory or a secure store, never in logs, source code or"
+        " shared configs."
+    ),
+    tags=["identity", "ory", "hydra", "oauth2"],
+)
+
+
+
 
 register(
     ATLASSIAN_API_TOKEN,
@@ -1585,4 +1669,8 @@ register(
     # 2026-09-27 — Ory session token ('ory_st_' + 32 alnum; prefix from the
     # vendor's token-formats page, body from Ory Kratos session.go).
     ORY_SESSION_TOKEN,
+    # 2026-10-05 — Ory OAuth2 access / refresh token ('ory_at_' / 'ory_rt_' +
+    # 43 base64url '.' 43 base64url; prefixes from the vendor's token-formats
+    # page, body from Ory Hydra's fosite HMAC-SHA strategy).
+    ORY_OAUTH2_TOKEN,
 )
