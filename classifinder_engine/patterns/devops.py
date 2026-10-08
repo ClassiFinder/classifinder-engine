@@ -3057,6 +3057,164 @@ CHIEF_TOOLS_ACCESS_TOKEN = SecretPattern(
 
 
 
+# ===================================================
+# FLAGSMITH SERVER-SIDE ENVIRONMENT KEY — 'ser.' (2026-10-05)
+# ===================================================
+
+# Flagsmith (open-source feature flags / remote config) issues two keys per
+# environment. The client-side key is a bare shortuuid, public by design and
+# NOT matched (nothing anchors it). The server-side key is the secret one: it
+# lets a server-side SDK run local evaluation, which downloads the whole
+# environment document — every flag, segment rule and identity override.
+#
+# THE FORMAT IS THE VENDOR'S OWN GENERATOR. Flagsmith's BSD-3-licensed API
+# defines SERVER_API_KEY_PREFIX = "ser." and generate_server_api_key()
+# returns that prefix + create_hash(), which is shortuuid.uuid(): a UUID
+# encoded in shortuuid's default 57-character alphabet (digits 2-9 and
+# letters without I, O and l), always padded to 22 characters. The key is
+# therefore exactly 26 characters.
+#
+# 'ser.' IS A SHORT PREFIX THAT ENDS ORDINARY WORDS ('user.', 'parser.',
+# 'browser.'), so the left guard also refuses '.' and '-': a dotted attribute
+# path never matches. The body must be exactly 22 characters of the base57
+# alphabet — an identifier carrying 0, 1, I, O, l or '_' fails — and the
+# right guard means a 23rd character matches nothing. A Shannon-entropy floor
+# of 3.5 bits (the minimum seen over 100,000 generated keys) prices
+# repetitive, word-like bodies down. confidence_base 0.85 sits one notch
+# under the LaunchDarkly 'sdk-' key because the prefix is weaker.
+#
+# Severity medium: read access to one environment's flag configuration and
+# identity data; it cannot change flags or reach the admin API.
+
+FLAGSMITH_SERVER_SIDE_ENVIRONMENT_KEY = SecretPattern(
+    id="flagsmith_server_side_environment_key",
+    name="Flagsmith Server-side Environment Key",
+    description=(
+        "Flagsmith server-side environment key — the literal 'ser.' prefix"
+        " followed by a 22-character shortuuid (base57), 26 characters in"
+        " total. Lets a server-side SDK download the environment's full flag,"
+        " segment and identity-override document."
+    ),
+    provider="flagsmith",
+    severity="medium",
+    # SERVER_API_KEY_PREFIX 'ser.' + create_hash() (= shortuuid.uuid(), 22
+    # chars of the default base57 alphabet) from the vendor's own
+    # generate_server_api_key(); usage per
+    # https://docs.flagsmith.com/integrating-with-flagsmith/sdks/server-side
+    # Guards, confidence, entropy floor and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/Flagsmith/flagsmith/blob/main/api/environments/api_keys.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_.-])"
+        r"(?P<secret>ser\.[2-9A-HJ-NP-Za-km-z]{22})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=3.5,  # real keys measure >= 3.5 bits; word-like bodies fall below
+    context_keywords=[
+        "flagsmith",
+        "FLAGSMITH_SERVER_KEY",
+        "FLAGSMITH_ENVIRONMENT_KEY",
+        "environment_key",
+        "environmentKey",
+        "X-Environment-Key",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key ('2' is shortuuid's padding character). Built by concatenation
+        # so no contiguous key-shaped literal sits in source.
+        "se" + "r." + "x" * 22,
+        "se" + "r." + "X" * 22,
+        "se" + "r." + "2" * 22,
+    },
+    recommendation=(
+        "Delete this server-side environment key in Flagsmith (Environment"
+        " settings > Keys > Server-side Environment Keys), create a"
+        " replacement and update every service that reads it. A server-side"
+        " key exposes the environment's entire flag configuration, segment"
+        " rules and identity overrides, so never ship it to a browser or"
+        " mobile app — client code uses the public client-side key. Purge the"
+        " key from repository history."
+    ),
+    tags=["devops", "flagsmith", "feature-flag", "sdk"],
+)
+
+
+# ===================================================
+# IONIC APPFLOW PERSONAL ACCESS TOKEN — 'ion_' (2026-10-07)
+# ===================================================
+
+# Ionic (Appflow cloud builds, Portals and the Ionic CLI) issues personal
+# access tokens that authenticate the CLI and CI jobs as the user, usually
+# through the IONIC_TOKEN environment variable. Ionic's own Portals docs say
+# the token "follows the format of ion_XXXXXXXXXXXXX"; the docs do not state
+# the body width or alphabet.
+#
+# WIDTH AND ALPHABET ARE NOT VENDOR-STATED. Exactly 42 [A-Za-z0-9] comes from
+# the Betterleaks (MIT) rule 'ionic-personal-access-token' and agrees with
+# the independent Kingfisher rule 'kingfisher.ionic.1' and with the widths
+# measured on public values.
+#
+# 'ion_' is a SHORT prefix and a common identifier tail ('version_',
+# 'action_', 'permission_'), so the left guard refuses [A-Za-z0-9_-] and the
+# right guard refuses the same set: a 43rd body character matches nothing
+# rather than being truncated. Because the prefix is short, confidence sits at
+# 0.90 — below the 0.95 tier for long vendor prefixes, still above the 0.85
+# FP-wordlist gate so a real body containing 'test' is not sunk.
+#
+# Severity high: the token acts as the user across their Appflow apps
+# (builds, deploys, signing credentials) and Portals registry access.
+
+IONIC_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="ionic_personal_access_token",
+    name="Ionic Appflow Personal Access Token",
+    description=(
+        "Ionic Appflow / Portals personal access token — the literal 'ion_'"
+        " prefix followed by 42 alphanumerics. Authenticates the Ionic CLI and"
+        " CI jobs (usually via IONIC_TOKEN) as the user who created it."
+    ),
+    provider="ionic",
+    severity="high",
+    # Prefix 'ion_' per the vendor's own Portals CLI docs ("follows the format
+    # of ion_XXXXXXXXXXXXX", used as IONIC_TOKEN). Width {42} and charset per
+    # the Betterleaks (MIT) rule ionic-personal-access-token. Guards,
+    # confidence and known_test_values are ClassiFinder's own.
+    # Source: https://ionic.io/docs/portals/cli/configuration
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>ion_[A-Za-z0-9]{42})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "ionic",
+        "IONIC_TOKEN",
+        "appflow",
+        "portals",
+        "ionic.io",
+        "personal access token",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # token. Built by concatenation so no contiguous token-shaped literal
+        # sits in source.
+        "io" + "n_" + "x" * 42,
+        "io" + "n_" + "X" * 42,
+        "io" + "n_" + "0" * 42,
+    },
+    recommendation=(
+        "Delete this personal access token in the Ionic dashboard (Personal"
+        " Settings > Personal Access Tokens), create a replacement and update"
+        " every CI secret or machine that sets IONIC_TOKEN. Review recent"
+        " Appflow builds and deploys for activity you do not recognise, store"
+        " the token in a secrets manager and purge it from repository history."
+    ),
+    tags=["devops", "ionic", "appflow", "ci-cd", "mobile"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3157,4 +3315,10 @@ register(
     # Tools access token (ctp_/ctt_/cto_/ctr_ + 36-248 base62).
     CONFIGCAT_SDK_KEY,
     CHIEF_TOOLS_ACCESS_TOKEN,
+    # 2026-10-05 — Flagsmith server-side environment key ('ser.' + 22
+    # shortuuid base57; from the vendor's own generate_server_api_key()).
+    FLAGSMITH_SERVER_SIDE_ENVIRONMENT_KEY,
+    # 2026-10-07 — Ionic Appflow personal access token ('ion_' + 42 base62;
+    # prefix per the vendor's Portals docs, width per Betterleaks, MIT).
+    IONIC_PERSONAL_ACCESS_TOKEN,
 )
