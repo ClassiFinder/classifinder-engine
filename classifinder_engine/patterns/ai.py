@@ -1142,6 +1142,77 @@ HACKCLUB_AI_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# MINIMAX API KEY — 'sk-api-' pay-as-you-go key (2026-10-09)
+# ===================================================
+
+# MiniMax (MiniMax-M2 / abab / speech / video models, platform.minimax.io)
+# authenticates its OpenAI- and Anthropic-compatible APIs with a Bearer API
+# key. Pay-as-you-go keys start with 'sk-api-'; Token Plan (subscription)
+# keys start with 'sk-cp-' and are NOT matched here (their width has not been
+# measured yet).
+#
+# THE WIDTH IS NOT VENDOR-DOCUMENTED. MiniMax's own docs show the 'sk-cp-'
+# Token Plan prefix only; the 'sk-api-' pay-as-you-go prefix is stated by
+# secondary integrator docs. Exactly 119 [A-Za-z0-9_-] after the prefix is
+# taken from the Betterleaks (MIT) rule 'minimax-api-key', corroborated by a
+# narrow measurement of public values (the measured sources are deliberately
+# not named because they hold live keys).
+#
+# Disjoint from openai_api_key: 'sk-(?:proj-)?[a-zA-Z0-9]{32,}' cannot cross
+# the hyphen after 'sk-api'. Guards refuse [A-Za-z0-9_-] on both sides, so a
+# 120th character matches nothing rather than being truncated. confidence
+# 0.90 (not the 0.95 long-prefix tier: the width is third-party, the prefix
+# short) with no entropy gate — still above the 0.85 FP-wordlist gate, so a
+# random body that happens to contain 'test' / 'demo' is not sunk.
+
+MINIMAX_API_KEY = SecretPattern(
+    id="minimax_api_key",
+    name="MiniMax API Key",
+    description=(
+        "MiniMax pay-as-you-go API key — 'sk-api-' followed by 119 base64url"
+        " characters. Grants access to MiniMax's text, speech, image and video"
+        " model APIs, billed to the account."
+    ),
+    provider="minimax",
+    severity="high",
+    # MiniMax's docs show the 'sk-cp-' Token Plan sibling; 'sk-api-' (pay-as-
+    # you-go) per integrator docs; width 119 per the Betterleaks (MIT) rule
+    # minimax-api-key. Guards, confidence and test values are ClassiFinder's.
+    # Source: https://platform.minimax.io/docs/token-plan/other-tools
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>sk-api-[A-Za-z0-9_-]{119})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # 119-char random body — the prefix + fixed width carry the precision
+    context_keywords=[
+        "minimax",
+        "MINIMAX_API_KEY",
+        "api.minimax.io",
+        "api.minimaxi.com",
+        "minimax.chat",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key. 0.90 sits above the 0.85 FP-wordlist gate, so they are pinned
+        # here (~0.15). Built by concatenation: no contiguous key literal.
+        "sk-" + "api-" + fill * 119
+        for fill in ("x", "X", "0", "a")
+    },
+    recommendation=(
+        "Delete this key in the MiniMax console (platform.minimax.io, Account >"
+        " API Keys) and create a replacement, then update every client and CI"
+        " secret that uses it. Review usage and billing for requests you did not"
+        " make during the exposure window. Store the key in a secrets manager and"
+        " never ship it to a browser or mobile client."
+    ),
+    tags=["ai", "minimax", "llm"],
+)
+
+
 
 
 register(
@@ -1181,4 +1252,7 @@ register(
     # 2026-10-05 — Hack Club AI API key ('sk-hc-v1-' + 64 lowercase hex;
     # from the vendor's own key generator). Disjoint from openai_api_key.
     HACKCLUB_AI_API_KEY,
+    # 2026-10-09 — MiniMax pay-as-you-go API key ('sk-api-' + 119
+    # base64url; width per Betterleaks MIT). Disjoint from openai_api_key.
+    MINIMAX_API_KEY,
 )
