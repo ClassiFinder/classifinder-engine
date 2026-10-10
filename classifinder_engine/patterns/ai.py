@@ -1143,6 +1143,87 @@ HACKCLUB_AI_API_KEY = SecretPattern(
 
 
 
+# ===================================================
+# TOGETHER AI API KEY — 'tgp_v1_' (2026-10-10)
+# ===================================================
+# Together AI (together.ai — hosted open-model inference, fine-tuning and GPU
+# clusters behind an OpenAI-compatible API at api.together.xyz) API key: the
+# literal 'tgp_v1_' prefix followed by exactly 43 base64url characters
+# ([A-Za-z0-9_-]), 50 in total. 43 is unpadded base64url of 32 bytes.
+#
+# HIGH VERIFICATION BURDEN: an earlier Together pattern was removed as
+# non-existent because its format was guessed. This one is not:
+# - PREFIX, VENDOR-ATTESTED: Together's own Apache-2.0 SDK
+#   (togethercomputer/together-py, src/together/lib/cli/_track_cli.py)
+#   redacts r"tgp_[a-z0-9_-]+" from CLI telemetry, and its unit test
+#   (tests/unit/test_cli_telemetry.py) asserts a 'tgp_v1_...' literal is
+#   redacted. Read for the format fact only; no code copied.
+# - WIDTH AND ALPHABET, THIRD-PARTY: the Betterleaks (MIT) rule
+#   togetherai-api-key is tgp_v1_[A-Za-z0-9_-]{43}; its own false-positive
+#   fixtures reject a 36-character body and a 'tgp_v2_' prefix. Together's
+#   public docs still show only a placeholder, so the 43 is not a vendor
+#   statement.
+#
+# 'tgp_v1_' is a 7-character literal with a version segment, so the pattern
+# is structurally anchored: confidence 0.90 with no entropy gate (below the
+# 0.95 long-prefix tier because the width is third-party; above the 0.85
+# FP-wordlist gate). Guards refuse [A-Za-z0-9_-] on both sides: a 44th
+# character matches nothing rather than being truncated.
+#
+# Severity high: the key spends the owner's billed inference, fine-tuning
+# and dedicated-endpoint quota.
+
+TOGETHER_API_KEY = SecretPattern(
+    id="together_api_key",
+    name="Together AI API Key",
+    description=(
+        "Together AI API key — the literal 'tgp_v1_' prefix followed by exactly"
+        " 43 base64url characters. Sent as a Bearer key to api.together.xyz;"
+        " whoever holds it spends the owner's inference and fine-tuning quota."
+    ),
+    provider="together",
+    severity="high",
+    # Prefix per Together's own SDK (together-py _track_cli.py redacts
+    # 'tgp_...'; its unit test uses a 'tgp_v1_' literal). The 43-character
+    # base64url width is from the Betterleaks (MIT) rule togetherai-api-key.
+    # Guards, confidence and known_test_values are ClassiFinder's own.
+    # Source: https://github.com/betterleaks/betterleaks/blob/main/cmd/generate/config/rules/togetherai.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>tgp_v1_[A-Za-z0-9_-]{43})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # base64url body ~5.4 bits/char — the versioned prefix carries the precision
+    context_keywords=[
+        "together",
+        "together.ai",
+        "together.xyz",
+        "TOGETHER_API_KEY",
+        "Together(",
+        "Bearer",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key. 0.90 sits above the 0.85 FP-wordlist gate, so they are pinned
+        # (~0.15). Built by concatenation so no contiguous key-shaped literal
+        # sits in source.
+        "tg" + "p_v1_" + fill * 43
+        for fill in ("x", "X", "0", "a")
+    },
+    recommendation=(
+        "Revoke this key in the Together AI dashboard (Settings > API Keys)"
+        " and create a replacement, then update every client, notebook and CI"
+        " secret that sends it as TOGETHER_API_KEY. Review usage and billing"
+        " for inference, fine-tuning jobs and dedicated endpoints you did not"
+        " start during the exposure window."
+    ),
+    tags=["ai", "together", "llm", "inference"],
+)
+
+
+
 
 register(
     OPENAI_API_KEY,
@@ -1181,4 +1262,7 @@ register(
     # 2026-10-05 — Hack Club AI API key ('sk-hc-v1-' + 64 lowercase hex;
     # from the vendor's own key generator). Disjoint from openai_api_key.
     HACKCLUB_AI_API_KEY,
+    # 2026-10-10 — Together AI API key ('tgp_v1_' + 43 base64url; prefix per
+    # the vendor's own SDK, width per the Betterleaks (MIT) rule).
+    TOGETHER_API_KEY,
 )
