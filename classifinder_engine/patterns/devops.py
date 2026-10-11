@@ -3215,6 +3215,81 @@ IONIC_PERSONAL_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# WORKATO DEVELOPER API TOKEN — 'wrka[<region>]-' + JWT (2026-10-11)
+# ===================================================
+# Workato (iPaaS / enterprise automation) Developer API client tokens are a
+# signed JWT behind a literal 'wrka' marker, an optional two-letter
+# lowercase data-centre code and a hyphen: 'wrka-' / 'wrkaus-' (US), 'wrkaeu-',
+# 'wrkajp-', 'wrkasg-', 'wrkaau-' and so on. Workato's own Developer API
+# reference shows the token response value as "wrkaus-eyJhbGciOiJSUz..."
+# (an RS256 JWT, so the signature is ~342 base64url characters).
+#
+# Segment floors (header >= 8 after 'eyJ', payload >= 16, signature >= 64)
+# are from the Betterleaks (MIT) rule workato-developer-api-token.1; the
+# upper bounds, guards, confidence and known_test_values are ClassiFinder's
+# own.
+#
+# COLLISION: the generic jwt_token pattern fires on the 'eyJ...' body. This
+# span is wider (it includes the 'wrka..-' marker) and the provider is
+# non-generic, so dedup keeps this finding and drops jwt_token. Guards refuse
+# [A-Za-z0-9_-] on both sides so the marker cannot be carved out of a longer
+# identifier.
+#
+# Severity high: the token calls the Workato Developer API with the API
+# client's role — recipes, connections, lookup tables and deployments.
+
+WORKATO_DEVELOPER_API_TOKEN = SecretPattern(
+    id="workato_developer_api_token",
+    name="Workato Developer API Token",
+    description=(
+        "Workato Developer API client token — 'wrka', an optional two-letter"
+        " data-centre code (e.g. 'eu', 'jp'), a hyphen and a signed JWT"
+        " (eyJ... header.payload.signature). Sent as a Bearer token to the"
+        " Workato Developer API with the API client's role."
+    ),
+    provider="workato",
+    severity="high",
+    # Prefix 'wrka<region>-' per Workato's own Developer API reference (token
+    # response example "wrkaus-eyJhbGciOiJSUz..."). Segment floors per the
+    # Betterleaks (MIT) rule workato-developer-api-token.1.
+    # Source: https://docs.workato.com/en/workato-api/api-client-apis.html
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>wrka(?:[a-z]{2})?-"
+        r"eyJ[A-Za-z0-9_-]{8,500}"  # JWT header (base64url)
+        r"\.[A-Za-z0-9_-]{16,2000}"  # JWT payload (base64url)
+        r"\.[A-Za-z0-9_-]{64,1000})"  # JWT signature (base64url)
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # 'wrka..-eyJ' marker + three JWT segments carry the precision
+    context_keywords=[
+        "workato",
+        "WORKATO_API_TOKEN",
+        "workato.com",
+        "api client",
+        "Bearer",
+    ],
+    known_test_values={
+        # Single-character masks at the minimum segment widths — how redacted
+        # configs render this token. Built by concatenation so no contiguous
+        # token-shaped literal sits in source.
+        "wr" + "ka-" + "eyJ" + fill * 8 + "." + fill * 16 + "." + fill * 64
+        for fill in ("x", "X", "0")
+    },
+    recommendation=(
+        "Regenerate this API client's token in Workato (Workspace admin >"
+        " API clients > Regenerate token) so the old token stops working, then"
+        " update every CI secret or service that sends it. Review the API"
+        " client's role and recent recipe, connection and deployment changes"
+        " for activity you do not recognise."
+    ),
+    tags=["devops", "workato", "ipaas", "automation", "jwt"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3321,4 +3396,7 @@ register(
     # 2026-10-07 — Ionic Appflow personal access token ('ion_' + 42 base62;
     # prefix per the vendor's Portals docs, width per Betterleaks, MIT).
     IONIC_PERSONAL_ACCESS_TOKEN,
+    # 2026-10-11 — Workato Developer API token ('wrka' + optional region +
+    # '-' + JWT; prefix per Workato's own API docs). Wins dedup over jwt_token.
+    WORKATO_DEVELOPER_API_TOKEN,
 )
