@@ -1078,6 +1078,74 @@ DATADOG_APP_KEY = SecretPattern(
     tags=["monitoring", "datadog"],
 )
 
+# ===================================================
+# DATADOG IDENTIFIABLE APPLICATION KEY — 'ddapp_' + 34 (2026-10-12)
+# ===================================================
+# Datadog's newer "identifiable" application keys carry a literal 'ddapp_'
+# prefix followed by exactly 34 characters, alongside the legacy 40-hex form
+# (DATADOG_APP_KEY above, which stays context-gated). Three Datadog-owned
+# sources agree on the width: the agent's private-action-runner validator
+# ^([a-f0-9]{40}|ddapp_[a-zA-Z0-9]{34})$, the CloudFormation quick-start
+# AllowedPattern (same alternation, "support identifiable app keys (ddapp_
+# prefix)" in its 4.5.2 changelog) and the agent's log scrubber
+# ddapp_[a-zA-Z0-9_]{30}([a-zA-Z0-9_]{4}), which also admits '_' — so the
+# body alphabet here is [A-Za-z0-9_].
+#
+# Guards refuse [A-Za-z0-9_] on both sides so the prefix cannot be carved out
+# of a longer identifier and a 35th character matches nothing rather than
+# being truncated. The prefix is self-identifying, so no context gate and no
+# entropy gate; single-character masks are known_test_values.
+#
+# Severity high: an application key paired with an API key carries the
+# creating user's permissions across the Datadog API.
+
+DATADOG_APP_KEY_DDAPP = SecretPattern(
+    id="datadog_app_key_ddapp",
+    name="Datadog Application Key (ddapp_ prefixed)",
+    description=(
+        "Datadog identifiable application key — the literal 'ddapp_' prefix"
+        " followed by exactly 34 alphanumeric/underscore characters. Used with"
+        " a Datadog API key (DD-APPLICATION-KEY header) to call the Datadog API"
+        " with the creating user's permissions."
+    ),
+    provider="datadog",
+    severity="high",
+    # Format per Datadog's own agent validator and log scrubber
+    # (pkg/util/scrubber/default.go) and CloudFormation AllowedPattern.
+    # Source: https://github.com/DataDog/datadog-agent/blob/main/pkg/privateactionrunner/util/keys.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>ddapp_[A-Za-z0-9_]{34})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # 'ddapp_' prefix + fixed 34 width carry the precision
+    context_keywords=[
+        "datadog",
+        "DD_APP_KEY",
+        "DATADOG_APP_KEY",
+        "DD-APPLICATION-KEY",
+        "app_key",
+        "application_key",
+    ],
+    known_test_values={
+        # Single-character masks — how redacted configs render this key.
+        # Built by concatenation so no contiguous key-shaped literal sits in
+        # source.
+        "dd" + "app_" + fill * 34
+        for fill in ("x", "X", "0", "a")
+    },
+    recommendation=(
+        "Revoke this application key in Datadog (Organization Settings >"
+        " Application Keys, or Personal Settings > Application Keys) and create"
+        " a new one, then update every integration, Terraform provider or CI"
+        " secret that uses it. Rotate the paired API key too if it was exposed"
+        " alongside, and review the audit trail for unexpected API activity."
+    ),
+    tags=["monitoring", "datadog"],
+)
+
 
 # ===================================================
 # PAGERDUTY
@@ -2780,4 +2848,7 @@ register(
     # {"miro.origin":"<region>"} + '_' + base64url tail; shape per the
     # vendor's own API-reference response example).
     MIRO_OAUTH_ACCESS_TOKEN,
+    # 2026-10-12 — Datadog identifiable application key ('ddapp_' + 34
+    # [A-Za-z0-9_]; format per Datadog's own agent validator / scrubber).
+    DATADOG_APP_KEY_DDAPP,
 )
