@@ -366,6 +366,64 @@ POSTMAN_API_TOKEN = SecretPattern(
     tags=["data", "postman", "api-tooling"],
 )
 
+# ===================================================
+# POSTMAN COLLECTION ACCESS KEY — 'PMAT-' (2026-10-13)
+# ===================================================
+# Postman collection access key: the literal 'PMAT-' prefix followed by exactly
+# 26 Crockford base32 characters (a ULID: [0-9A-HJKMNP-TV-Z], no I/L/O/U), 31
+# in total. Grants read-only access to one collection through the Postman API
+# (e.g. Run-in-Postman / ?access_key= links). Unused keys expire after 60 days;
+# each use extends the expiry by another 60 days.
+# - PREFIX + WIDTH, VENDOR-DOCUMENTED: Postman's API reference "Get collection
+#   access keys" shows the masked example tokens PMAT- + 22 '*' + 4 visible
+#   characters (43BR, 51FZ), i.e. a 26-character body.
+# - ALPHABET: the vendor page does not name it; Crockford base32 matches the
+#   visible characters and ULID width, and every public value measured used it.
+#   The measured sources are not named because they hold live keys.
+# Disjoint from postman_api_token (PMAK- + hex). Guards, confidence and test
+# values are ClassiFinder's own.
+POSTMAN_COLLECTION_ACCESS_KEY = SecretPattern(
+    id="postman_collection_access_key",
+    name="Postman Collection Access Key",
+    description=(
+        "Postman collection access key — 'PMAT-' followed by 26 Crockford base32"
+        " characters (ULID). Grants read-only access to a Postman collection via"
+        " the Postman API."
+    ),
+    provider="postman",
+    severity="medium",
+    # Source: https://learning.postman.com/api-docs/api-reference/collection-access-keys/get-collection-access-keys
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>PMAT-[0-9A-HJKMNP-TV-Z]{26})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # prefix + fixed-width Crockford body carry the precision
+    context_keywords=[
+        "postman",
+        "access_key",
+        "collection",
+        "api.getpostman.com",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key. 0.90 sits above the 0.85 FP-wordlist gate, so they are pinned
+        # here (~0.15). Built by concatenation: no contiguous key literal.
+        "PM" + "AT-" + fill * 26
+        for fill in ("X", "0", "A")
+    },
+    recommendation=(
+        "Revoke this collection access key in Postman (Settings > API keys >"
+        " Collection access keys, or DELETE /collection-access-keys/{keyId} via"
+        " the Postman API), then generate a new one only if the collection must"
+        " stay shareable. Review the collection for secrets in variables, auth"
+        " helpers and example responses, since anyone holding the key can read it."
+    ),
+    tags=["data", "postman", "api-tooling"],
+)
+
 
 # ===================================================
 # ALGOLIA
@@ -1402,6 +1460,8 @@ register(
     POSTHOG_OAUTH_ACCESS_TOKEN,
     POSTHOG_OAUTH_REFRESH_TOKEN,
     POSTMAN_API_TOKEN,
+    # 2026-10-13 — Postman collection access key (PMAT-)
+    POSTMAN_COLLECTION_ACCESS_KEY,
     ALGOLIA_API_KEY,
     CONTENTFUL_DELIVERY_API_TOKEN,
     PINECONE_API_KEY,
