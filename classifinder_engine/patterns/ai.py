@@ -7,8 +7,9 @@ These are critical severity -- a leaked key gives direct access to billable
 API usage and potentially sensitive model interactions.
 
 Pattern design notes:
-- OpenAI keys use sk- prefix followed by 48+ alphanumeric chars. Project-scoped
-  keys use sk-proj- prefix. Both formats are detected.
+- OpenAI keys use sk- prefix. Legacy keys are alphanumeric; current project
+  (sk-proj-), service-account (sk-svcacct-) and admin (sk-admin-) keys embed
+  T3BlbkFJ and contain - and _ in the body. All formats are detected.
 - Anthropic keys use sk-ant- prefix, highly distinctive.
 - Cohere keys are 40-char alphanumeric strings with no reliable prefix, so we
   rely on context keywords (COHERE_API_KEY, cohere, etc.) for confidence.
@@ -26,15 +27,21 @@ OPENAI_API_KEY = SecretPattern(
     id="openai_api_key",
     name="OpenAI API Key",
     description=(
-        "OpenAI API key starting with sk- prefix. Grants access to GPT models,"
-        " DALL-E, embeddings, and other OpenAI services."
+        "OpenAI API key starting with sk- prefix (legacy, sk-proj-, sk-svcacct-,"
+        " sk-admin-). Grants access to GPT models, DALL-E, embeddings, and other"
+        " OpenAI services; admin keys also manage org keys, users, and billing."
     ),
     provider="openai",
     severity="critical",
-    # Independently authored — sk- prefix derived from OpenAI API documentation
+    # Independently authored — sk- prefix derived from OpenAI API documentation.
+    # Branch 1: current keys embed the literal T3BlbkFJ (base64 "OpenAI") and use a
+    # url-safe body ([A-Za-z0-9_-]), with optional proj-/svcacct-/admin- scope.
+    # Format per https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/openai.go (MIT)
+    # Branch 2: legacy alphanumeric sk- / sk-proj- keys.
     regex=re.compile(
-        r"(?P<secret>sk-(?:proj-)?[a-zA-Z0-9]{32,})"
-        r"(?![a-zA-Z0-9])",
+        r"(?P<secret>sk-(?:(?:proj|svcacct|admin)-)?[A-Za-z0-9_-]{20,100}T3BlbkFJ"
+        r"[A-Za-z0-9_-]{20,100}(?![A-Za-z0-9_-])"
+        r"|sk-(?:proj-)?[a-zA-Z0-9]{32,}(?![a-zA-Z0-9]))",
         re.ASCII,
     ),
     confidence_base=0.90,
