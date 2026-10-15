@@ -2760,6 +2760,69 @@ MIRO_OAUTH_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# MAILERSEND API TOKEN — 'mlsn.' (2026-10-15)
+# ===================================================
+# MailerSend (transactional email) API token: the literal 'mlsn.' prefix
+# followed by exactly 64 lowercase hex characters, 69 in total. Sent as a
+# Bearer token to api.mailersend.com; depending on its scopes it can send
+# email, read activity and manage domains, templates, webhooks and other
+# tokens.
+# - PREFIX, VENDOR-DOCUMENTED: MailerSend's own CLI docs set
+#   MAILERSEND_API_TOKEN="mlsn.your_token_here".
+# - WIDTH + ALPHABET, MEASURED: the vendor does not publish the body. Every
+#   public value measured was exactly 64 lowercase hex characters; the
+#   measured sources are not named because they hold live keys. A looser
+#   third-party range ([A-Za-z0-9]{30,100}) was deliberately not adopted.
+# Guards refuse [A-Za-z0-9_-] on both sides, so a 65th hex character matches
+# nothing rather than being truncated. 'mlsn' is deliberately not a context
+# keyword (it would self-match the token and inflate the base). Guards,
+# confidence and test values are ClassiFinder's own.
+
+MAILERSEND_API_TOKEN = SecretPattern(
+    id="mailersend_api_token",
+    name="MailerSend API Token",
+    description=(
+        "MailerSend API token — 'mlsn.' followed by 64 lowercase hex"
+        " characters. Grants access to the MailerSend API: sending email and,"
+        " depending on scopes, managing domains, templates, webhooks and tokens."
+    ),
+    provider="mailersend",
+    severity="high",
+    # Source: https://developers.mailersend.com/tools/cli
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>mlsn\.[a-f0-9]{64})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # vendor prefix + fixed-width hex body carry the precision
+    context_keywords=[
+        "mailersend",
+        "MAILERSEND_API_TOKEN",
+        "MAILERSEND_API_KEY",
+        "api.mailersend.com",
+        "api_token",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # token. Pinned here (~0.15). Built by concatenation: no contiguous
+        # token literal sits in source.
+        "ml" + "sn." + fill * 64
+        for fill in ("0", "a", "f")
+    },
+    recommendation=(
+        "Delete this token in the MailerSend dashboard (Integrations > API"
+        " tokens, or per domain under Domains > API tokens), create a"
+        " replacement with only the scopes the service needs, and update every"
+        " deployment that uses it. Review recent email activity and domain,"
+        " webhook and token changes for misuse."
+    ),
+    tags=["comms", "mailersend", "email"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -2851,4 +2914,7 @@ register(
     # 2026-10-12 — Datadog identifiable application key ('ddapp_' + 34
     # [A-Za-z0-9_]; format per Datadog's own agent validator / scrubber).
     DATADOG_APP_KEY_DDAPP,
+    # 2026-10-15 — MailerSend API token ('mlsn.' + 64 lowercase hex; prefix
+    # from the vendor's own CLI docs, width measured on public samples).
+    MAILERSEND_API_TOKEN,
 )
