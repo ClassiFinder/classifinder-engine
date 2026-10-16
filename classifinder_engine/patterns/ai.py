@@ -1301,6 +1301,69 @@ TOGETHER_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# NVIDIA API KEY — 'nvapi-' (2026-10-16)
+# ===================================================
+# NVIDIA API key (build.nvidia.com / NGC / NIM): the literal 'nvapi-' prefix
+# followed by exactly 64 base64url characters. Sent as a Bearer key to
+# integrate.api.nvidia.com and other NVIDIA-hosted endpoints.
+# - PREFIX, VENDOR-DOCUMENTED: NVIDIA's own NeMo Retriever docs state that
+#   keys typically start with 'nvapi-' and show NVIDIA_API_KEY="nvapi-...";
+#   keys are generated at build.nvidia.com.
+# - WIDTH + ALPHABET, MEASURED: the vendor publishes only truncated
+#   placeholders. Every public value in a narrow single-prefix measurement
+#   (3 samples) was 64 characters of [A-Za-z0-9_-]; the measured sources are
+#   not named because they hold live keys. Thin evidence: re-measure the
+#   width if more samples turn up.
+#
+# The body may START with '-' or '_', so there is no \b after the prefix; the
+# lookbehind/lookahead guards refuse [A-Za-z0-9_-] on both sides, so a 65th
+# character matches nothing rather than being truncated. Confidence 0.90 with
+# no entropy gate (6-character vendor prefix; width is measured, not vendor
+# stated; above the 0.85 FP-wordlist gate). Severity high: the key spends the
+# owner's NVIDIA-hosted inference quota.
+
+NVIDIA_API_KEY = SecretPattern(
+    id="nvidia_api_key",
+    name="NVIDIA API Key",
+    description=(
+        "NVIDIA API key — the literal 'nvapi-' prefix followed by exactly 64"
+        " base64url characters. Authenticates to NVIDIA-hosted NIM / build.nvidia.com"
+        " endpoints; whoever holds it spends the owner's inference quota."
+    ),
+    provider="nvidia",
+    severity="high",
+    # Source: https://docs.nvidia.com/nemo/retriever/26.5.0/extraction/api-keys/
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>nvapi-[A-Za-z0-9_-]{64})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # base64url body ~5.4 bits/char — the vendor prefix carries the precision
+    context_keywords=[
+        "nvidia",
+        "NVIDIA_API_KEY",
+        "NGC_API_KEY",
+        "build.nvidia.com",
+        "integrate.api.nvidia.com",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key. 0.90 sits above the 0.85 FP-wordlist gate, so they are pinned
+        # (~0.15). Built by concatenation: no contiguous key literal sits in
+        # source (GitHub push protection).
+        "nv" + "api-" + fill * 64
+        for fill in ("x", "X", "0", "a")
+    },
+    recommendation=(
+        "Revoke this key at build.nvidia.com (profile > API Keys), generate a"
+        " replacement, and update every deployment that uses it. Review recent"
+        " usage for unexpected requests."
+    ),
+    tags=["ai", "nvidia", "llm"],
+)
 
 
 register(
@@ -1346,4 +1409,7 @@ register(
     # 2026-10-10 — Together AI API key ('tgp_v1_' + 43 base64url; prefix per
     # the vendor's own SDK, width per the Betterleaks (MIT) rule).
     TOGETHER_API_KEY,
+    # 2026-10-16 — NVIDIA API key ('nvapi-' + 64 base64url; prefix per
+    # NVIDIA's own docs, width measured on public samples).
+    NVIDIA_API_KEY,
 )
