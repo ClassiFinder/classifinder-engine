@@ -1365,6 +1365,71 @@ NVIDIA_API_KEY = SecretPattern(
     tags=["ai", "nvidia", "llm"],
 )
 
+# ===================================================
+# LLAMACLOUD / LLAMAPARSE API KEY — 'llx-' (2026-10-17)
+# ===================================================
+# LlamaCloud API key (LlamaParse, LlamaExtract, LlamaCloud indexes): the
+# literal 'llx-' prefix followed by exactly 48 alphanumeric characters. Sent
+# as a Bearer key to api.cloud.llamaindex.ai and read by the LlamaIndex SDKs
+# from LLAMA_CLOUD_API_KEY.
+# - PREFIX, VENDOR-DOCUMENTED: LlamaIndex's own LlamaParse API-key page and
+#   SDK quickstart show LlamaCloud(api_key="llx-...") and
+#   LLAMA_CLOUD_API_KEY="llx-...".
+# - WIDTH + ALPHABET, MEASURED: the vendor publishes only truncated
+#   placeholders. Every public value in a narrow single-prefix measurement
+#   (10 samples) was 48 characters of [A-Za-z0-9]; the measured sources are
+#   not named because they hold live keys.
+#
+# The lookbehind/lookahead guards refuse [A-Za-z0-9_-] on both sides, so a
+# 49th character matches nothing rather than being truncated, and 'llx-' is
+# never carved out of a longer identifier. Confidence 0.95 with no entropy
+# gate (vendor prefix plus fixed-width body). Severity high: the key spends
+# the owner's LlamaCloud parsing credits and reads every index and pipeline
+# in the project.
+
+LLAMACLOUD_API_KEY = SecretPattern(
+    id="llamacloud_api_key",
+    name="LlamaCloud / LlamaParse API Key",
+    description=(
+        "LlamaCloud API key (LlamaParse / LlamaExtract / LlamaIndex Cloud) — the"
+        " literal 'llx-' prefix followed by exactly 48 alphanumeric characters."
+        " Authenticates to api.cloud.llamaindex.ai; whoever holds it spends the"
+        " owner's parsing credits and can read the project's indexes and pipelines."
+    ),
+    provider="llamacloud",
+    severity="high",
+    # Source: https://developers.llamaindex.ai/llamaparse/general/api_key
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>llx-[A-Za-z0-9]{48})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # base62 body ~5.3 bits/char — the vendor prefix carries the precision
+    context_keywords=[
+        "llamacloud",
+        "llamaparse",
+        "llamaindex",
+        "LLAMA_CLOUD_API_KEY",
+        "api.cloud.llamaindex.ai",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key. 0.95 sits above the 0.85 FP-wordlist gate, so they are pinned
+        # (~0.15). Built by concatenation: no contiguous key literal sits in
+        # source (GitHub push protection).
+        "ll" + "x-" + fill * 48
+        for fill in ("x", "X", "0", "a")
+    },
+    recommendation=(
+        "Revoke this key in LlamaCloud (cloud.llamaindex.ai > API Keys), generate a"
+        " replacement, and update every deployment that uses it. Review recent"
+        " LlamaParse / LlamaExtract usage for unexpected jobs."
+    ),
+    tags=["ai", "llamacloud", "llamaindex", "llm"],
+)
+
 
 register(
     OPENAI_API_KEY,
@@ -1412,4 +1477,7 @@ register(
     # 2026-10-16 — NVIDIA API key ('nvapi-' + 64 base64url; prefix per
     # NVIDIA's own docs, width measured on public samples).
     NVIDIA_API_KEY,
+    # 2026-10-17 — LlamaCloud / LlamaParse API key ('llx-' + 48 alphanumeric;
+    # prefix per LlamaIndex's own docs, width measured on public samples).
+    LLAMACLOUD_API_KEY,
 )
