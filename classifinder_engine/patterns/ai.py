@@ -1430,6 +1430,80 @@ LLAMACLOUD_API_KEY = SecretPattern(
     tags=["ai", "llamacloud", "llamaindex", "llm"],
 )
 
+# ===================================================
+# CARTESIA API KEY — 'sk_car_' / 'sk_car_admin_' (2026-10-18)
+# ===================================================
+# Cartesia (Sonic text-to-speech / voice agents) API key: the literal
+# 'sk_car_' prefix, optionally followed by 'admin_' for an organization
+# admin key, then exactly 22 alphanumeric characters. Sent as X-API-Key or
+# a Bearer token to api.cartesia.ai and read by the Cartesia SDKs from
+# CARTESIA_API_KEY.
+# - PREFIXES, VENDOR-DOCUMENTED: Cartesia's own API-keys reference documents
+#   the admin key as 'sk_car_admin_...' (issued at play.cartesia.ai/keys/admin)
+#   and states that key IDs never start with 'sk_'; every other endpoint's
+#   Authorizations block reads "Cartesia API key (sk_car_...)".
+# - WIDTH + ALPHABET, MEASURED: the vendor publishes only truncated
+#   placeholders. Every public standard-key value in a narrow single-prefix
+#   measurement (13 samples, plus one truncated) was 22 characters of
+#   [A-Za-z0-9]; the measured sources are not named because they hold live
+#   keys. The ADMIN body width is UNMEASURED and assumed equal: an admin key
+#   of another width is missed (generic fallback at most), never mis-sliced,
+#   because '_' is outside the body alphabet.
+#
+# The lookbehind/lookahead guards refuse [A-Za-z0-9_-] on both sides, so a
+# 23rd character matches nothing rather than being truncated, and 'sk_car_'
+# is never carved out of a longer snake_case identifier (sk_car_model_id).
+# Confidence 0.95 with no entropy gate (vendor prefix plus fixed-width
+# body). Severity high: a standard key spends the owner's TTS / voice
+# credits; an admin key additionally manages every key in the organization.
+
+CARTESIA_API_KEY = SecretPattern(
+    id="cartesia_api_key",
+    name="Cartesia API Key",
+    description=(
+        "Cartesia API key (Sonic text-to-speech / voice agents) — the literal"
+        " 'sk_car_' prefix, optionally 'sk_car_admin_' for an organization admin"
+        " key, followed by exactly 22 alphanumeric characters. Authenticates to"
+        " api.cartesia.ai; whoever holds it spends the owner's TTS credits, and an"
+        " admin key can create, list and revoke every API key in the organization."
+    ),
+    provider="cartesia",
+    severity="high",
+    # Source: https://docs.cartesia.ai/api-reference/api-keys/get
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>sk_car_(?:admin_)?[A-Za-z0-9]{22})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # base62 body ~4.4 bits/char at 22 wide — the vendor prefix carries the precision
+    context_keywords=[
+        "cartesia",
+        "CARTESIA_API_KEY",
+        "CARTESIA_ADMIN_API_KEY",
+        "api.cartesia.ai",
+        "sonic",
+        "tts",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key, for both prefixes. 0.95 sits above the 0.85 FP-wordlist gate,
+        # so they are pinned (~0.15). Built by concatenation: no contiguous key
+        # literal sits in source (GitHub push protection).
+        "sk_" + "car_" + admin + fill * 22
+        for admin in ("", "admin_")
+        for fill in ("x", "X", "0", "a")
+    },
+    recommendation=(
+        "Revoke this key in Cartesia (play.cartesia.ai > API Keys, or > Admin Keys"
+        " for an sk_car_admin_ key), generate a replacement, and update every"
+        " deployment that uses it. If it was an admin key, audit the organization's"
+        " other API keys for ones you did not create."
+    ),
+    tags=["ai", "cartesia", "tts", "voice"],
+)
+
 
 register(
     OPENAI_API_KEY,
@@ -1480,4 +1554,8 @@ register(
     # 2026-10-17 — LlamaCloud / LlamaParse API key ('llx-' + 48 alphanumeric;
     # prefix per LlamaIndex's own docs, width measured on public samples).
     LLAMACLOUD_API_KEY,
+    # 2026-10-18 — Cartesia API key ('sk_car_' / 'sk_car_admin_' + 22
+    # alphanumeric; prefixes per Cartesia's own API reference, width measured
+    # on public samples).
+    CARTESIA_API_KEY,
 )
