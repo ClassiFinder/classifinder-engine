@@ -3935,6 +3935,164 @@ GOOGLE_GEMINI_AUTH_KEY = SecretPattern(
     tags=["cloud", "google", "gcp", "gemini", "ai"],
 )
 
+# ===================================================
+# AZURE COMMUNICATION SERVICES CONNECTION STRING (2026-10-19)
+# ===================================================
+
+# Azure Communication Services (ACS: SMS, email, voice / video calling, chat)
+# access key, in the connection-string form the Azure Portal's Keys blade and
+# 'az communication list-key' emit and the ACS SDKs read from
+# COMMUNICATION_SERVICES_CONNECTION_STRING:
+#
+#   endpoint=https://<resource>.communication.azure.com/;accesskey=<key>
+#
+# Regional resources carry one more host label
+# ('<resource>.unitedstates.communication.azure.com'). Microsoft Learn's ACS
+# quickstart documents that every resource has a primary / secondary pair
+# of access keys and matching connection strings. The key is a base64
+# string: 64 bytes, i.e. 86 characters plus '==', in every public value
+# measured; the vendor does not state a width, so a modest 80-88 range (plus
+# up to two pads) is accepted rather than an exact one, as for SignalR.
+#
+# THE CO-OCCURRENCE IS THE PATTERN, as for the SignalR connection string:
+# the literal '.communication.azure.com' endpoint host and an 'accesskey='
+# pair (any case) in the same unbroken string, with up to three other
+# 'key=value;' pairs between them. The 'endpoint=' name itself is not
+# required. The captured span is the key alone. Disjoint from
+# azure_signalr_connection_string (different host) and azure_storage_key
+# ('AccountKey=').
+
+AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING = SecretPattern(
+    id="azure_communication_services_connection_string",
+    name="Azure Communication Services Connection String",
+    description=(
+        "Azure Communication Services access key in connection-string form —"
+        " 'endpoint=https://<resource>.communication.azure.com/;accesskey=<base64"
+        " key>'. The access key signs every request to the resource: whoever"
+        " holds it can send SMS and email, place calls and mint user tokens"
+        " on the owner's bill."
+    ),
+    provider="azure",
+    severity="critical",
+    # Connection-string template per Microsoft Learn's ACS resource quickstart
+    # ("Access your connection strings and service endpoints").
+    # Source: https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/create-communication-resource
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"https://[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})?\.communication\.azure\.com"
+        r"(?::\d{1,5})?/?;"
+        r"(?:[A-Za-z]{1,20}=[^;\s" '"' r"'<>]{0,200};){0,3}?"
+        r"(?i:accesskey)=(?P<secret>[A-Za-z0-9+/]{80,88}={0,2})"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # two-literal structural anchor; a floor could only sink real keys
+    context_keywords=[
+        "communication",
+        "communication.azure.com",
+        "COMMUNICATION_SERVICES_CONNECTION_STRING",
+        "accesskey",
+        "acs",
+        "azure",
+    ],
+    known_test_values={
+        # Built by multiplication on purpose: a contiguous literal of this
+        # shape trips GitHub Push Protection on the public engine repository.
+        "A" * 86 + "==",
+        "a" * 86 + "==",
+        "X" * 86 + "==",
+        "x" * 86 + "==",
+        "0" * 86 + "==",
+    },
+    recommendation=(
+        "Regenerate the leaked key in the Azure Portal (Communication Services"
+        " > Keys > Regenerate primary/secondary key, or 'az communication"
+        " regenerate-key'), rolling the unused key first so services can cut"
+        " over, then update every COMMUNICATION_SERVICES_CONNECTION_STRING"
+        " setting. Review SMS, email and calling usage for the exposure window,"
+        " and prefer a managed identity / Entra ID where possible."
+    ),
+    tags=["cloud", "azure", "communication-services", "sms", "email"],
+)
+
+
+# ===================================================
+# AZURE WEB PUBSUB CONNECTION STRING (2026-10-19)
+# ===================================================
+
+# Azure Web PubSub access key, in the connection-string form Service
+# Connector sets as AZURE_WEBPUBSUB_CONNECTIONSTRING and the Portal's Keys
+# blade emits:
+#
+#   Endpoint=https://<name>.webpubsub.azure.com;AccessKey=<key>;Version=1.0;
+#
+# Microsoft Learn's Service Connector article for Web PubSub documents that
+# exact template. Web PubSub is SignalR's sibling service and uses the same
+# connection-string grammar (keys not case sensitive, optional Port /
+# Version pairs); real keys are 256-bit, i.e. 43 base64 characters plus one
+# '=' pad. As for SignalR, a modest 40-64 range (plus up to two pads) is
+# accepted rather than an exact width.
+#
+# THE CO-OCCURRENCE IS THE PATTERN: the literal '.webpubsub.azure.com'
+# endpoint host and an 'AccessKey=' pair in the same unbroken string, with up
+# to three other 'key=value;' pairs between them. The 'Endpoint=' name is
+# not required. Entra ID strings carry no key and cannot match. The captured
+# span is the key alone. Disjoint from azure_signalr_connection_string
+# (different host); tests pin both directions.
+
+AZURE_WEB_PUBSUB_CONNECTION_STRING = SecretPattern(
+    id="azure_web_pubsub_connection_string",
+    name="Azure Web PubSub Connection String",
+    description=(
+        "Azure Web PubSub access key in connection-string form —"
+        " 'Endpoint=https://<name>.webpubsub.azure.com;AccessKey=<base64 key>;"
+        "Version=1.0;'. The access key signs the client and service tokens the"
+        " resource accepts, so it acts as a root password for every hub."
+    ),
+    provider="azure",
+    severity="critical",
+    # Template per Microsoft Learn's "Integrate Azure Web PubSub using
+    # Service Connector" article (AZURE_WEBPUBSUB_CONNECTIONSTRING).
+    # Source: https://learn.microsoft.com/en-us/azure/service-connector/how-to-integrate-web-pubsub
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"https://[A-Za-z0-9-]{1,63}\.webpubsub\.azure\.com(?::\d{1,5})?/?;"
+        r"(?:[A-Za-z]{1,20}=[^;\s" '"' r"'<>]{0,200};){0,3}?"
+        r"(?i:accesskey)=(?P<secret>[A-Za-z0-9+/]{40,64}={0,2})"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # two-literal structural anchor; a floor could only sink real keys
+    context_keywords=[
+        "webpubsub",
+        "webpubsub.azure.com",
+        "AZURE_WEBPUBSUB_CONNECTIONSTRING",
+        "AccessKey",
+        "WebPubSubServiceClient",
+        "azure",
+    ],
+    known_test_values={
+        # Built by multiplication on purpose (GitHub Push Protection).
+        "A" * 43 + "=",
+        "a" * 43 + "=",
+        "X" * 43 + "=",
+        "x" * 43 + "=",
+        "0" * 43 + "=",
+    },
+    recommendation=(
+        "Regenerate the leaked key in the Azure Portal (Web PubSub > Keys >"
+        " Regenerate primary/secondary key, or 'az webpubsub key regenerate'),"
+        " rolling the unused key first, then update every"
+        " AZURE_WEBPUBSUB_CONNECTIONSTRING setting. Anyone holding the key can"
+        " mint tokens for every hub on the resource; prefer a managed identity"
+        " and disable local (access-key) auth where possible."
+    ),
+    tags=["cloud", "azure", "webpubsub", "realtime"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -4060,4 +4218,10 @@ register(
     # 53 total), also issued by GCP Express Mode. The successor to the
     # 'AIza' standard key gcp_api_key matches, not a variant of it.
     GOOGLE_GEMINI_AUTH_KEY,
+    # 2026-10-19 — Azure Communication Services connection string
+    # ('.communication.azure.com' + 'accesskey=' base64; per Microsoft Learn).
+    AZURE_COMMUNICATION_SERVICES_CONNECTION_STRING,
+    # 2026-10-19 — Azure Web PubSub connection string ('.webpubsub.azure.com'
+    # + 'AccessKey=' base64; template per Microsoft Learn's Service Connector page).
+    AZURE_WEB_PUBSUB_CONNECTION_STRING,
 )

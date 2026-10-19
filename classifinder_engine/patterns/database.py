@@ -1047,6 +1047,79 @@ WIREGUARD_PRIVATE_KEY = SecretPattern(
     tags=["database", "wireguard", "vpn", "private-key"],
 )
 
+# ===================================================
+# PRISMA ACCELERATE API KEY — prisma://accelerate.prisma-data.net (2026-10-19)
+# ===================================================
+# Prisma Accelerate / Prisma Postgres connection string:
+#
+#   prisma://accelerate.prisma-data.net/?api_key=<JWT>
+#   prisma+postgres://accelerate.prisma-data.net/?api_key=<JWT>
+#
+# Prisma's Accelerate getting-started guide documents the 'prisma://' URL
+# (read from DATABASE_URL at runtime, the api_key generated when Accelerate
+# is enabled) and states that Prisma Migrate and Introspection work with the
+# 'prisma+postgres://' form. The api_key value is a signed JWT
+# (eyJ... header.payload.signature) — it alone authorizes queries against
+# the project's database through the Accelerate proxy.
+#
+# THE CO-OCCURRENCE IS THE PATTERN: the literal Accelerate host plus an
+# 'api_key=' query parameter holding a JWT. The captured span is the JWT
+# alone. COLLISION: the generic jwt_token pattern fires on the same span;
+# this provider is non-generic, so dedup keeps this finding and drops
+# jwt_token (a test pins it). Segment floors match jwt_token's. Local
+# 'prisma dev' URLs (prisma+postgres://localhost:...) are not matched.
+#
+# Severity critical: the key reads and writes the application database.
+
+PRISMA_ACCELERATE_API_KEY = SecretPattern(
+    id="prisma_accelerate_api_key",
+    name="Prisma Accelerate API Key",
+    description=(
+        "Prisma Accelerate / Prisma Postgres API key in connection-string form"
+        " — 'prisma://accelerate.prisma-data.net/?api_key=<JWT>' (or"
+        " 'prisma+postgres://...'). The JWT api_key authorizes queries against"
+        " the project's database through the Accelerate proxy."
+    ),
+    provider="prisma",
+    severity="critical",
+    # Template per Prisma's own Accelerate getting-started guide.
+    # Source: https://www.prisma.io/docs/accelerate/getting-started
+    regex=re.compile(
+        r"(?<![A-Za-z0-9+.-])"
+        r"prisma(?:\+postgres)?://accelerate\.prisma-data\.net/?\?"
+        r"(?:[A-Za-z0-9_.~%-]{1,40}=[^&\s" '"' r"'<>#]{0,200}&){0,3}?"
+        r"api_key=(?P<secret>"
+        r"eyJ[A-Za-z0-9_-]{10,500}"  # JWT header (base64url)
+        r"\.[A-Za-z0-9_-]{10,2000}"  # JWT payload (base64url)
+        r"\.[A-Za-z0-9_-]{10,500})"  # JWT signature (base64url)
+        r"(?![A-Za-z0-9_\-.])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # literal Accelerate host + JWT structure carry the precision
+    context_keywords=[
+        "prisma",
+        "DATABASE_URL",
+        "accelerate",
+        "prisma-data.net",
+        "PRISMA_ACCELERATE",
+    ],
+    known_test_values={
+        # Single-character masks at the minimum segment widths. Built by
+        # concatenation so no contiguous token-shaped literal sits in source.
+        "eyJ" + fill * 10 + "." + fill * 10 + "." + fill * 10
+        for fill in ("x", "X", "0")
+    },
+    recommendation=(
+        "Delete this API key in the Prisma Console (project > Accelerate /"
+        " Prisma Postgres > API keys), generate a replacement and update"
+        " DATABASE_URL in every environment. Review database activity for the"
+        " exposure window and keep connection strings in a secrets manager,"
+        " never in committed .env files."
+    ),
+    tags=["database", "prisma", "postgres", "connection-string", "jwt"],
+)
+
 
 register(
     POSTGRES_CONNECTION_STRING,
@@ -1081,4 +1154,8 @@ register(
     # literal config field name because the 44-character base64 value
     # is far too generic alone. 'PublicKey' is deliberately excluded.
     WIREGUARD_PRIVATE_KEY,
+    # 2026-10-19 — Prisma Accelerate API key (JWT in a
+    # prisma[+postgres]://accelerate.prisma-data.net/?api_key= URL; template per
+    # Prisma's own docs). Wins dedup over jwt_token.
+    PRISMA_ACCELERATE_API_KEY,
 )

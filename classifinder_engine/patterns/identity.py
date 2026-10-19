@@ -1612,7 +1612,134 @@ ORY_OAUTH2_TOKEN = SecretPattern(
     tags=["identity", "ory", "hydra", "oauth2"],
 )
 
+# ===================================================
+# PERSONA PRODUCTION API KEY — 'persona_production_' + UUID (2026-10-19)
+# ===================================================
+# Persona (identity verification / KYC) server-side API key for the
+# PRODUCTION environment: the literal 'persona_production_' prefix followed
+# by a hyphenated hex UUID (8-4-4-4-12), 55 characters in total. Sent as a
+# Bearer token to withpersona.com/api/v1.
+# - PREFIX, VENDOR-DOCUMENTED: Persona's API-keys page states that sandbox
+#   keys begin with 'persona_sandbox_' and production keys with
+#   'persona_production_', and that a key whose prefix does not match the
+#   environment is rejected with 401.
+# - BODY, MEASURED: the vendor shows only 'persona_production_...'. Every
+#   public value in a narrow single-prefix measurement was a lowercase-hex
+#   UUID; the measured sources are not named because they hold live keys.
+#   Upper-case hex is also accepted (a GUID rendered upper-case is the same
+#   key), which costs no precision behind a 19-character literal prefix.
+# - Sandbox keys ('persona_sandbox_') are deliberately NOT matched here: they
+#   only reach sandbox data, and their body was not measured.
+#
+# Both guards refuse [A-Za-z0-9_-], so a 13th character in the last group
+# matches nothing rather than being truncated. Confidence 0.95, no entropy
+# gate. Severity critical: a production key reads inquiries, verifications
+# and the government-ID / selfie PII they hold.
 
+PERSONA_PRODUCTION_API_KEY = SecretPattern(
+    id="persona_production_api_key",
+    name="Persona Production API Key",
+    description=(
+        "Persona (identity verification / KYC) production API key — the literal"
+        " 'persona_production_' prefix followed by a hyphenated hex UUID, 55"
+        " characters in total. Whoever holds it can read and create inquiries,"
+        " verifications and reports, including government-ID and selfie PII."
+    ),
+    provider="persona",
+    severity="critical",
+    # Source: https://docs.withpersona.com/api-keys
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>persona_production_"
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # 19-char vendor prefix + fixed UUID shape carry the precision
+    context_keywords=[
+        "persona",
+        "PERSONA_API_KEY",
+        "withpersona.com",
+        "inquiry",
+        "kyc",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key. Built by concatenation: no contiguous key literal in source.
+        "persona_" + "production_" + "-".join(fill * n for n in (8, 4, 4, 4, 12))
+        for fill in ("0", "a", "f", "A", "F")
+    },
+    recommendation=(
+        "Revoke this key in the Persona Dashboard (API > API Keys), create a"
+        " replacement and update every service that sends it. Review recent"
+        " API logs for inquiries, verifications or reports accessed with it:"
+        " the data behind a production key is regulated identity PII."
+    ),
+    tags=["identity", "persona", "kyc", "pii"],
+)
+
+# ===================================================
+# ORY NETWORK PROJECT API KEY — 'ory_pat_' (2026-10-19)
+# ===================================================
+# Ory Network project-level Admin API key: the literal 'ory_pat_' prefix
+# followed by exactly 32 alphanumerics, 40 characters in total. Sent as a
+# Bearer token to https://<project>.projects.oryapis.com admin endpoints.
+# - PREFIX, VENDOR-DOCUMENTED: Ory's token-formats page lists 'ory_pat_' as
+#   the Ory Network Admin API key (project API key), able to call the
+#   project's admin APIs and change its configuration.
+# - WIDTH + ALPHABET, MEASURED: every public value in a narrow single-prefix
+#   measurement was 32 [A-Za-z0-9]; the measured sources are not named
+#   because they hold live keys.
+# - The alternative 'ory_apikey_' prefix and the workspace key 'ory_wak_'
+#   (same vendor page) have unmeasured bodies and are deliberately NOT
+#   matched here.
+#
+# Both guards refuse [A-Za-z0-9_-] (the 'ory_pat_' tail of 'factory_pat_...'
+# never matches; a 33rd character matches nothing). Confidence 0.95, no
+# entropy gate. Severity critical: the key administers every identity,
+# session and OAuth2 client in the project.
+
+ORY_NETWORK_API_KEY = SecretPattern(
+    id="ory_network_api_key",
+    name="Ory Network Project API Key",
+    description=(
+        "Ory Network project Admin API key — the literal 'ory_pat_' prefix"
+        " followed by 32 alphanumerics, 40 characters in total. Calls the"
+        " project's admin APIs: identities, sessions, OAuth2 clients and"
+        " project configuration."
+    ),
+    provider="ory",
+    severity="critical",
+    # Source: https://www.ory.com/docs/security-compliance/token-formats
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>ory_pat_[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # 'ory_pat_' prefix plus the fixed 32-char body carries the precision
+    context_keywords=[
+        "ory",
+        "ORY_API_KEY",
+        "ORY_PROJECT_API_KEY",
+        "oryapis.com",
+        "kratos",
+    ],
+    known_test_values={
+        # Single-character masks. Built by concatenation.
+        "ory_" + "pat_" + fill * 32
+        for fill in ("x", "X", "0", "a")
+    },
+    recommendation=(
+        "Delete this API key in the Ory Console (Project settings > API keys)"
+        " and create a replacement for the services that need it. Audit the"
+        " project's identities, OAuth2 clients and configuration for changes"
+        " made during the exposure window."
+    ),
+    tags=["identity", "ory", "admin-api"],
+)
 
 
 register(
@@ -1673,4 +1800,10 @@ register(
     # 43 base64url '.' 43 base64url; prefixes from the vendor's token-formats
     # page, body from Ory Hydra's fosite HMAC-SHA strategy).
     ORY_OAUTH2_TOKEN,
+    # 2026-10-19 — Persona production API key ('persona_production_' + hex UUID;
+    # prefix per Persona's own API-keys page, body measured on public samples).
+    PERSONA_PRODUCTION_API_KEY,
+    # 2026-10-19 — Ory Network project API key ('ory_pat_' + 32 alphanumeric;
+    # prefix per Ory's token-formats page, width measured on public samples).
+    ORY_NETWORK_API_KEY,
 )

@@ -1504,6 +1504,72 @@ CARTESIA_API_KEY = SecretPattern(
     tags=["ai", "cartesia", "tts", "voice"],
 )
 
+# ===================================================
+# TAVILY API KEY — 'tvly-' / 'tvly-dev-' (2026-10-19)
+# ===================================================
+# Tavily (search / extract API for LLM agents) API key: the literal 'tvly-'
+# prefix, optionally followed by 'dev-' for a development key, then exactly
+# 32 alphanumeric characters. Sent as 'Authorization: Bearer tvly-...' to
+# api.tavily.com and read by the Tavily SDKs and LangChain integration from
+# TAVILY_API_KEY.
+# - PREFIXES, VENDOR-DOCUMENTED: Tavily's own docs authenticate with
+#   'Bearer tvly-YOUR_API_KEY', and its enterprise key-generation reference
+#   returns development keys as 'tvly-dev-...' (key_type 'development' is
+#   the default; the production key prefix is not shown and is not guessed
+#   here beyond the bare 'tvly-').
+# - WIDTH + ALPHABET, MEASURED: the vendor publishes only truncated values.
+#   Every public value in a narrow single-prefix measurement was 32
+#   [A-Za-z0-9] after the prefix; the measured sources are not named
+#   because they hold live keys.
+#
+# Both guards refuse [A-Za-z0-9_-], so a 33rd character matches nothing
+# rather than being truncated, and because '-' is outside the body alphabet
+# a 'tvly-<other>-' key with an unknown infix is missed, never mis-sliced.
+# Confidence 0.95, no entropy gate. Severity high: whoever holds the key
+# spends the owner's search credits.
+
+TAVILY_API_KEY = SecretPattern(
+    id="tavily_api_key",
+    name="Tavily API Key",
+    description=(
+        "Tavily API key (search / extract API for LLM agents) — the literal"
+        " 'tvly-' prefix, optionally 'tvly-dev-' for a development key,"
+        " followed by exactly 32 alphanumeric characters. Authenticates to"
+        " api.tavily.com and spends the owner's search credits."
+    ),
+    provider="tavily",
+    severity="high",
+    # Source: https://docs.tavily.com/documentation/enterprise/generate-keys
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>tvly-(?:dev-)?[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # vendor prefix plus fixed-width body carries the precision
+    context_keywords=[
+        "tavily",
+        "TAVILY_API_KEY",
+        "api.tavily.com",
+        "TavilyClient",
+        "search",
+    ],
+    known_test_values={
+        # Single-character masks, both prefixes. Built by concatenation.
+        "tv" + "ly-" + dev + fill * 32
+        for dev in ("", "dev-")
+        for fill in ("x", "X", "0", "a")
+    },
+    recommendation=(
+        "Delete this key in the Tavily dashboard (app.tavily.com > API Keys),"
+        " create a replacement and update TAVILY_API_KEY wherever it is set"
+        " (agent configs, CI secrets, notebooks). Check the account's usage"
+        " for searches you did not make."
+    ),
+    tags=["ai", "tavily", "search", "llm"],
+)
+
 
 register(
     OPENAI_API_KEY,
@@ -1558,4 +1624,7 @@ register(
     # alphanumeric; prefixes per Cartesia's own API reference, width measured
     # on public samples).
     CARTESIA_API_KEY,
+    # 2026-10-19 — Tavily API key ('tvly-' / 'tvly-dev-' + 32 alphanumeric;
+    # prefixes per Tavily's own docs, width measured on public samples).
+    TAVILY_API_KEY,
 )
