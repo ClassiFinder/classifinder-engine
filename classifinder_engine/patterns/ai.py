@@ -1505,6 +1505,76 @@ CARTESIA_API_KEY = SecretPattern(
 )
 
 # ===================================================
+# BROWSERBASE API KEY — 'bb_live_' (2026-10-19)
+# ===================================================
+# Browserbase (headless cloud browsers for AI agents; Stagehand) API key:
+# the literal 'bb_live_' prefix followed by exactly 27 base64url characters.
+# Sent in the X-BB-API-Key header to api.browserbase.com and read by the
+# Browserbase / Stagehand SDKs from BROWSERBASE_API_KEY.
+# - PREFIX, VENDOR-DOCUMENTED: Browserbase's own docs (docs.browserbase.com
+#   quickstarts) show BROWSERBASE_API_KEY="bb_live_..." and document the
+#   X-BB-API-Key header.
+# - WIDTH + ALPHABET, MEASURED: the vendor publishes only truncated
+#   placeholders. Every public value in a narrow single-prefix measurement
+#   (7 samples) was 27 characters of [A-Za-z0-9_-]; the measured sources are
+#   not named because they hold live keys. No 'bb_test_' sibling is
+#   corroborated, so none is matched.
+#
+# The lookbehind/lookahead guards refuse [A-Za-z0-9_-] on both sides, so a
+# 28th character matches nothing rather than being truncated. Because '_' is
+# in the body alphabet, a snake_case identifier of exactly the right width
+# (bb_live_session_identifier_...) could fit the shape; the 3.9-bit entropy
+# gate sinks those (English identifiers score ~3.5-3.9 over the whole
+# value, random bodies >= ~4.0). Confidence 0.90 (vendor prefix, measured
+# width; above the 0.85 FP-wordlist gate). Severity high: whoever holds it
+# runs cloud browser sessions billed to the owner and can read their
+# session recordings, logs and contexts.
+
+BROWSERBASE_API_KEY = SecretPattern(
+    id="browserbase_api_key",
+    name="Browserbase API Key",
+    description=(
+        "Browserbase API key (headless cloud browsers for AI agents, Stagehand) —"
+        " the literal 'bb_live_' prefix followed by exactly 27 base64url"
+        " characters. Authenticates to api.browserbase.com via the X-BB-API-Key"
+        " header; whoever holds it runs browser sessions billed to the owner and"
+        " can read the project's session recordings, logs and stored contexts."
+    ),
+    provider="browserbase",
+    severity="high",
+    # Source: https://docs.browserbase.com/integrations/vercel/agent-browser/quickstart
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>bb_live_[A-Za-z0-9_-]{27})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=3.9,  # random 27-char base64url bodies score >= ~4.0; snake_case identifiers <= ~3.9
+    context_keywords=[
+        "browserbase",
+        "BROWSERBASE_API_KEY",
+        "BROWSERBASE_PROJECT_ID",
+        "X-BB-API-Key",
+        "api.browserbase.com",
+        "stagehand",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key. Pinned (~0.15). Built by concatenation: no contiguous key
+        # literal sits in source (GitHub push protection).
+        "bb_" + "live_" + fill * 27
+        for fill in ("x", "X", "0", "a")
+    },
+    recommendation=(
+        "Rotate this key in the Browserbase dashboard (Settings > API Keys),"
+        " update every deployment that reads BROWSERBASE_API_KEY, and review the"
+        " project's recent sessions for ones you did not start."
+    ),
+    tags=["ai", "browserbase", "browser", "agents"],
+)
+
+# ===================================================
 # TAVILY API KEY — 'tvly-' / 'tvly-dev-' (2026-10-19)
 # ===================================================
 # Tavily (search / extract API for LLM agents) API key: the literal 'tvly-'
@@ -1624,6 +1694,9 @@ register(
     # alphanumeric; prefixes per Cartesia's own API reference, width measured
     # on public samples).
     CARTESIA_API_KEY,
+    # 2026-10-19 — Browserbase API key ('bb_live_' + 27 base64url; prefix per
+    # Browserbase's own docs, width measured on public samples).
+    BROWSERBASE_API_KEY,
     # 2026-10-19 — Tavily API key ('tvly-' / 'tvly-dev-' + 32 alphanumeric;
     # prefixes per Tavily's own docs, width measured on public samples).
     TAVILY_API_KEY,
