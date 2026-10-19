@@ -1445,6 +1445,72 @@ BUILDER_IO_PRIVATE_API_KEY = SecretPattern(
     tags=["data", "builder_io", "cms", "headless-cms"],
 )
 
+# ===================================================
+# DBT PLATFORM PERSONAL ACCESS TOKEN — 'dbtu_' (2026-10-19)
+# ===================================================
+# dbt platform (dbt Cloud) personal access token (PAT): the literal 'dbtu_'
+# prefix followed by exactly 50 base64url characters ([A-Za-z0-9_-]), 55
+# characters in total. Sent as 'Authorization: Token dbtu_...' (or Bearer)
+# to the dbt platform APIs and used by the dbt CLI / dbt MCP server.
+# - PREFIX, VENDOR-DOCUMENTED: dbt Labs' own group-training setup README
+#   (github.com/dbt-labs) states that a PAT starts with the 'dbtu_' prefix,
+#   as distinct from a service token; PATs are issued under Account
+#   settings > API tokens > Personal tokens per the dbt docs.
+# - WIDTH + ALPHABET, MEASURED: the vendor does not publish the body. Every
+#   public value in a narrow single-prefix measurement was 50 characters of
+#   [A-Za-z0-9_-]; the measured sources are not named because they hold
+#   live tokens.
+# - The service-token prefix 'dbtc_' is deliberately NOT matched: its body
+#   was not measured.
+#
+# The body alphabet includes '_' and '-', so both guards refuse
+# [A-Za-z0-9_-]: a 51st character matches nothing rather than being
+# truncated. Confidence 0.95, no entropy gate. Severity high: a PAT acts
+# as the user across every dbt account and project they can reach.
+
+DBT_CLOUD_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="dbt_cloud_personal_access_token",
+    name="dbt Platform Personal Access Token",
+    description=(
+        "dbt platform (dbt Cloud) personal access token — the literal 'dbtu_'"
+        " prefix followed by exactly 50 base64url characters, 55 characters in"
+        " total. Acts as the user against the dbt platform APIs: jobs, runs,"
+        " environments, project metadata and the Semantic Layer."
+    ),
+    provider="dbt",
+    severity="high",
+    # Prefix per dbt Labs' own README (github.com/dbt-labs/dbt-cloud-group-training-setup).
+    # Source: https://docs.getdbt.com/docs/dbt-cloud-apis/user-tokens
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>dbtu_[A-Za-z0-9_-]{50})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # vendor prefix plus fixed-width body carries the precision
+    context_keywords=[
+        "dbt",
+        "DBT_TOKEN",
+        "DBT_CLOUD_API_TOKEN",
+        "getdbt.com",
+        "dbt cloud",
+        "personal access token",
+    ],
+    known_test_values={
+        # Single-character masks. Built by concatenation.
+        "db" + "tu_" + fill * 50
+        for fill in ("x", "X", "0", "a")
+    },
+    recommendation=(
+        "Revoke this personal access token in dbt (Account settings > API"
+        " tokens > Personal tokens), create a replacement and update every"
+        " CLI profile, CI secret or MCP config that uses it. Review recent job"
+        " runs and environment changes for activity you do not recognise."
+    ),
+    tags=["data", "dbt", "analytics", "pat"],
+)
+
 
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
@@ -1498,4 +1564,7 @@ register(
     # 2026-09-14 — Builder.io private API key ('bpk-' + exactly 32 lowercase
     # hex; the pinned body keeps Skyscanner Backpack 'bpk-' CSS classes out)
     BUILDER_IO_PRIVATE_API_KEY,
+    # 2026-10-19 — dbt platform personal access token ('dbtu_' + 50 base64url;
+    # prefix per dbt Labs' own README, width measured; 'dbtc_' not encoded).
+    DBT_CLOUD_PERSONAL_ACCESS_TOKEN,
 )

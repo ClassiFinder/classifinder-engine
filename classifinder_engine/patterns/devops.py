@@ -3289,6 +3289,76 @@ WORKATO_DEVELOPER_API_TOKEN = SecretPattern(
     tags=["devops", "workato", "ipaas", "automation", "jwt"],
 )
 
+# ===================================================
+# LOCALSTACK AUTH TOKEN — 'ls-' + 8-4-4-4-12 alphanumeric (2026-10-19)
+# ===================================================
+# LocalStack (local AWS cloud emulator) auth token, used for licence
+# activation and LocalStack platform features (Cloud Pods, CI credits) and
+# read from LOCALSTACK_AUTH_TOKEN: the literal 'ls-' prefix followed by
+# five hyphen-separated groups of mixed-case alphanumerics in UUID layout
+# (8-4-4-4-12), 39 characters in total.
+# - PREFIX, VENDOR-DOCUMENTED: LocalStack's own FAQ states that the token
+#   includes the 'ls-...' prefix; tokens are issued on the Auth Tokens page
+#   of app.localstack.cloud.
+# - LAYOUT + ALPHABET, MEASURED: the vendor does not publish the body. Every
+#   public value in a narrow single-prefix measurement had the 8-4-4-4-12
+#   layout over [A-Za-z0-9]; the measured sources are not named because they
+#   hold live tokens.
+#
+# 'ls-' is short, so the precision comes from the exact five-group layout
+# and the guards, which refuse [A-Za-z0-9_-] on both sides. One extra
+# safeguard: a body that is entirely hex is an ordinary UUID / GUID (e.g. a
+# resource id rendered 'ls-<uuid>'), not a token — a real mixed-case base62
+# body is all-hex with probability ~(22/62)^32, so the negative lookahead
+# costs no recall. Confidence 0.90, no entropy gate. Severity high: the
+# token activates the owner's paid licence and reaches their Cloud Pods
+# (snapshots of emulated infrastructure state).
+
+LOCALSTACK_AUTH_TOKEN = SecretPattern(
+    id="localstack_auth_token",
+    name="LocalStack Auth Token",
+    description=(
+        "LocalStack auth token — the literal 'ls-' prefix followed by five"
+        " hyphen-separated alphanumeric groups (8-4-4-4-12), 39 characters in"
+        " total. Activates the owner's LocalStack licence and reaches their"
+        " LocalStack platform resources such as Cloud Pods."
+    ),
+    provider="localstack",
+    severity="high",
+    # Source: https://docs.localstack.cloud/aws/getting-started/faq/
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>ls-"
+        r"(?![0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+        r"(?![A-Za-z0-9_-]))"
+        r"[A-Za-z0-9]{8}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{12})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # exact 8-4-4-4-12 layout behind 'ls-'; a floor would only sink real tokens
+    context_keywords=[
+        "localstack",
+        "LOCALSTACK_AUTH_TOKEN",
+        "LOCALSTACK_API_KEY",
+        "auth token",
+        "localstack.cloud",
+    ],
+    known_test_values={
+        # Single-character masks in the token layout. Built by concatenation.
+        "ls" + "-" + "-".join(fill * n for n in (8, 4, 4, 4, 12))
+        for fill in ("x", "X", "z", "Z")
+    },
+    recommendation=(
+        "Rotate this auth token on the Auth Tokens page of the LocalStack Web"
+        " Application (app.localstack.cloud), then update"
+        " LOCALSTACK_AUTH_TOKEN in every CI secret and developer environment."
+        " Review the workspace's Cloud Pods and usage for activity you do not"
+        " recognise."
+    ),
+    tags=["devops", "localstack", "aws", "ci-cd"],
+)
+
 
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
@@ -3399,4 +3469,7 @@ register(
     # 2026-10-11 — Workato Developer API token ('wrka' + optional region +
     # '-' + JWT; prefix per Workato's own API docs). Wins dedup over jwt_token.
     WORKATO_DEVELOPER_API_TOKEN,
+    # 2026-10-19 — LocalStack auth token ('ls-' + 8-4-4-4-12 alphanumeric;
+    # prefix per LocalStack's own FAQ, layout measured; all-hex UUIDs excluded).
+    LOCALSTACK_AUTH_TOKEN,
 )
