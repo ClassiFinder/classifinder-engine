@@ -4093,6 +4093,87 @@ AZURE_WEB_PUBSUB_CONNECTION_STRING = SecretPattern(
 )
 
 
+# ===================================================
+# AZURE CACHE FOR REDIS CONNECTION STRING (2026-10-20)
+# ===================================================
+
+# Azure Cache for Redis access key, in the StackExchange.Redis connection-
+# string form the Portal's "Access keys" blade emits and Microsoft Learn's
+# quickstarts paste into appsettings.json / app settings:
+#
+#   <name>.redis.cache.windows.net:6380,password=<key>,ssl=True,abortConnect=False
+#
+# The access key is a base64-encoded 256-bit symmetric key: 43 base64
+# characters plus one '=' pad, per Microsoft Purview's own credential
+# definition "Azure Redis cache connection string password". The width is
+# matched EXACTLY, with guards on both sides, so a longer run is not sliced.
+#
+# THE CO-OCCURRENCE IS THE PATTERN: the literal '.redis.cache.windows.net'
+# host, an optional ':6380' (TLS) or ':6379' (non-TLS) port, then a
+# 'password=' option within the same comma-separated option list, with up to
+# six other 'name=value' options (ssl=, abortConnect=, allowAdmin= ...)
+# allowed in between. Host and option name are case-insensitive. The captured
+# span is the key alone. The redis:// / rediss:// URL form stays with
+# redis_connection_string (database.py) and cannot match here (no
+# 'password=' option); Entra ID (passwordless) strings carry no key. The Azure
+# Managed Redis host (*.redis.azure.net:10000) is deliberately NOT covered:
+# no Microsoft source documents a key-bearing string for it.
+
+AZURE_CACHE_FOR_REDIS_CONNECTION_STRING = SecretPattern(
+    id="azure_cache_for_redis_connection_string",
+    name="Azure Cache for Redis Connection String",
+    description=(
+        "Azure Cache for Redis access key in StackExchange.Redis connection-"
+        "string form — '<name>.redis.cache.windows.net:6380,password=<base64"
+        " key>,ssl=True,abortConnect=False'. The access key is full data-plane"
+        " access: whoever holds it can read, overwrite and flush every key in"
+        " the cache."
+    ),
+    provider="azure",
+    severity="critical",
+    # Connection-string template per Microsoft Learn; 44-char key per the
+    # Purview definition "Azure Redis cache connection string password"
+    # (https://learn.microsoft.com/en-us/purview/sit-defn-azure-redis-cache-connection-string-password).
+    # Source: https://learn.microsoft.com/en-us/azure/redis/aspnet-core-output-cache-provider
+    regex=re.compile(
+        r"(?<![0-9A-Za-z_-])"
+        r"[A-Za-z0-9-]{1,63}\.(?i:redis\.cache\.windows\.net)(?::63(?:79|80))?"
+        r",[ \t]{0,3}"
+        r"(?:[A-Za-z]{1,30}=[^,\s" '"' r"'<>]{0,200},[ \t]{0,3}){0,6}?"
+        r"(?i:password)=(?P<secret>[A-Za-z0-9+/]{43}=)"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # two-literal structural anchor; a floor could only sink real keys
+    context_keywords=[
+        "redis",
+        "redis.cache.windows.net",
+        "abortConnect",
+        "ConnectionMultiplexer",
+        "REDIS_CONNECTION_STRING",
+        "azure",
+    ],
+    known_test_values={
+        # Built by multiplication on purpose (GitHub Push Protection).
+        "A" * 43 + "=",
+        "a" * 43 + "=",
+        "X" * 43 + "=",
+        "x" * 43 + "=",
+        "0" * 43 + "=",
+    },
+    recommendation=(
+        "Regenerate the leaked key in the Azure Portal (Azure Cache for Redis >"
+        " Authentication > Access keys > Regenerate, or 'az redis"
+        " regenerate-keys'), rolling the unused key first so clients can cut"
+        " over, then update every connection string that carried it. Anyone"
+        " holding the key can read and flush the whole cache; prefer Microsoft"
+        " Entra ID authentication and disable access-key auth where possible."
+    ),
+    tags=["cloud", "azure", "redis", "cache", "database"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -4224,4 +4305,7 @@ register(
     # 2026-10-19 — Azure Web PubSub connection string ('.webpubsub.azure.com'
     # + 'AccessKey=' base64; template per Microsoft Learn's Service Connector page).
     AZURE_WEB_PUBSUB_CONNECTION_STRING,
+    # 2026-10-20 — Azure Cache for Redis connection string
+    # ('.redis.cache.windows.net' + 'password=' 43 base64 + '='; StackExchange.Redis form).
+    AZURE_CACHE_FOR_REDIS_CONNECTION_STRING,
 )
