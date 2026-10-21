@@ -4174,6 +4174,95 @@ AZURE_CACHE_FOR_REDIS_CONNECTION_STRING = SecretPattern(
 )
 
 
+# ===================================================
+# AZURE ENTRA ID APPLICATION CLIENT SECRET (2026-10-21)
+# ===================================================
+
+# Microsoft Entra ID (formerly Azure AD) app-registration client secret
+# ("application password"), in the identifiable form Entra has issued since
+# 2021: three URL-unreserved characters, a generation digit, the literal
+# 'Q~' marker, then the body:
+#
+#   xxx8Q~<34 chars>   (current generation, 40 chars total)
+#   xxx7Q~<31 chars>   (previous generation, 37 chars total)
+#
+# The alphabet is URL-unreserved [A-Za-z0-9_.~-] everywhere, including '-'
+# in the first three characters. The body width is tied to the marker
+# digit, exactly as Microsoft's own scanner rule SEC101/156 enforces it, so
+# '8Q~' + 31 or '7Q~' + 34 does not match.
+#
+# STRUCTURAL, NOT KEYWORD-ANCHORED: the 'Q~' marker is a 3-character infix,
+# not a prefix, so both guards refuse the whole alphabet (a longer run is
+# never sliced) and an entropy floor sinks low-entropy look-alikes. A
+# trailing '.' is accepted as a sentence end only when nothing from the
+# alphabet follows it. The keyword-anchored azure_ad_client_secret pattern
+# matches the same span after 'client_secret=' etc.; this pattern prices
+# higher, so dedup reports it once, here. That pattern also has no '-' in
+# its charset, so Q~ secrets containing '-' were missed before this one.
+#
+# Shape per Microsoft's MIT-licensed security-utilities rule SEC101/156
+# "AadClientAppIdentifiableCredentials"; alphabet and 40-char ceiling also
+# per Microsoft Purview's "Azure AD client secret" definition
+# (https://learn.microsoft.com/en-us/purview/sit-defn-azure-ad-client-secret).
+
+AZURE_ENTRA_ID_CLIENT_SECRET = SecretPattern(
+    id="azure_entra_id_client_secret",
+    name="Azure Entra ID Application Client Secret",
+    description=(
+        "Microsoft Entra ID (Azure AD) app-registration client secret in its"
+        " identifiable form — three characters, a generation digit and the"
+        " 'Q~' marker, then 34 characters ('8Q~', 40 total) or 31 characters"
+        " ('7Q~', 37 total) of [A-Za-z0-9_.~-]. Together with the app's"
+        " client ID and tenant it authenticates as the application with every"
+        " permission granted to it."
+    ),
+    provider="azure",
+    severity="high",
+    # Pattern attribution: Microsoft security-utilities (MIT) rule SEC101/156 — Q~ marker + digit-tied width
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_.~-])"
+        r"(?P<secret>[A-Za-z0-9_.~-]{3}(?:7Q~[A-Za-z0-9_.~-]{31}|8Q~[A-Za-z0-9_.~-]{34}))"
+        r"(?![A-Za-z0-9_~-])(?!\.[A-Za-z0-9_.~-])",
+        re.ASCII,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=3.5,
+    context_keywords=[
+        "azure",
+        "entra",
+        "client_secret",
+        "clientsecret",
+        "client-secret",
+        "tenant",
+    ],
+    known_test_values={
+        # Built by multiplication on purpose (GitHub Push Protection).
+        # Microsoft's own fixture style, then single-character masks.
+        "yyy7" + "Q~" + "y" * 31,
+        "zzz8" + "Q~" + "z" * 34,
+        "AAA8" + "Q~" + "A" * 34,
+        "aaa8" + "Q~" + "a" * 34,
+        "XXX8" + "Q~" + "X" * 34,
+        "xxx8" + "Q~" + "x" * 34,
+        "0008" + "Q~" + "0" * 34,
+        "AAA7" + "Q~" + "A" * 31,
+        "aaa7" + "Q~" + "a" * 31,
+        "XXX7" + "Q~" + "X" * 31,
+        "xxx7" + "Q~" + "x" * 31,
+        "0007" + "Q~" + "0" * 31,
+    },
+    recommendation=(
+        "Delete the leaked secret in the Entra admin center (App registrations"
+        " > <app> > Certificates & secrets) or with 'az ad app credential"
+        " delete', after adding a replacement and updating every consumer."
+        " Review the app's sign-in logs for use of the credential. Prefer"
+        " managed identities, workload identity federation or certificate"
+        " credentials over client secrets."
+    ),
+    tags=["cloud", "azure", "entra", "auth", "oauth"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -4308,4 +4397,7 @@ register(
     # 2026-10-20 — Azure Cache for Redis connection string
     # ('.redis.cache.windows.net' + 'password=' 43 base64 + '='; StackExchange.Redis form).
     AZURE_CACHE_FOR_REDIS_CONNECTION_STRING,
+    # 2026-10-21 — Azure Entra ID app client secret (identifiable 'Q~' form:
+    # 3 chars + 7Q~/8Q~ + 31/34 chars; per Microsoft security-utilities SEC101/156).
+    AZURE_ENTRA_ID_CLIENT_SECRET,
 )
