@@ -396,6 +396,107 @@ BCRYPT_PASSWORD_HASH = SecretPattern(
 )
 
 
+# ===================================================
+# UNIX CRYPT PASSWORD HASH — md5crypt / sha256crypt / sha512crypt (2026-10-22)
+# ===================================================
+
+# The second 'hash'-tagged pattern, and it inherits every decision behind
+# bcrypt_password_hash above: a crypt(3) digest is a VERIFIER, not a bearer
+# credential, so severity is medium and the description and recommendation
+# are written as a signal (leaked /etc/shadow, hardcoded admin password,
+# offline cracking exposure), never as an active compromise.
+#
+# Three modular-crypt families, the ones that actually fill /etc/shadow:
+#   '$1$'  md5crypt    — salt 1-8, digest 22
+#   '$5$'  sha256crypt — optional 'rounds=N$', salt 1-16, digest 43
+#   '$6$'  sha512crypt — optional 'rounds=N$', salt 1-16, digest 86
+# all in crypt's './A-Za-z0-9' alphabet. The digest width is fixed per
+# family, which is what makes the format precise without an entropy gate.
+# The spec allows an empty salt; the regex requires one character, because
+# empty-salt hashes are vanishingly rare and '$5$$' is a common prose typo.
+#
+# Left guard refuses '$' and the alphabet so '$apr1$' (Apache) and a run
+# glued to a longer token are not sliced; right guard refuses the alphabet
+# so a digest one character too long is not truncated into a match.
+#
+# confidence_base 0.95, same as bcrypt and above the 0.85 FP-wordlist gate,
+# so passlib's own published examples are pinned as known_test_values.
+
+UNIX_CRYPT_PASSWORD_HASH = SecretPattern(
+    id="unix_crypt_password_hash",
+    name="Unix crypt Password Hash (md5/sha256/sha512crypt)",
+    description=(
+        "A Unix crypt(3) password hash in modular-crypt format — '$1$'"
+        " (md5crypt), '$5$' (sha256crypt) or '$6$' (sha512crypt), an optional"
+        " 'rounds=N$' for the SHA variants, a salt, then a 22-, 43- or"
+        " 86-character digest. This is a one-way hash, not a usable"
+        " credential: it authenticates nothing on its own. It matters as a"
+        " signal — these are the hashes in /etc/shadow, cloud-init 'passwd:'"
+        " fields and provisioning scripts, so one in source or a pasted log"
+        " usually means a leaked shadow file or a hardcoded account password,"
+        " and md5crypt in particular is cheap to crack offline."
+    ),
+    provider="generic",
+    severity="medium",
+    # Format per the SHA-crypt specification (Drepper) implemented by glibc
+    # crypt(3), as documented by passlib: '$5$' / '$6$', optional
+    # 'rounds=N$', 0-16 salt characters and a 43 / 86 character checksum in
+    # './0-9A-Za-z'; md5crypt '$1$' with a salt of up to 8 and a 22-character
+    # checksum (passlib.hash.md5_crypt). Guards, confidence and
+    # known_test_values are ClassiFinder's own.
+    # Source: https://passlib.readthedocs.io/en/stable/lib/passlib.hash.sha256_crypt.html
+    regex=re.compile(
+        r"(?<![./A-Za-z0-9$])"
+        r"(?P<secret>\$(?:"
+        r"1\$[./A-Za-z0-9]{1,8}\$[./A-Za-z0-9]{22}"
+        r"|5\$(?:rounds=[0-9]{1,9}\$)?[./A-Za-z0-9]{1,16}\$[./A-Za-z0-9]{43}"
+        r"|6\$(?:rounds=[0-9]{1,9}\$)?[./A-Za-z0-9]{1,16}\$[./A-Za-z0-9]{86}"
+        r"))"
+        r"(?![./A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # fixed-width digests; nothing to gate
+    context_keywords=[
+        "shadow",
+        "passwd",
+        "password",
+        "password_hash",
+        "hashed_password",
+        "crypt",
+        "sha512",
+        "chpasswd",
+        "users",
+    ],
+    known_test_values={
+        # passlib's own documented examples (sha256_crypt and md5_crypt
+        # pages), reproduced across the ecosystem. Assembled by
+        # concatenation, per repository convention.
+        "$5$" + "rounds=80000$wnsT7Yr92oJoP28r$cKhJImk5mfuSKV9b3mumNzlbstFUplKtQXXMo4G6Ep5",
+        "$5$" + "rounds=12345$q3hvJE5mn5jKRsW.$BbbYTFiaImz9rTy03GGi.Jf9YY5bmxN0LU3p3uI1iUB",
+        "$1$" + "5pZSV9va$azfrPr6af3Fc7dLblQXVa0",
+        "$1$" + "3azHgidD$SrJPt7B.9rekpmwJwtON31",
+        "$1$" + "wu98$9UuD3hvrwehnqyF1D548N0",
+        # All-same-character redaction masks at the maximum salt width.
+        "$1$" + "x" * 8 + "$" + "x" * 22,
+        "$5$" + "x" * 16 + "$" + "x" * 43,
+        "$6$" + "x" * 16 + "$" + "x" * 86,
+    },
+    recommendation=(
+        "This is a hash, so nothing is directly usable with it — do not treat"
+        " it as an active credential. Do treat it as an exposure: work out"
+        " which account it belongs to, force a password reset, and remove the"
+        " hash from source control, provisioning files and any log that"
+        " carries it. If it came from a shadow file or database dump, handle"
+        " it as a password-table leak and reset every affected account."
+        " md5crypt ('$1$') is fast to crack offline and should be migrated to"
+        " sha512crypt or yescrypt; a SHA-crypt hash with a low 'rounds' value"
+        " is likewise worth re-hashing."
+    ),
+    tags=["generic", "hash", "password", "crypt"],
+)
+
+
 register(
     JWT_TOKEN,
     BEARER_TOKEN,
@@ -405,4 +506,7 @@ register(
     # 2026-09-07 — bcrypt password hash. A verifier, not a bearer
     # credential: severity medium, and the first 'hash'-tagged pattern.
     BCRYPT_PASSWORD_HASH,
+    # 2026-10-22 — md5crypt / sha256crypt / sha512crypt. Same verifier-not-
+    # credential reasoning as bcrypt: severity medium, 'hash'-tagged.
+    UNIX_CRYPT_PASSWORD_HASH,
 )
