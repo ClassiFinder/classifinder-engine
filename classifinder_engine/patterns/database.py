@@ -15,6 +15,7 @@ Pattern design notes:
   the values themselves have no distinctive format.
 """
 
+import base64
 import re
 
 from .registry import SecretPattern, register
@@ -354,6 +355,121 @@ PGP_PRIVATE_KEY = SecretPattern(
         " a new key pair and distribute the new public key to your correspondents."
     ),
     tags=["infrastructure", "pgp", "key"],
+)
+
+
+# ===================================================
+# BASE64-ENCODED PEM PRIVATE KEY (2026-10-23)
+# ===================================================
+
+# The same private keys ssh_private_key catches, after one round of base64:
+# the form a key takes in a Kubernetes Secret 'data:' field ('tls.key:',
+# 'ssh-privatekey:'), a Helm values file or a CI variable. ssh_private_key
+# never sees it (it anchors on raw '-----BEGIN'), and the scanner's own
+# decode-and-rescan pass skips it too, because a decoded PEM contains
+# newlines and decoders.py only rescans printable single-line output.
+#
+# Base64 encodes in 3-byte groups, so a fixed header encodes to a fixed
+# prefix whenever it sits at the start of the encoded value. Every
+# alternation below is base64.b64encode('-----BEGIN <LABEL>-----') cut at
+# the last fully determined character — through the closing dashes, not
+# just the label's first word. Stopping at 'RSA ' or 'DSA ' (as the catalog
+# rule does) would also match '-----BEGIN RSA PUBLIC KEY-----'. Public
+# keys and certificates ('...BQVUJMSUMg', '...BDRVJUSUZJQ0FURS0') are
+# therefore unmatchable by construction.
+#
+# 'EC PARAMETERS' is included because 'openssl ecparam -genkey' writes the
+# parameters block BEFORE the EC private key, so the encoded file opens on
+# the parameters header and the key header lands at an arbitrary base64
+# alignment. A named-curve parameters block on its own is ~100 encoded
+# characters and holds no secret, so that branch demands a 300-character
+# body, which only the parameters-plus-key file reaches (single-line
+# encodings only; a line-wrapped parameters-first file is not claimed).
+
+def _pem_b64_placeholders() -> set[str]:
+    """Base64 of PEM blocks whose body is an obvious placeholder.
+
+    These are what example manifests and docs ship ('tls.key: <b64 of a
+    REDACTED block>'). confidence_base 0.95 sits above the 0.85 FP-wordlist
+    gate, so they must be pinned explicitly to score as test values.
+    """
+    labels = (
+        "RSA PRIVATE KEY",
+        "DSA PRIVATE KEY",
+        "EC PRIVATE KEY",
+        "PRIVATE KEY",
+        "OPENSSH PRIVATE KEY",
+        "ENCRYPTED PRIVATE KEY",
+    )
+    bodies = ("REDACTED", "...", "<your-private-key>", "YOUR_PRIVATE_KEY_HERE", "x" * 64)
+    values: set[str] = set()
+    for label in labels:
+        for body in bodies:
+            for tail in ("\n", ""):
+                pem = f"-----BEGIN {label}-----\n{body}\n-----END {label}-----{tail}"
+                values.add(base64.b64encode(pem.encode("ascii")).decode("ascii"))
+    return values
+
+
+BASE64_ENCODED_PEM_PRIVATE_KEY = SecretPattern(
+    id="base64_encoded_pem_private_key",
+    name="Base64-Encoded PEM Private Key",
+    description=(
+        "A PEM private key block (RSA, DSA, EC, PKCS#8, OpenSSH or encrypted"
+        " PKCS#8) that has been base64-encoded as a whole, so the value opens"
+        " on 'LS0tLS1CRUdJTi' — the encoding of '-----BEGIN'. This is how"
+        " private keys are stored in Kubernetes Secret data fields (tls.key,"
+        " ssh-privatekey), Helm values and CI/CD variables. Base64 is an"
+        " encoding, not encryption: anyone holding the value holds the key."
+    ),
+    provider="pem",
+    severity="critical",
+    # Format: RFC 7468 PEM armor ('-----BEGIN <LABEL>-----'), base64-encoded
+    # as a whole as in Kubernetes TLS Secrets
+    # (https://kubernetes.io/docs/concepts/configuration/secret/#tls-secrets).
+    # Candidate surfaced from Nosey Parker's pem.yml (Apache-2.0); every
+    # alternation was re-derived from base64.b64encode of the real headers.
+    # RFC 7468: https://www.rfc-editor.org/rfc/rfc7468
+    regex=re.compile(
+        r"(?P<secret>LS0tLS1CRUdJTiB"
+        r"(?:"
+        r"(?:SU0EgUFJJVkFURSBLRVktLS0t"  # RSA PRIVATE KEY
+        r"|EU0EgUFJJVkFURSBLRVktLS0t"  # DSA PRIVATE KEY
+        r"|FQyBQUklWQVRFIEtFWS0tLS0t"  # EC PRIVATE KEY
+        r"|QUklWQVRFIEtFWS0tLS0t"  # PRIVATE KEY (PKCS#8)
+        r"|PUEVOU1NIIFBSSVZBVEUgS0VZLS0t"  # OPENSSH PRIVATE KEY
+        r"|FTkNSWVBURUQgUFJJVkFURSBLRVktLS0t"  # ENCRYPTED PRIVATE KEY
+        r")"
+        # At least 40 body characters, on the header's line or (for output
+        # wrapped at 64/76 columns) on the next full line; then every
+        # following full-width continuation line, so redaction covers it.
+        r"(?=[A-Za-z0-9+/]{40}|[A-Za-z0-9+/]{0,39}\r?\n[A-Za-z0-9+/]{40})"
+        r"[A-Za-z0-9+/]*(?:\r?\n[A-Za-z0-9+/]{40,})*"
+        r"|FQyBQQVJBTUVURVJTLS0t[A-Za-z0-9+/]{300,}"  # EC PARAMETERS + key
+        r")={0,2})",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # structural prefix; the body is a key, not a guess
+    context_keywords=[
+        "tls.key",
+        "ssh-privatekey",
+        "private",
+        "key",
+        "pem",
+        "secret",
+        "base64",
+        "kubernetes",
+    ],
+    known_test_values=_pem_b64_placeholders(),
+    recommendation=(
+        "Treat this exactly like a leaked plaintext private key — base64 hides"
+        " nothing. Revoke or rotate the key pair (reissue the TLS certificate,"
+        " or replace the SSH key and remove it from authorized_keys), then move"
+        " the secret out of the manifest or variable into a secret manager or"
+        " an encrypted store such as Sealed Secrets or SOPS."
+    ),
+    tags=["infrastructure", "pem", "key", "base64", "kubernetes"],
 )
 
 
@@ -1158,4 +1274,7 @@ register(
     # prisma[+postgres]://accelerate.prisma-data.net/?api_key= URL; template per
     # Prisma's own docs). Wins dedup over jwt_token.
     PRISMA_ACCELERATE_API_KEY,
+    # 2026-10-23 — base64-encoded PEM private key (Kubernetes Secret data,
+    # CI variables). Header prefixes re-derived from base64.b64encode.
+    BASE64_ENCODED_PEM_PRIVATE_KEY,
 )
