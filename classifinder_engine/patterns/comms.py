@@ -277,6 +277,42 @@ SLACK_LEGACY_WORKSPACE_TOKEN = SecretPattern(
 )
 
 
+SLACK_LEGACY_USER_TOKEN = SecretPattern(
+    id="slack_legacy_user_token",
+    name="Slack Legacy User/Workspace Token (xoxs-/xoxo-)",
+    description=(
+        "Legacy Slack token with xoxs- or xoxo- prefix: three numeric ID groups"
+        " followed by a hex tail. Deprecated user-scope tokens (xoxs- was issued to"
+        " legacy clients/integrations, xoxo- to workspace owners) that may still be live."
+    ),
+    provider="slack",
+    severity="high",
+    # Distinct from slack_user_token (xox[pe]-), slack_session_token (xoxc-) and
+    # slack_legacy_workspace_token (xox[ar]-): the s/o fourth letter is disjoint.
+    # Hex tail floor is 10 — real leaked xoxs-/xoxo- samples carry 10-hex tails.
+    # Pattern attribution: Gitleaks MIT (cmd/generate/config/rules/slack.go) — slack-legacy-token xox[os]- shape.
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])(?P<secret>xox[os]-\d{6,14}-\d{6,14}-\d{6,14}-[a-fA-F0-9]{10,64})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.93,
+    entropy_threshold=0.0,
+    context_keywords=["slack", "xoxs", "xoxo", "legacy", "token", "SLACK_TOKEN"],
+    known_test_values={
+        "xoxs-" + "-".join(["0" * 12] * 3) + "-" + "0" * 10,
+        "xoxo-" + "-".join(["0" * 12] * 3) + "-" + "0" * 10,
+        "xoxs-" + "-".join(["1234567890"] * 3) + "-" + "a" * 10,
+        "xoxs-" + "-".join(["1234567890"] * 3) + "-" + "0123456789abcdef",
+    },
+    recommendation=(
+        "Revoke this legacy Slack token (auth.revoke or the workspace's app management"
+        " page). Legacy xoxs-/xoxo- tokens are deprecated — migrate to a scoped app token."
+    ),
+    tags=["comms", "slack", "user", "legacy"],
+)
+
+
 SLACK_SESSION_COOKIE = SecretPattern(
     id="slack_session_cookie",
     name="Slack Session Cookie",
@@ -2832,6 +2868,7 @@ register(
     SLACK_CONFIG_REFRESH_TOKEN,
     SLACK_LEGACY_BOT_TOKEN,
     SLACK_LEGACY_WORKSPACE_TOKEN,
+    SLACK_LEGACY_USER_TOKEN,
     SLACK_SESSION_COOKIE,
     SLACK_SESSION_TOKEN,
     TWILIO_ACCOUNT_SID,

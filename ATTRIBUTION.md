@@ -151,7 +151,7 @@ Apache-2.0 requires that the license and NOTICE be preserved for any redistribut
 
 **Project:** https://github.com/gitleaks/gitleaks
 **License:** MIT
-**Use in ClassiFinder:** Four patterns' token FORMATS were taken from `config/gitleaks.toml`:
+**Use in ClassiFinder:** Five patterns' token FORMATS were taken from gitleaks (`config/gitleaks.toml` and its `cmd/generate/config/rules/` generators):
 
 | ClassiFinder Pattern | Gitleaks Source |
 |---|---|
@@ -159,6 +159,7 @@ Apache-2.0 requires that the license and NOTICE be preserved for any redistribut
 | `digitalocean_oauth_refresh_token` | `config/gitleaks.toml` (the `dor_v1_` prefix and the 64-character lowercase-hex body) |
 | `github_oauth_refresh_token` | `config/gitleaks.toml` (the `ghr_` prefix and the 36-character alphanumeric body) |
 | `notion_api_token_ntn` | `config/gitleaks.toml` (rule `notion-api-token` — the `ntn_` prefix followed by 11 digits and 35 alphanumerics, a 46-character body, which is what every example in the rule's `cmd/generate/config/rules/notion.go` generator matches). The `ntn_` prefix itself is first-party: Notion's developer changelog (https://developers.notion.com/page/changelog) announces that from 25 September 2024 new tokens use `ntn_` instead of `secret_` to improve compatibility with secret scanners, but Notion publishes no length — which is why the catalog rule is cited for the body. Because the vendor does not pin the width, the shipped regex accepts a modest 33-37 alphanumeric tail (a 44-48 character body) instead of gitleaks' exact 11+32+3 split, keeping the 11-digit head as the load-bearing anchor. The rule's example tokens were NOT used as fixtures. The guards, `confidence_base` 0.95 with no entropy gate, the registered zero / fill masks, the context keywords and the recommendation are independently authored. |
+| `slack_legacy_user_token` | `cmd/generate/config/rules/slack.go` (rule `slack-legacy-token` — the `xoxs-` / `xoxo-` prefixes and the three-numeric-groups-plus-hex-tail structure `xox[os]-\d+-\d+-\d+-[a-fA-F\d]+`). The bounded widths (`{6,14}` per numeric group, `{10,64}` hex tail) were set from the group and tail lengths seen across the rule's public examples; those examples are real leaked tokens and were NOT used as fixtures. The boundary guards, `confidence_base` 0.93 with no entropy gate, the synthetic `known_test_values`, the context keywords and the recommendation are independently authored. Slack documents these legacy token types only by prefix. |
 
 In each case the prefix and the body width are unprotectable format facts about credentials the vendor issues, and each pattern is registered separately rather than as a prefix alternation so the finding names the token's role. The shipped regexes — boundary guards, confidence tiers, context keywords, registered `known_test_values` and recommendations — are independently authored.
 
