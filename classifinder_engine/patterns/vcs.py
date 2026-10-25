@@ -841,6 +841,57 @@ NUGET_API_KEY = SecretPattern(
 )
 
 
+NUGET_CONFIG_CLEARTEXT_PASSWORD = SecretPattern(
+    id="nuget_config_cleartext_password",
+    name="NuGet.config ClearTextPassword",
+    description=(
+        "Private NuGet feed password stored in a NuGet.config <packageSourceCredentials>"
+        " entry: <add key=\"ClearTextPassword\" value=\"...\" /> (cleartext) or"
+        " <add key=\"Password\" value=\"...\" /> (DPAPI-encrypted, usable by the same"
+        " Windows user on the same machine). Often an Azure DevOps Artifacts or GitHub"
+        " Packages personal access token. Environment-variable (%VAR%) and build-system"
+        " placeholders are excluded."
+    ),
+    provider="nuget",
+    severity="high",
+    # The value is a free-form password: no vendor prefix or fixed width, so the
+    # XML key/value structure is the anchor. The 8-character floor drops the
+    # docs' elided '...'; the lookahead drops whole-value placeholders such as
+    # %ContosoPassword%, $(Var), ${VAR}, #{Var}#, __VAR__, {{ var }} and [PAT].
+    # Pattern attribution: gitleaks (MIT) nuget rule, secondary catalog reference
+    # Format per https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file#packagesourcecredentials
+    regex=re.compile(
+        r'(?i)<add\s+key\s*=\s*"(?:cleartext)?password"\s+value\s*=\s*"'
+        r"(?P<secret>"
+        r'(?!(?:%[^"%\r\n]+%|\$\([^")\r\n]+\)|\$\{[^"}\r\n]+\}|#\{[^"}\r\n]+\}#?'
+        r'|__[A-Za-z0-9_]+__|\{\{[^"}\r\n]+\}\}|\[[^"\]\r\n]+\])")'
+        r'[^"\r\n]{8,})'
+        r'"\s*/?>'
+    ),
+    confidence_base=0.85,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "packageSourceCredentials",
+        "packageSources",
+        "nuget",
+        "NuGet.config",
+        "Username",
+    ],
+    known_test_values={
+        # Microsoft's own nuget.config reference examples.
+        "33f!!lloppa",
+        "hal+9ooo_da!sY",
+    },
+    recommendation=(
+        "Revoke the credential (usually a personal access token) at the feed provider"
+        " and issue a new one. Do not commit it: reference it as an environment"
+        " variable (value=\"%FEED_PASSWORD%\"), use a credential provider, or pass"
+        " --store-password-in-clear-text only in ephemeral CI configs."
+    ),
+    tags=["vcs", "nuget", "registry", "password"],
+)
+
+
 # ===================================================
 # CRATES.IO
 # ===================================================
@@ -1400,4 +1451,8 @@ register(
     # prefix from the vendor's changelog). The 'packagist_ack_' key id is
     # a context keyword only.
     PACKAGIST_API_SECRET,
+    # 2026-10-24 — NuGet.config <packageSourceCredentials> password
+    # (key="ClearTextPassword" / key="Password"), structurally anchored on the
+    # XML add-key/value shape; %VAR% and build placeholders excluded.
+    NUGET_CONFIG_CLEARTEXT_PASSWORD,
 )
