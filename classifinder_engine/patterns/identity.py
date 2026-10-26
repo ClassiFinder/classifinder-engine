@@ -1182,6 +1182,55 @@ AMAZON_LWA_REFRESH_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# OCULUS / META QUEST — APP ACCESS TOKEN (2026-10-26)
+# ===================================================
+
+# Meta's server-to-server platform docs: the app access token "follows this
+# format: OC|$APPID|$APPSECRET". The app ID is a 15-17 digit Meta app ID and
+# the app secret a 32-character alphanumeric string, so the token embeds the
+# app secret verbatim — leaking it leaks the secret.
+
+OCULUS_APP_ACCESS_TOKEN = SecretPattern(
+    id="oculus_app_access_token",
+    name="Oculus App Access Token",
+    description=(
+        "Oculus / Meta Quest platform app access token, 'OC|<app id>|<app"
+        " secret>'. Authenticates server-to-server calls to graph.oculus.com"
+        " (achievements, entitlements, IAP) and contains the app secret itself."
+    ),
+    provider="oculus",
+    severity="high",
+    # Format per Meta's own S2S basics page ("OC|$APPID|$APPSECRET"); the
+    # digit and secret widths and the guards are ours.
+    # Source: https://developers.meta.com/vr/documentation/spatial-sdk/ps-s2s-basics/
+    regex=re.compile(
+        r"(?<![A-Za-z0-9|])(?P<secret>OC\|[0-9]{15,17}\|[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "oculus",
+        "access_token",
+        "graph.oculus.com",
+        "meta",
+        "quest",
+    ],
+    known_test_values={
+        "OC|" + "1234567898014273|5f8730a4n51c5f8v8122aaf971b937e7",
+        "OC|" + "0" * 16 + "|" + "0" * 32,
+    },
+    recommendation=(
+        "Reset the app secret in the Meta Quest developer dashboard (API page)"
+        " — the token embeds it, so the secret itself is exposed — and update"
+        " every server that builds the OC| token from it."
+    ),
+    tags=["identity", "oculus", "meta"],
+)
+
+
 
 # ===================================================
 # MAPBOX SECRET ACCESS TOKEN (2026-09-07)
@@ -1784,6 +1833,8 @@ register(
     # inheritance). Valid indefinitely, so severity is critical where the
     # hour-scale access token is high.
     AMAZON_LWA_REFRESH_TOKEN,
+    # 2026-10-26 — Oculus / Meta Quest app access token ('OC|' + app id + '|' + app secret).
+    OCULUS_APP_ACCESS_TOKEN,
     # 2026-09-07 — Mapbox SECRET access token, anchored on 'sk.eyJ' so
     # it can never be confused with the public 'pk.' token above, with
     # OpenAI's 'sk-' or with Stripe's 'sk_live_'.

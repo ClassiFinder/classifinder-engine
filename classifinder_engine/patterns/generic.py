@@ -159,6 +159,68 @@ BASIC_AUTH_HEADER = SecretPattern(
 
 
 # ===================================================
+# AUTHORIZATION: Token <key> HEADER (2026-10-26)
+# ===================================================
+
+# The 'Token' authorization scheme popularised by Django REST Framework's
+# TokenAuthentication ('Authorization: Token 9944b0...') and used by NetBox,
+# Paperless, Sentry's DRF-era clients and many other DRF apps, plus the
+# 'Api-Token' variant and GitHub's lowercase 'token' form. Distinct from
+# bearer_token / basic_auth_header (those need the literal 'Bearer' / 'Basic'
+# scheme word), so the three never compete for one span.
+#
+# Header-generic like bearer_token: provider 'generic', so any provider-
+# specific pattern matching the same value (a GitHub PAT, an NRRA- key) wins
+# the dedup. The charset refuses '$', '<', '{' and quotes, so '${API_TOKEN}',
+# '<your-token>', '{{token}}' and '"Token " + key' never match; an entropy
+# floor and a base below the FP-wordlist line handle wordy placeholders.
+# An optional quote after 'authorization' admits the dict / JSON header form
+# ('"Authorization": "Token ..."'), which is how most client code sends it.
+
+AUTHORIZATION_TOKEN_HEADER = SecretPattern(
+    id="authorization_token_header",
+    name="Token in Authorization Header",
+    description=(
+        "API token sent with the 'Token' authorization scheme"
+        " ('Authorization: Token <key>', also 'Api-Token' and lowercase"
+        " 'token'), as used by Django REST Framework TokenAuthentication and the"
+        " many APIs built on it. The token is a long-lived bearer credential."
+    ),
+    provider="generic",
+    severity="high",
+    # Header scheme per Django REST Framework's TokenAuthentication docs; the
+    # gitleaks (MIT) curl-auth-header rule covers the same header. Charset,
+    # length window, guards and scoring are ours.
+    # Source: https://www.django-rest-framework.org/api-guide/authentication/#tokenauthentication
+    regex=re.compile(
+        r"(?i:authorization)[\"']?\s*[:=]\s*[\"']?(?:Api-)?[Tt]oken\s+"
+        r"(?P<secret>[A-Za-z0-9._~+/=-]{20,256})"
+        r"(?![A-Za-z0-9._~+/=-])",
+        re.ASCII,
+    ),
+    confidence_base=0.80,
+    entropy_threshold=3.0,
+    context_keywords=[
+        "authorization",
+        "token",
+        "api-token",
+        "header",
+        "curl",
+    ],
+    known_test_values={
+        # The token from DRF's own TokenAuthentication documentation.
+        "9944b09199c62bcf" + "9418ad846dd0e4bbdfc6ee4b",
+    },
+    recommendation=(
+        "Revoke this token in the issuing application (for DRF apps, delete it"
+        " from the authtoken table or the user's API-token page), issue a new"
+        " one, and load it from a secret store instead of a script or config."
+    ),
+    tags=["auth", "token", "header"],
+)
+
+
+# ===================================================
 # GENERIC ENV API KEYS
 # ===================================================
 
@@ -498,6 +560,65 @@ UNIX_CRYPT_PASSWORD_HASH = SecretPattern(
 
 
 # ===================================================
+# CISCO IOS TYPE 8 PASSWORD HASH (2026-10-26)
+# ===================================================
+
+# Cisco IOS 'secret 8' — PBKDF2-SHA256 with a 14-character salt and a
+# 43-character digest, both in crypt's './A-Za-z0-9' alphabet, written
+# '$8$<salt>$<digest>' (hashcat mode 9200). Same verifier-not-credential
+# reasoning as bcrypt / unix crypt above: severity medium. It matters because
+# it sits in running-configs next to 'username ... secret 8' and
+# 'enable secret 8', and a pasted config leaks every local account's hash.
+# '$8$' is outside unix_crypt_password_hash's '$1$/$5$/$6$' families.
+
+CISCO_TYPE8_PASSWORD_HASH = SecretPattern(
+    id="cisco_type8_password_hash",
+    name="Cisco IOS Type 8 Password Hash",
+    description=(
+        "Cisco IOS/IOS-XE type 8 password hash (PBKDF2-SHA256), '$8$' + a"
+        " 14-character salt + '$' + a 43-character digest, as written by"
+        " 'enable secret 8' and 'username ... secret 8'. A one-way hash, not a"
+        " usable credential, but its presence means a device configuration —"
+        " with every local account's hash — has leaked."
+    ),
+    provider="generic",
+    severity="medium",
+    # Format per hashcat's example-hashes wiki (mode 9200, Cisco-IOS $8$); the
+    # Nosey Parker (Apache-2.0) np.pwhash.5 rule matches the same shape.
+    # Guards, confidence and known_test_values are ours.
+    # Source: https://hashcat.net/wiki/doku.php?id=example_hashes
+    regex=re.compile(
+        r"(?<![./A-Za-z0-9$])"
+        r"(?P<secret>\$8\$[./A-Za-z0-9]{14}\$[./A-Za-z0-9]{43})"
+        r"(?![./A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # fixed-width salt and digest; nothing to gate
+    context_keywords=[
+        "secret 8",
+        "enable secret",
+        "username",
+        "privilege",
+        "cisco",
+    ],
+    known_test_values={
+        # Published mode-9200 example hashes (hashcat wiki), plus a mask.
+        "$8$" + "TnGX/fE4KGHOVU$pEhnEvxrvaynpi8j4f.EMHr6M.FzU8xnZnBr/tJdFWk",
+        "$8$" + "mTj4RZG8N9ZDOk$elY/asfm8kD3iDmkBe3hD2r4xcA/0oWS5V3os.O91u.",
+        "$8$" + "x" * 14 + "$" + "x" * 43,
+    },
+    recommendation=(
+        "This is a hash, not a usable credential — but treat it as a leaked"
+        " device config: change the passwords of every account whose hash"
+        " appears, remove the config from source control and logs, and prefer"
+        " type 9 (scrypt) secrets on platforms that support them."
+    ),
+    tags=["generic", "hash", "password", "cisco"],
+)
+
+
+# ===================================================
 # KERBEROS AS-REP ROASTING HASH — etype 23 (2026-10-26)
 # ===================================================
 
@@ -609,6 +730,8 @@ register(
     JWT_TOKEN,
     BEARER_TOKEN,
     BASIC_AUTH_HEADER,
+    # 2026-10-26 — 'Authorization: Token <key>' (DRF TokenAuthentication scheme).
+    AUTHORIZATION_TOKEN_HEADER,
     GENERIC_API_KEY_ENV,
     GENERIC_HIGH_ENTROPY,
     # 2026-09-07 — bcrypt password hash. A verifier, not a bearer
@@ -617,6 +740,8 @@ register(
     # 2026-10-22 — md5crypt / sha256crypt / sha512crypt. Same verifier-not-
     # credential reasoning as bcrypt: severity medium, 'hash'-tagged.
     UNIX_CRYPT_PASSWORD_HASH,
+    # 2026-10-26 — Cisco IOS type 8 ($8$, PBKDF2-SHA256) hash. Verifier, severity medium.
+    CISCO_TYPE8_PASSWORD_HASH,
     # 2026-10-26 — Kerberos AS-REP roasting hash (etype 23). A crackable
     # hash, not a bearer credential: severity medium, 'hash'-tagged.
     KERBEROS_ASREP_HASH,

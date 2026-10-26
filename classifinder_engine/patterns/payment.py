@@ -264,6 +264,158 @@ SQUARE_ACCESS_TOKEN = SecretPattern(
 
 
 # ===================================================
+# SQUARE — OAUTH APPLICATION SECRETS + LEGACY PAT (2026-10-26)
+# ===================================================
+
+# Square's OAuth application secret is the credential that exchanges an
+# authorization code for a merchant access token, so a leaked production
+# secret lets an attacker mint tokens for every merchant that authorized the
+# app. Square documents it as "prefixed with sq0csp" on the OAuth walkthrough;
+# the 43-character base64url body is the width of every published example and
+# of the gitleaks (MIT) and Nosey Parker (Apache-2.0) rules for it.
+#
+# Production and sandbox are registered separately so the finding names the
+# environment. The production left guard refuses '-', so the 'sq0csp-' inside a
+# 'sandbox-sq0csp-' secret can never also fire the production pattern; a test
+# pins that. Neither shape overlaps square_access_token (EAA prefix).
+
+SQUARE_PRODUCTION_APPLICATION_SECRET = SecretPattern(
+    id="square_production_application_secret",
+    name="Square Production Application Secret",
+    description=(
+        "Square OAuth application secret for a production app — 'sq0csp-'"
+        " followed by 43 base64url characters. Used with the application ID to"
+        " exchange OAuth authorization codes for merchant access tokens, so a"
+        " leaked secret can mint tokens for every merchant that authorized the app."
+    ),
+    provider="square",
+    severity="critical",
+    # Prefix is Square's own ("prefixed with sq0csp", OAuth walkthrough); the
+    # 43-character body matches the vendor examples and the gitleaks (MIT) /
+    # Nosey Parker (Apache-2.0) square secret rules. Guards are ours.
+    # Source: https://developer.squareup.com/docs/oauth-api/walkthrough
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])(?P<secret>sq0csp-[A-Za-z0-9_-]{43})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "square",
+        "squareup",
+        "application_secret",
+        "client_secret",
+        "oauth",
+        "sq0csp",
+    ],
+    known_test_values={
+        # A widely published sample secret, and an all-x mask. Assembled by
+        # concatenation so no contiguous key-shaped literal sits in the repo.
+        "sq0csp-" + "iiWQf_JFiv8Z5t__7T6y2CBALOEtEVE9k_cLotSY0F4",
+        "sq0csp-" + "x" * 43,
+    },
+    recommendation=(
+        "Replace the application secret in the Square Developer Dashboard"
+        " (Credentials > Production > Replace secret), update every service that"
+        " performs the OAuth code exchange, and review the merchant tokens the"
+        " app has issued."
+    ),
+    tags=["payment", "square", "oauth"],
+)
+
+
+SQUARE_SANDBOX_APPLICATION_SECRET = SecretPattern(
+    id="square_sandbox_application_secret",
+    name="Square Sandbox Application Secret",
+    description=(
+        "Square OAuth application secret for the sandbox environment —"
+        " 'sandbox-sq0csb-' (or 'sandbox-sq0csp-') followed by 43 base64url"
+        " characters. Sandbox secrets move no real money but expose the app's"
+        " sandbox configuration and usually sit next to production credentials."
+    ),
+    provider="square",
+    severity="medium",
+    # Square's walkthrough prose names 'sandbox-sq0csp' while its sandbox
+    # examples use 'sandbox-sq0csb'; both are accepted. Body width as for the
+    # production secret above. Guards are ours.
+    # Source: https://developer.squareup.com/docs/oauth-api/walkthrough
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])(?P<secret>sandbox-sq0cs[bp]-[A-Za-z0-9_-]{43})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "square",
+        "squareup",
+        "sandbox",
+        "application_secret",
+        "client_secret",
+    ],
+    known_test_values={
+        # A widely published sandbox sample secret, and an all-x mask.
+        "sandbox-sq0csb-" + "desU-1-gr4wkeC2P2JP1Bxi5WrOgS4m6elVPG5ZffVL",
+        "sandbox-sq0csb-" + "x" * 43,
+    },
+    recommendation=(
+        "Replace the sandbox application secret in the Square Developer"
+        " Dashboard (Credentials > Sandbox) and check whether production"
+        " credentials were committed alongside it."
+    ),
+    tags=["payment", "square", "oauth", "sandbox"],
+)
+
+
+# Legacy Square personal access token. Square confirms on its developer forum
+# that older personal access tokens begin 'sq0atp-' (current ones begin 'EAAA',
+# covered by square_access_token above). Square never published a width; the
+# {22,60} window is the gitleaks (MIT) square-access-token rule's, whose floor
+# is the exact 22 of Nosey Parker's (Apache-2.0) np.square.1.
+
+SQUARE_LEGACY_ACCESS_TOKEN = SecretPattern(
+    id="square_legacy_access_token",
+    name="Square Legacy Personal Access Token",
+    description=(
+        "Legacy Square personal access token — 'sq0atp-' followed by 22 or more"
+        " base64url characters. Issued before Square moved to EAAA-prefixed"
+        " tokens; a surviving one still carries full API access to the account."
+    ),
+    provider="square",
+    severity="critical",
+    # Prefix confirmed by Square staff on the developer forum; width window
+    # from gitleaks (MIT) square-access-token and Nosey Parker (Apache-2.0)
+    # np.square.1. Guards, confidence and test values are ours.
+    # Source: https://developer.squareup.com/forums/t/square-personal-access-token-prefix/8102
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])(?P<secret>sq0atp-[A-Za-z0-9_-]{22,60})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "square",
+        "squareup",
+        "access_token",
+        "SQUARE_ACCESS_TOKEN",
+        "sq0atp",
+    ],
+    known_test_values={
+        "sq0atp-" + "x" * 22,
+        "sq0atp-" + "0" * 22,
+    },
+    recommendation=(
+        "Revoke this token in the Square Developer Dashboard and replace it with"
+        " a current (EAAA-prefixed) access token scoped to what the integration"
+        " needs."
+    ),
+    tags=["payment", "square", "legacy"],
+)
+
+
+# ===================================================
 # CREDIT CARDS
 # ===================================================
 
@@ -2006,6 +2158,11 @@ register(
     STRIPE_RESTRICTED_KEY,
     PAYPAL_CLIENT_SECRET,
     SQUARE_ACCESS_TOKEN,
+    # 2026-10-26 — Square OAuth application secrets (sq0csp- / sandbox-sq0cs[bp]-)
+    # and the legacy sq0atp- personal access token.
+    SQUARE_PRODUCTION_APPLICATION_SECRET,
+    SQUARE_SANDBOX_APPLICATION_SECRET,
+    SQUARE_LEGACY_ACCESS_TOKEN,
     CREDIT_CARD_NUMBER,
     SHOPIFY_ACCESS_TOKEN,
     SHOPIFY_CUSTOM_TOKEN,
