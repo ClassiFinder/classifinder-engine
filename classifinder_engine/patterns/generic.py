@@ -497,6 +497,114 @@ UNIX_CRYPT_PASSWORD_HASH = SecretPattern(
 )
 
 
+# ===================================================
+# KERBEROS AS-REP ROASTING HASH — etype 23 (2026-10-26)
+# ===================================================
+
+# The third 'hash'-tagged pattern, and it inherits the bcrypt / crypt(3)
+# framing: this is NOT a bearer credential. It is the output of AS-REP
+# roasting — an attacker (or a pentest tool such as Impacket's
+# GetNPUsers.py or Rubeus) asks a domain controller for an AS-REP on behalf
+# of an account with Kerberos pre-authentication disabled, and gets back a
+# blob encrypted with a key derived from that account's password. Nothing
+# can be authenticated with the blob itself; its value is offline cracking
+# (hashcat mode 18200). As a finding it is a SIGNAL — a roasting dump in a
+# repo, a ticket attachment or a pasted engagement log names a crackable
+# Active Directory account and the misconfiguration that exposed it. So:
+# severity medium, written as an exposure, never as an active compromise.
+#
+# Shape, in hashcat's own spelling: '$krb5asrep$23$', an optional
+# 'user@domain:' principal, a 32-hex checksum, '$', then the hex encrypted
+# part (several hundred characters in practice; the floor here is 64).
+# Both hex runs are lowercase, which is what hashcat, Impacket and Rubeus
+# emit. Only etype 23 (RC4-HMAC) is covered — it is the roastable default
+# and the one hashcat's 18200 mode cracks.
+#
+# Left guard refuses '$' and word characters so the prefix is not sliced
+# out of a longer token; right guard refuses any alphanumeric so a run that
+# continues past the hex alphabet is not truncated into a match.
+#
+# confidence_base 0.95 — the literal prefix is unambiguous — which is above
+# the 0.85 FP-wordlist gate, so hashcat's own published example is pinned
+# as a known test value.
+
+KERBEROS_ASREP_HASH = SecretPattern(
+    id="kerberos_asrep_hash",
+    name="Kerberos AS-REP Roasting Hash (etype 23)",
+    description=(
+        "A Kerberos 5 AS-REP roasting hash, etype 23 (RC4-HMAC), in hashcat"
+        " format — '$krb5asrep$23$', an optional 'user@domain:' principal, a"
+        " 32-character hex checksum, '$' and a long hex encrypted part. This"
+        " is a crackable hash, not a usable credential: it authenticates"
+        " nothing on its own. It matters as a signal — it is the output of an"
+        " AS-REP roasting run (Impacket GetNPUsers, Rubeus asreproast) against"
+        " an Active Directory account with pre-authentication disabled, and"
+        " that account's password can be recovered offline."
+    ),
+    # provider is 'kerberos', NOT 'generic', although the pattern lives in the
+    # generic module: the scanner's dedup lets any non-generic finding beat a
+    # generic one at an overlapping span, and a 13-19 digit run inside the hex
+    # blob routinely trips credit_card_number (even at 0.15). As 'generic' the
+    # whole hash would silently lose to that sliver.
+    provider="kerberos",
+    severity="medium",
+    # Format per hashcat's example-hashes table, mode 18200 "Kerberos 5,
+    # etype 23, AS-REP": '$krb5asrep$23$' + optional 'user@domain:' + 32 hex
+    # checksum + '$' + hex encrypted part. Candidate surfaced from the Nosey
+    # Parker (Apache-2.0) catalog; guards, widths, confidence and
+    # known_test_values are ClassiFinder's own.
+    # Source: https://hashcat.net/wiki/doku.php?id=example_hashes
+    regex=re.compile(
+        r"(?<![A-Za-z0-9$])"
+        r"(?P<secret>\$krb5asrep\$23\$(?:[^:$\s]{1,256}:)?[0-9a-f]{32}\$[0-9a-f]{64,})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # the literal prefix and fixed checksum width carry it
+    context_keywords=[
+        "kerberos",
+        "krb5",
+        "asrep",
+        "as-rep",
+        "roast",
+        "hashcat",
+        "getnpusers",
+        "rubeus",
+        "domain",
+    ],
+    known_test_values={
+        # hashcat's own published mode-18200 example, reproduced in every
+        # AS-REP roasting tutorial. Assembled by concatenation, per
+        # repository convention.
+        "$krb5asrep$" + "23$user@domain.com:3e156ada591263b8aab0965f5aebd837$"
+        + "007497cb51b6c8116d6407a782ea0e1c5402b17db7afa6b05a6d30ed164a9933"
+        + "c754d720e279c6c573679bd27128fe77e5fea1f72334c1193c8ff0b370fadc63"
+        + "68bf2d49bbfdba4c5dccab95e8c8ebfdc75f438a0797dbfb2f8a1a5f4c423f9b"
+        + "fc1fea483342a11bd56a216f4d5158ccc4b224b52894fadfba3957dfe4b6b8f5"
+        + "f9f9fe422811a314768673e0c924340b8ccb84775ce9defaa3baa0910b676ad0"
+        + "036d13032b0dd94e3b13903cc738a7b6d00b0b3c210d1f972a6c7cae9bd3c959"
+        + "acf7565be528fc179118f28c679f6deeee1456f0781eb8154e18e49cb27b64bf"
+        + "74cd7112a0ebae2102ac",
+        # All-zero redaction masks, with and without a principal.
+        "$krb5asrep$" + "23$" + "0" * 32 + "$" + "0" * 64,
+        "$krb5asrep$" + "23$user@domain.com:" + "0" * 32 + "$" + "0" * 64,
+    },
+    recommendation=(
+        "This is a hash, so nothing is directly usable with it — do not treat"
+        " it as an active credential. Do treat it as an exposure: identify the"
+        " account it names, assume its password can be cracked offline and"
+        " rotate it to a long random value, and re-enable Kerberos"
+        " pre-authentication on that account (clear 'Do not require Kerberos"
+        " preauthentication'). Audit the domain for other accounts with"
+        " pre-authentication disabled, prefer AES over RC4 encryption types,"
+        " and remove the roasting output from source control, tickets and"
+        " logs."
+    ),
+    tags=["generic", "hash", "password", "kerberos"],
+)
+
+
 register(
     JWT_TOKEN,
     BEARER_TOKEN,
@@ -509,4 +617,7 @@ register(
     # 2026-10-22 — md5crypt / sha256crypt / sha512crypt. Same verifier-not-
     # credential reasoning as bcrypt: severity medium, 'hash'-tagged.
     UNIX_CRYPT_PASSWORD_HASH,
+    # 2026-10-26 — Kerberos AS-REP roasting hash (etype 23). A crackable
+    # hash, not a bearer credential: severity medium, 'hash'-tagged.
+    KERBEROS_ASREP_HASH,
 )
