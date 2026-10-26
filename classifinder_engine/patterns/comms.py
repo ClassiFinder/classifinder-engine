@@ -754,10 +754,13 @@ NEWRELIC_USER_API_KEY = SecretPattern(
     ),
     provider="newrelic",
     severity="high",
+    # Body is MIXED-CASE alphanumeric: real keys are issued uppercase, e.g. the
+    # Nosey Parker np.newrelic.3 (Apache-2.0) example; gitleaks (MIT)
+    # new-relic-user-api-key is (?i). The NRAK- prefix itself stays uppercase.
     # Pattern attribution: Betterleaks MIT (betterleaks.toml:3742) — NRAK- vendor prefix
     regex=re.compile(
-        r"(?P<secret>NRAK-[a-z0-9]{27})"
-        r"(?![a-z0-9])",
+        r"(?P<secret>NRAK-[A-Za-z0-9]{27})"
+        r"(?![A-Za-z0-9])",
         re.ASCII,
     ),
     confidence_base=0.97,
@@ -1592,8 +1595,10 @@ RESEND_API_KEY = SecretPattern(
     # Format per Resend API reference (keys are prefixed 're_'):
     #   https://resend.com/docs/api-reference/introduction
     # Independently authored from the documented 're_' prefix + token body.
+    # The left boundary keeps 're_' inside an identifier ('square_sandbox_...',
+    # 'configure_logging_...') from being claimed as a key.
     regex=re.compile(
-        r"(?P<secret>re_[A-Za-z0-9_]{20,})(?![A-Za-z0-9_])",
+        r"(?<![A-Za-z0-9_])(?P<secret>re_[A-Za-z0-9_]{20,})(?![A-Za-z0-9_])",
         re.ASCII,
     ),
     confidence_base=0.90,
