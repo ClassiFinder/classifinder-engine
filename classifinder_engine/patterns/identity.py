@@ -64,9 +64,12 @@ ONEPASSWORD_SECRET_KEY = SecretPattern(
     provider="1password",
     severity="critical",
     # Pattern attribution: Betterleaks MIT (cmd/generate/config/rules/1password.go) — A3- prefix.
-    # Hyphens are purely for readability; matching the standard 6-6-5-5-5-5 hyphenated form.
+    # Hyphens are purely for readability; matching the standard 6-6-5-5-5-5 hyphenated form,
+    # plus the compact 6-11-5-5-5 form (second and third blocks joined), per the gitleaks (MIT)
+    # 1password-secret-key rule and its test examples.
     regex=re.compile(
-        r"(?P<secret>A3-[A-Z0-9]{5,8}(?:-[A-Z0-9]{5,8}){4,6})"
+        r"(?P<secret>A3-(?:[A-Z0-9]{6}-[A-Z0-9]{11}(?:-[A-Z0-9]{5}){3}"
+        r"|[A-Z0-9]{5,8}(?:-[A-Z0-9]{5,8}){4,6}))"
         r"(?![A-Z0-9\-])",
         re.ASCII,
     ),
