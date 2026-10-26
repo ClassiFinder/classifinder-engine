@@ -773,6 +773,56 @@ NEWRELIC_USER_API_KEY = SecretPattern(
     tags=["monitoring", "newrelic"],
 )
 
+
+# ===================================================
+# NEW RELIC — REST API KEY (2026-10-26)
+# ===================================================
+
+# The REST API (v2) key. New Relic support describes these keys as "commonly
+# prefixed with NRRA-", and New Relic's own open-source scanner rusty-hog
+# (Apache-2.0) defines the body as exactly 42 hex characters
+# ((?i)NRRA-[a-f0-9]{42}); Nosey Parker's np.newrelic.7 is identical. New Relic
+# no longer issues new REST keys, so every match is a long-lived legacy key.
+
+NEWRELIC_REST_API_KEY = SecretPattern(
+    id="newrelic_rest_api_key",
+    name="New Relic REST API Key",
+    description=(
+        "New Relic REST API (v2) key — 'NRRA-' followed by 42 hex characters."
+        " Grants read/write access to the account's REST v2 API (applications,"
+        " alert policies, deployments). Legacy: New Relic no longer issues them."
+    ),
+    provider="newrelic",
+    severity="high",
+    # Format from New Relic's own rusty-hog scanner (Apache-2.0):
+    # (?i)NRRA-[a-f0-9]{42}. Guards and confidence are ours.
+    # Source: https://github.com/newrelic/rusty-hog
+    regex=re.compile(
+        r"(?<![A-Za-z0-9])(?P<secret>NRRA-[a-fA-F0-9]{42})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "newrelic",
+        "new_relic",
+        "NEW_RELIC_API_KEY",
+        "x-api-key",
+        "nrra",
+    ],
+    known_test_values={
+        "NRRA-" + "e270623d47659ff6a48ac5bde6bba223bef47c8c26",
+        "NRRA-" + "0" * 42,
+    },
+    recommendation=(
+        "Delete this REST API key in New Relic (API keys UI) and move the"
+        " integration to a User key (NRAK-) on NerdGraph; REST keys can no"
+        " longer be created, so do not plan to rotate in place."
+    ),
+    tags=["monitoring", "newrelic", "legacy"],
+)
+
 NEWRELIC_LICENSE_KEY = SecretPattern(
     id="newrelic_license_key",
     name="New Relic License Key",
@@ -903,6 +953,62 @@ GRAFANA_API_KEY = SecretPattern(
     known_test_values=set(),
     recommendation=("Revoke this token in Grafana under Administration > Service Accounts."),
     tags=["monitoring", "grafana"],
+)
+
+
+# ===================================================
+# GRAFANA — LEGACY API KEY (2026-10-26)
+# ===================================================
+
+# Grafana's pre-service-account API keys are base64 of a small JSON object,
+# {"k":"<32 random alphanumerics>","n":"<key name>","id":<org id>}, built by
+# pkg/components/apikeygen in Grafana's own source. That makes the first 60
+# characters structural: 'eyJrIjoi' is base64 of '{"k":"', the next 44 encode
+# the 32-character secret plus its closing quote, and 'LCJuIjoi' at offset 52
+# is base64 of ',"n":"'. Anchoring on BOTH literals is what keeps Power BI
+# embed tokens out — they also open 'eyJrIjoi', but their "k" is a 36-character
+# GUID, so 'LCJuIjoi' never lands at offset 52 (a test pins that).
+
+GRAFANA_LEGACY_API_KEY = SecretPattern(
+    id="grafana_legacy_api_key",
+    name="Grafana Legacy API Key",
+    description=(
+        "Grafana legacy API key — base64-encoded JSON carrying a 32-character"
+        " random key, the key name and the org ID, always beginning 'eyJrIjoi'."
+        " Deprecated in favour of service account tokens (glsa_) but still"
+        " accepted by many self-hosted Grafana instances."
+    ),
+    provider="grafana",
+    severity="high",
+    # Structure from Grafana's own key generator (apikeygen.go): base64 of
+    # {"k":<32 alnum>,"n":<name>,"id":<org>}. Guards and the name-length window
+    # are ours.
+    # Source: https://github.com/grafana/grafana/blob/main/pkg/components/apikeygen/apikeygen.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9+/])"
+        r"(?P<secret>eyJrIjoi[A-Za-z0-9+/]{44}LCJuIjoi[A-Za-z0-9+/]{8,400}={0,2})"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "grafana",
+        "GRAFANA_API_KEY",
+        "grafana_token",
+        "api_key",
+        "bearer",
+    ],
+    known_test_values={
+        # A widely published sample key (n=adminkey) from Grafana API how-tos.
+        "eyJrIjoi" + "Y21sM1JRYjB6RnVYSTNLenRWQkFEaWN2bXI2V202U2IiLCJuIjoiYWRtaW5rZXkiLCJpZCI6MX0=",
+    },
+    recommendation=(
+        "Delete this API key in Grafana (Administration > API keys) and migrate"
+        " the integration to a service account token with the narrowest role it"
+        " needs."
+    ),
+    tags=["monitoring", "grafana", "legacy"],
 )
 
 
@@ -2883,7 +2989,11 @@ register(
     NEWRELIC_ADMIN_API_KEY,
     NEWRELIC_INSIGHTS_KEY,
     NEWRELIC_USER_API_KEY,
+    # 2026-10-26 — New Relic REST API key (NRRA- + 42 hex).
+    NEWRELIC_REST_API_KEY,
     GRAFANA_API_KEY,
+    # 2026-10-26 — Grafana legacy API key (base64 JSON, 'eyJrIjoi'...'LCJuIjoi').
+    GRAFANA_LEGACY_API_KEY,
     LINEAR_API_KEY,
     NOTION_API_KEY,
     SENTRY_ORG_TOKEN,

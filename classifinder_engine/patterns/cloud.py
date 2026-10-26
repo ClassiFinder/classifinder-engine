@@ -1293,6 +1293,129 @@ VAULT_BATCH_TOKEN = SecretPattern(
 
 
 # ===================================================
+# HASHICORP VAULT — LEGACY SERVICE TOKEN + UNSEAL KEY (2026-10-26)
+# ===================================================
+
+# Before Vault 1.10, service tokens were 's.' + 24 random alphanumerics; 1.10
+# moved them to 'hvs.' (vault_token above). Many long-lived legacy tokens are
+# still in configs. A two-character prefix is far too weak on its own — it is
+# every 's.method()' call in every codebase — so this pattern is CONTEXT-GATED
+# IN THE REGEX: the token must follow a 'token' key/header word ('VAULT_TOKEN=',
+# 'X-Vault-Token:', '"client_token": ', 'Initial Root Token:') or the
+# 'vault login' command. On top of that the body must mix a digit, an upper-
+# and a lowercase letter (random 24-alnum tokens almost always do;
+# 's.' + all-lowercase or all-uppercase identifiers do not), and the guards
+# refuse an 's.' glued to a longer identifier ('tokens.', 'this.s.') or one
+# followed by '(' / '.' (a method call or chained access).
+#
+# confidence_base 0.75 sits deliberately below the 0.85 FP-wordlist floor so
+# placeholder bodies are penalised. Side effect, recorded here on purpose: a
+# real token whose random body happens to contain 'test'/'demo' (about 2 in
+# 100,000) drops by 0.40.
+
+VAULT_LEGACY_SERVICE_TOKEN = SecretPattern(
+    id="vault_legacy_service_token",
+    name="HashiCorp Vault Legacy Service Token",
+    description=(
+        "HashiCorp Vault service token in the pre-1.10 format — 's.' followed by"
+        " 24 random alphanumerics — found next to a token key, header or"
+        " 'vault login'. Grants whatever policies the token carries until it"
+        " expires or is revoked; root tokens from 'vault operator init' have this"
+        " shape on older clusters."
+    ),
+    provider="vault",
+    severity="critical",
+    # Vault <=1.9 's.' prefix per HashiCorp's token docs; 24-character body as
+    # in gitleaks (MIT) vault-service-token. The keyword gate, the mixed-class
+    # lookaheads and the guards are ClassiFinder's own.
+    # Source: https://developer.hashicorp.com/vault/docs/concepts/tokens
+    regex=re.compile(
+        r"(?i:token|vault\s+login)[\"']?\s*[:=]?\s*[\"']?"
+        r"(?<![A-Za-z0-9_.$/-])"
+        r"(?P<secret>s\.(?=[A-Za-z0-9]{0,23}[0-9])(?=[A-Za-z0-9]{0,23}[A-Z])"
+        r"(?=[A-Za-z0-9]{0,23}[a-z])[A-Za-z0-9]{24})"
+        r"(?![A-Za-z0-9_.(-])",
+        re.ASCII,
+    ),
+    confidence_base=0.75,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "vault",
+        "VAULT_TOKEN",
+        "x-vault-token",
+        "hashicorp",
+        "client_token",
+        "root token",
+    ],
+    known_test_values={
+        # Repeating placeholder bodies. (An all-x mask cannot match at all —
+        # the mixed-class lookaheads already reject it.)
+        "s." + "Abc123" * 4,
+        "s." + "Xx0" * 8,
+    },
+    recommendation=(
+        "Revoke this token with `vault token revoke` (or revoke its accessor),"
+        " audit its policies and recent use in the audit device, and upgrade"
+        " clients to Vault 1.10+ so new tokens carry the scannable 'hvs.'"
+        " prefix. If it is a root token, generate a new one only when needed"
+        " and revoke it immediately after use."
+    ),
+    tags=["cloud", "vault", "secrets", "legacy"],
+)
+
+
+# A Vault unseal key share is printed by 'vault operator init' as
+# 'Unseal Key N: <44 base64>' and typed back via 'vault operator unseal <key>'.
+# A threshold of shares reconstructs the root key, so each share is critical.
+# The body alone is indistinguishable from any base64 run, so the pattern is
+# anchored on the vendor's own output label or command; only the key itself
+# is the secret span.
+
+VAULT_UNSEAL_KEY = SecretPattern(
+    id="vault_unseal_key",
+    name="HashiCorp Vault Unseal Key",
+    description=(
+        "HashiCorp Vault unseal key share, as printed by 'vault operator init'"
+        " ('Unseal Key 1: ...') or passed to 'vault operator unseal'. A threshold"
+        " of shares reconstructs the root key and unseals the cluster."
+    ),
+    provider="vault",
+    severity="critical",
+    # Output label and 44-character base64 share per HashiCorp's getting-started
+    # tutorial; Nosey Parker (Apache-2.0) np.hashicorp.7 anchors the same way.
+    # Source: https://developer.hashicorp.com/vault/tutorials/get-started/setup
+    regex=re.compile(
+        r"(?i:unseal\s+key(?:\s+\d{1,2})?\s*:|vault\s+operator\s+unseal)\s+"
+        r"(?P<secret>[A-Za-z0-9+/]{43}[A-Za-z0-9+/=])"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,
+    context_keywords=[
+        "vault",
+        "unseal",
+        "operator init",
+        "root token",
+        "hashicorp",
+    ],
+    known_test_values={
+        # Sample shares reproduced across public Vault tutorials.
+        "1kDP9lKLzPHZsTzc9TEel3FfclBmKNClhaDhAnDx" + "2J8=",
+        "0tZn+7QQCxphpHwTm7/dC3LpP5JGIbYl3PK8Sy81" + "R+P2",
+        "98m+o2ylRhVbOi+3o5ub6PbP343ocFUVORgSYeyp" + "MDjh",
+    },
+    recommendation=(
+        "Treat the cluster's root key as exposed: rekey Vault (`vault operator"
+        " rekey`) to issue new unseal shares, rotate the root key"
+        " (`vault operator rotate`), and store shares only with their"
+        " individual holders or move to auto-unseal with a KMS."
+    ),
+    tags=["cloud", "vault", "secrets", "unseal"],
+)
+
+
+# ===================================================
 # PULUMI
 # ===================================================
 
@@ -4351,6 +4474,10 @@ register(
     # ('sha256~' + derived 43-char digest), Scalingo API token ('tk-us-'),
     # Yandex Passport OAuth token (long-lived, exchanged for IAM tokens).
     VAULT_BATCH_TOKEN,
+    # 2026-10-26 — Vault legacy 's.' service token (keyword-gated) and
+    # unseal key share (anchored on the 'Unseal Key N:' label).
+    VAULT_LEGACY_SERVICE_TOKEN,
+    VAULT_UNSEAL_KEY,
     OPENSHIFT_OAUTH_ACCESS_TOKEN,
     SCALINGO_API_TOKEN,
     YANDEX_PASSPORT_OAUTH_TOKEN,
