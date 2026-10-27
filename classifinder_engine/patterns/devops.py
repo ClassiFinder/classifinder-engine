@@ -3360,6 +3360,56 @@ LOCALSTACK_AUTH_TOKEN = SecretPattern(
 )
 
 
+YOUTRACK_PERMANENT_TOKEN = SecretPattern(
+    id="youtrack_permanent_token",
+    name="JetBrains YouTrack Permanent Token",
+    description=(
+        "JetBrains YouTrack / Hub permanent token — the literal 'perm:'"
+        " prefix, the base64 of the owner's login, a dot, the base64 of the"
+        " token's name, a dot, and a 30-character alphanumeric secret. Sent as"
+        " 'Authorization: Bearer perm:...' and acts as that user against the"
+        " YouTrack REST API and the Hub services in the token's scope."
+    ),
+    provider="jetbrains",
+    severity="high",
+    # Both of JetBrains' own examples carry a 30-character random tail; the
+    # two base64 segments are unpadded or '='/'=='-padded and bounded so the
+    # regex stays linear.
+    # Format per https://www.jetbrains.com/help/youtrack/devportal/authentication-with-permanent-token.html
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_:-])"
+        r"(?P<secret>perm:[A-Za-z0-9+/]{2,200}={0,2}\.[A-Za-z0-9+/]{2,200}={0,2}"
+        r"\.[A-Za-z0-9]{30})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.93,
+    entropy_threshold=0.0,  # literal 'perm:' + two dotted base64 segments + fixed 30-char tail
+    context_keywords=[
+        "youtrack",
+        "jetbrains",
+        "hub",
+        "YOUTRACK_TOKEN",
+        "permanent token",
+        "Bearer",
+    ],
+    known_test_values={
+        # The two examples printed in JetBrains' own permanent-token guide.
+        # Built by concatenation so no contiguous token literal is committed.
+        "perm:" + "cm9vdA==.dG9rZW4=." + "rNZ38ije7uiWwnUTRDdyFDdUkoPUPi",
+        "perm:" + "am9obi5kb2U=.UG9zdG1hbiBKb2huIERvZQ==." + "jJe0eYhhkV271j1lCpfknNYOEakNk7",
+    },
+    recommendation=(
+        "Revoke this token in YouTrack under your profile > Account Security >"
+        " Tokens (or in Hub under Authentication > Tokens), create a"
+        " replacement with the narrowest scope that works, and update the"
+        " integration that used it. The token's login segment is only base64,"
+        " so treat the named account as exposed and review its recent activity."
+    ),
+    tags=["devops", "jetbrains", "youtrack", "issue-tracker"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3472,4 +3522,7 @@ register(
     # 2026-10-19 — LocalStack auth token ('ls-' + 8-4-4-4-12 alphanumeric;
     # prefix per LocalStack's own FAQ, layout measured; all-hex UUIDs excluded).
     LOCALSTACK_AUTH_TOKEN,
+    # 2026-10-27 — JetBrains YouTrack / Hub permanent token ('perm:' + base64
+    # login + '.' + base64 name + '.' + 30 alphanumeric; per JetBrains' docs).
+    YOUTRACK_PERMANENT_TOKEN,
 )
