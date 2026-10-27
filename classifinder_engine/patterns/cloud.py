@@ -4490,6 +4490,56 @@ CONSUL_ACL_TOKEN = SecretPattern(
 )
 
 
+NOMAD_ACL_TOKEN = SecretPattern(
+    id="nomad_acl_token",
+    name="HashiCorp Nomad ACL Token",
+    description=(
+        "HashiCorp Nomad ACL token Secret ID — a dashed 8-4-4-4-12 hex UUID"
+        " sent in the X-Nomad-Token header, set as NOMAD_TOKEN, or printed as"
+        " 'Secret ID =' by 'nomad acl token create' / 'nomad acl bootstrap'."
+        " Carries the token's ACL policies; a management token can submit and"
+        " stop jobs on every client in the cluster."
+    ),
+    provider="nomad",
+    severity="high",
+    # A bare UUID is unshippable, so the regex requires Nomad's own header,
+    # its CLI environment variable, or the 'Secret ID =' line of its CLI
+    # output (never 'Accessor ID', a public identifier); only the UUID is the
+    # secret span.
+    # Format per https://developer.hashicorp.com/nomad/api-docs
+    regex=re.compile(
+        r"(?:(?i:X-Nomad-Token|\bNOMAD_TOKEN)[\"']?\s*[:=]\s*[\"']?"
+        r"|\bSecret ID[ \t]*=[ \t]*)"
+        r"(?P<secret>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=0.0,  # anchor carries the precision; a UUID's entropy says nothing
+    context_keywords=["nomad", "X-Nomad-Token", "NOMAD_TOKEN", "acl", ":4646"],
+    known_test_values={
+        # Secret IDs printed in HashiCorp's Nomad CLI and API documentation,
+        # which tutorials reproduce verbatim, plus an all-zero mask.
+        "11d5348a-8768-5baa-" + "6185-c154980e1488",
+        "e4c7c80e-870b-c6a6-" + "43d2-dbfa90130c06",
+        "2b778dd9-f5f1-6f29-" + "b4b4-9a5fa948757a",
+        "9184ec35-65d4-9258-" + "61e3-0c066d0a45c5",
+        "aa534e09-6a07-0a45-" + "2295-a7f77063d429",
+        "3f4a0fcd-7c42-773c-" + "25db-2d31ba0c05fe",
+        "8176afd3-772d-0b71-" + "8f85-7fa5d903e9d4",
+        "00000000-0000-0000-" + "0000-000000000000",
+    },
+    recommendation=(
+        "Revoke the token with 'nomad acl token delete <accessor-id>', issue a"
+        " replacement bound to the narrowest policy that works, and update"
+        " NOMAD_TOKEN wherever it was set. If it was a management or bootstrap"
+        " token, review job submissions, variables and ACL policies for"
+        " changes you did not make."
+    ),
+    tags=["cloud", "hashicorp", "nomad", "orchestration"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -4637,4 +4687,7 @@ register(
     # 2026-10-27 — HashiCorp Consul ACL token SecretID (UUID behind
     # X-Consul-Token, CONSUL_HTTP_TOKEN or the CLI's 'SecretID:' label).
     CONSUL_ACL_TOKEN,
+    # 2026-10-27 — HashiCorp Nomad ACL token Secret ID (UUID behind
+    # X-Nomad-Token, NOMAD_TOKEN or the CLI's 'Secret ID =' line).
+    NOMAD_ACL_TOKEN,
 )
