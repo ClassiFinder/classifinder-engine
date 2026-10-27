@@ -3410,6 +3410,49 @@ YOUTRACK_PERMANENT_TOKEN = SecretPattern(
 )
 
 
+SPLUNK_HEC_TOKEN = SecretPattern(
+    id="splunk_hec_token",
+    name="Splunk HTTP Event Collector Token",
+    description=(
+        "Splunk HTTP Event Collector (HEC) token — a dashed 8-4-4-4-12 hex"
+        " GUID presented as 'Authorization: Splunk <token>' or set as an HEC"
+        " token in collector configuration. Lets the holder write arbitrary"
+        " events into the Splunk indexes the token is allowed to reach."
+    ),
+    provider="splunk",
+    severity="high",
+    # A bare GUID is unshippable, so the regex requires either Splunk's own
+    # 'Authorization: Splunk' scheme or an HEC token field name; only the GUID
+    # is the secret span.
+    # Format per https://help.splunk.com/en/splunk-enterprise/get-started/get-data-in/9.4/get-data-with-http-event-collector/format-events-for-http-event-collector
+    regex=re.compile(
+        r"(?:(?i:\bAuthorization)[\"']?\s*[:=]\s*[\"']?(?i:splunk)[ \t]+"
+        r"|(?i:\b(?:splunk[_-]?hec[_-]?token|hec[_-]?token))[\"']?\s*[:=]\s*[\"']?)"
+        r"(?P<secret>[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}"
+        r"-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # anchor carries the precision; a GUID's entropy says nothing
+    context_keywords=["splunk", "hec", "services/collector", "SPLUNK_HEC_TOKEN", ":8088"],
+    known_test_values={
+        # Splunk's own documentation example (both cases it is reproduced in)
+        # and an all-zero mask. Built by concatenation.
+        "12345678-1234-1234-" + "1234-1234567890AB",
+        "12345678-1234-1234-" + "1234-1234567890ab",
+        "00000000-0000-0000-" + "0000-000000000000",
+    },
+    recommendation=(
+        "Disable this token under Settings > Data Inputs > HTTP Event Collector"
+        " in Splunk, create a replacement restricted to the indexes it needs,"
+        " and update every forwarder or collector that sends with it. Review"
+        " the affected indexes for injected or forged events."
+    ),
+    tags=["devops", "observability", "splunk", "logging"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3525,4 +3568,7 @@ register(
     # 2026-10-27 — JetBrains YouTrack / Hub permanent token ('perm:' + base64
     # login + '.' + base64 name + '.' + 30 alphanumeric; per JetBrains' docs).
     YOUTRACK_PERMANENT_TOKEN,
+    # 2026-10-27 — Splunk HTTP Event Collector token (dashed GUID behind the
+    # vendor's 'Authorization: Splunk' scheme or an HEC token field name).
+    SPLUNK_HEC_TOKEN,
 )
