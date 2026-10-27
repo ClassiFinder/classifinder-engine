@@ -4386,6 +4386,205 @@ AZURE_ENTRA_ID_CLIENT_SECRET = SecretPattern(
 )
 
 
+KUBERNETES_BOOTSTRAP_TOKEN = SecretPattern(
+    id="kubernetes_bootstrap_token",
+    name="Kubernetes Bootstrap Token",
+    description=(
+        "Kubernetes bootstrap token — a 6-character token ID, a dot and a"
+        " 16-character token secret, both lowercase alphanumeric"
+        " (abcdef.0123456789abcdef), as passed to 'kubeadm join --token' or"
+        " written in a kubeadm config or bootstrap kubeconfig 'token:' field."
+        " Lets the holder join a node to the cluster and request a kubelet"
+        " client certificate."
+    ),
+    provider="kubernetes",
+    severity="high",
+    # The bare 6.16 shape has no literal component and matches version strings
+    # and short hashes, so the regex requires the kubeadm '--token' family of
+    # flags or a 'token:' field; the whole id.secret pair is the span.
+    # '--discovery-token-ca-cert-hash' is a CA hash, not a token, and is
+    # excluded by requiring the separator right after the flag name.
+    # Format per https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens/
+    regex=re.compile(
+        r"(?:--(?:tls-bootstrap-|discovery-)?token(?:=|[ \t]+)"
+        r"|\btoken:[ \t]*[\"']?)"
+        r"(?P<secret>[a-z0-9]{6}\.[a-z0-9]{16})"
+        r"(?![A-Za-z0-9_.-])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=0.0,  # exact 6.16 shape behind a kubeadm anchor
+    context_keywords=[
+        "kubeadm",
+        "kubernetes",
+        "bootstrap",
+        "join",
+        "bootstrapTokens",
+        "discovery-token-ca-cert-hash",
+    ],
+    known_test_values={
+        # Every sample printed in the Kubernetes bootstrap-token and kubeadm
+        # reference docs, which tutorials reproduce verbatim.
+        "abcdef.0123456789abcdef",
+        "abcdef.1234567890abcdef",
+        "abcdef.abcdef0123456789",
+        "07401b.f395accd246ae52d",
+        "783bde.3f89s0fje9f38fhf",
+        "9a08jv.c0izixklcxtmnze7",
+    },
+    recommendation=(
+        "Delete the token with 'kubeadm token delete <token-id>' (or delete the"
+        " bootstrap-token-<id> Secret in kube-system), then list nodes and"
+        " certificate signing requests for anything that joined with it."
+        " Issue join tokens with a short --ttl and never commit join commands."
+    ),
+    tags=["cloud", "kubernetes", "kubeadm", "cluster"],
+)
+
+
+CONSUL_ACL_TOKEN = SecretPattern(
+    id="consul_acl_token",
+    name="HashiCorp Consul ACL Token",
+    description=(
+        "HashiCorp Consul ACL token SecretID — a dashed 8-4-4-4-12 hex UUID"
+        " sent in the X-Consul-Token header, set as CONSUL_HTTP_TOKEN, or"
+        " printed as 'SecretID:' by 'consul acl token create'. Carries the"
+        " token's ACL policies; a management token controls the whole"
+        " cluster's KV store, service catalog, intentions and ACL system."
+    ),
+    provider="consul",
+    severity="high",
+    # A bare UUID is unshippable, so the regex requires Consul's own header,
+    # its CLI environment variable, or the 'SecretID:' label of its CLI
+    # output (never 'AccessorID:', which is a public identifier); only the
+    # UUID is the secret span.
+    # Format per https://developer.hashicorp.com/consul/api-docs/api-structure
+    regex=re.compile(
+        r"(?:(?i:X-Consul-Token|\bCONSUL_HTTP_TOKEN)[\"']?\s*[:=]\s*[\"']?"
+        r"|(?<![A-Za-z])SecretID:[ \t]+)"
+        r"(?P<secret>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=0.0,  # anchor carries the precision; a UUID's entropy says nothing
+    context_keywords=["consul", "X-Consul-Token", "CONSUL_HTTP_TOKEN", "acl", ":8500"],
+    known_test_values={
+        # SecretIDs printed in HashiCorp's Consul CLI and API documentation,
+        # which tutorials reproduce verbatim, plus an all-zero mask.
+        "ec15675e-2999-d789-" + "832e-8c4794daa8d7",
+        "930dafb6-5c08-040b-" + "23fb-a368a95256f9",
+        "ada7f751-f654-8872-" + "7f93-498e799158b6",
+        "0005d17e-5bb2-7e8b-" + "7bfa-15f2eee9ad14",
+        "6a1253d2-1785-24fd-" + "91c2-f8e78c745511",
+        "00000000-0000-0000-" + "0000-000000000000",
+    },
+    recommendation=(
+        "Revoke the token with 'consul acl token delete -accessor-id <id>'"
+        " (or rotate it if it is an agent or replication token), issue a"
+        " replacement bound to the narrowest policy that works, and update"
+        " CONSUL_HTTP_TOKEN wherever it was set. Review the KV store, service"
+        " registrations and ACL policies for changes you did not make."
+    ),
+    tags=["cloud", "hashicorp", "consul", "service-mesh"],
+)
+
+
+NOMAD_ACL_TOKEN = SecretPattern(
+    id="nomad_acl_token",
+    name="HashiCorp Nomad ACL Token",
+    description=(
+        "HashiCorp Nomad ACL token Secret ID — a dashed 8-4-4-4-12 hex UUID"
+        " sent in the X-Nomad-Token header, set as NOMAD_TOKEN, or printed as"
+        " 'Secret ID =' by 'nomad acl token create' / 'nomad acl bootstrap'."
+        " Carries the token's ACL policies; a management token can submit and"
+        " stop jobs on every client in the cluster."
+    ),
+    provider="nomad",
+    severity="high",
+    # A bare UUID is unshippable, so the regex requires Nomad's own header,
+    # its CLI environment variable, or the 'Secret ID =' line of its CLI
+    # output (never 'Accessor ID', a public identifier); only the UUID is the
+    # secret span.
+    # Format per https://developer.hashicorp.com/nomad/api-docs
+    regex=re.compile(
+        r"(?:(?i:X-Nomad-Token|\bNOMAD_TOKEN)[\"']?\s*[:=]\s*[\"']?"
+        r"|\bSecret ID[ \t]*=[ \t]*)"
+        r"(?P<secret>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=0.0,  # anchor carries the precision; a UUID's entropy says nothing
+    context_keywords=["nomad", "X-Nomad-Token", "NOMAD_TOKEN", "acl", ":4646"],
+    known_test_values={
+        # Secret IDs printed in HashiCorp's Nomad CLI and API documentation,
+        # which tutorials reproduce verbatim, plus an all-zero mask.
+        "11d5348a-8768-5baa-" + "6185-c154980e1488",
+        "e4c7c80e-870b-c6a6-" + "43d2-dbfa90130c06",
+        "2b778dd9-f5f1-6f29-" + "b4b4-9a5fa948757a",
+        "9184ec35-65d4-9258-" + "61e3-0c066d0a45c5",
+        "aa534e09-6a07-0a45-" + "2295-a7f77063d429",
+        "3f4a0fcd-7c42-773c-" + "25db-2d31ba0c05fe",
+        "8176afd3-772d-0b71-" + "8f85-7fa5d903e9d4",
+        "00000000-0000-0000-" + "0000-000000000000",
+    },
+    recommendation=(
+        "Revoke the token with 'nomad acl token delete <accessor-id>', issue a"
+        " replacement bound to the narrowest policy that works, and update"
+        " NOMAD_TOKEN wherever it was set. If it was a management or bootstrap"
+        " token, review job submissions, variables and ACL policies for"
+        " changes you did not make."
+    ),
+    tags=["cloud", "hashicorp", "nomad", "orchestration"],
+)
+
+
+ELASTICSEARCH_API_KEY = SecretPattern(
+    id="elasticsearch_api_key",
+    name="Elasticsearch API Key (encoded)",
+    description=(
+        "Elasticsearch / Kibana API key in its 'encoded' form — the base64 of"
+        " '<id>:<api_key>' (a 20-character key ID, a colon, the secret) sent"
+        " as 'Authorization: ApiKey <encoded>' or set as ELASTIC_API_KEY."
+        " Grants whatever cluster and index privileges the key was created"
+        " with, up to the creating user's own."
+    ),
+    provider="elastic",
+    severity="high",
+    # Elasticsearch key IDs are always 20 characters, so the ':' that follows
+    # is byte 20 of the decoded value and always encodes to '6' at character
+    # 27 of the base64 — a fixed landmark inside an otherwise random blob.
+    # The regex requires Elastic's 'ApiKey' authorization scheme or an
+    # Elastic API-key variable name in front of it; only the encoded key is
+    # the secret span.
+    # Format per https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-security-create-api-key
+    regex=re.compile(
+        r"(?:(?i:\bAuthorization)[\"']?\s*[:=]\s*[\"']?(?i:ApiKey)[ \t]+"
+        r"|(?i:\b(?:ELASTIC(?:SEARCH)?|ES|KIBANA)_API_KEY)[\"']?\s*[:=]\s*[\"']?)"
+        r"(?P<secret>[A-Za-z0-9+/]{27}6[A-Za-z0-9+/]{20,250}={0,2})"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,  # anchor + fixed '6' landmark; base64 of random bytes clears any floor
+    context_keywords=["elastic", "elasticsearch", "kibana", "ApiKey", ":9200", "_security"],
+    known_test_values={
+        # The 'encoded' value printed in Elastic's create-API-key reference
+        # (id VuaCfGcBCdbkQm-e5aOx, api_key ui2lp2axTNmsyakw9tvNnw).
+        "VnVhQ2ZHY0JDZGJrUW0tZTVhT3g6" + "dWkybHAyYXhUTm1zeWFrdzl0dk5udw==",
+    },
+    recommendation=(
+        "Invalidate the key with the Elasticsearch invalidate-API-key API (or"
+        " in Kibana under Stack Management > API Keys), create a replacement"
+        " with role descriptors limited to what the client needs and an"
+        " expiration, and update ELASTIC_API_KEY wherever it was set. Review"
+        " the security audit log for requests made with the key's ID."
+    ),
+    tags=["cloud", "elastic", "elasticsearch", "database"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -4527,4 +4726,17 @@ register(
     # 2026-10-21 — Azure Entra ID app client secret (identifiable 'Q~' form:
     # 3 chars + 7Q~/8Q~ + 31/34 chars; per Microsoft security-utilities SEC101/156).
     AZURE_ENTRA_ID_CLIENT_SECRET,
+    # 2026-10-27 — Kubernetes bootstrap token ([a-z0-9]{6}.[a-z0-9]{16} per the
+    # bootstrap-tokens docs, anchored on kubeadm's --token flags or 'token:').
+    KUBERNETES_BOOTSTRAP_TOKEN,
+    # 2026-10-27 — HashiCorp Consul ACL token SecretID (UUID behind
+    # X-Consul-Token, CONSUL_HTTP_TOKEN or the CLI's 'SecretID:' label).
+    CONSUL_ACL_TOKEN,
+    # 2026-10-27 — HashiCorp Nomad ACL token Secret ID (UUID behind
+    # X-Nomad-Token, NOMAD_TOKEN or the CLI's 'Secret ID =' line).
+    NOMAD_ACL_TOKEN,
+    # 2026-10-27 — Elasticsearch / Kibana encoded API key (base64 of
+    # '<20-char id>:<api_key>', '6' fixed at char 27; behind the 'ApiKey'
+    # authorization scheme or ELASTIC_API_KEY / ES_API_KEY).
+    ELASTICSEARCH_API_KEY,
 )

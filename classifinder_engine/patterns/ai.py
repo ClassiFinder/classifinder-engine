@@ -1641,6 +1641,51 @@ TAVILY_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# DEEPL (machine translation API)
+# ===================================================
+
+DEEPL_API_FREE_KEY = SecretPattern(
+    id="deepl_api_free_key",
+    name="DeepL API Free Authentication Key",
+    description=(
+        "DeepL API Free authentication key — a lowercase dashed GUID"
+        " (8-4-4-4-12 hex) followed by the literal ':fx' suffix that DeepL"
+        " uses to mark Free-plan keys. Sent as 'Authorization: DeepL-Auth-Key"
+        " <key>' and bills translation usage to the owner's account."
+    ),
+    provider="deepl",
+    severity="high",
+    # The ':fx' suffix is the whole anchor: a bare GUID is unshippable, and
+    # DeepL API Pro keys (the same GUID without ':fx') are deliberately not
+    # matched for that reason.
+    # Format per https://developers.deepl.com/docs/getting-started/auth
+    regex=re.compile(
+        r"(?<![0-9A-Za-z-])"
+        r"(?P<secret>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
+        r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}:fx)"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,  # fixed GUID + ':fx' layout; hex cannot hold an FP-wordlist term
+    context_keywords=["deepl", "DEEPL_AUTH_KEY", "DEEPL_API_KEY", "DeepL-Auth-Key", "auth_key"],
+    known_test_values={
+        # DeepL's own documentation example, and an all-zero mask. Built by
+        # concatenation so no contiguous key literal is committed.
+        "279a2e9d-83b3-c416-" + "7e2d-f721593e42a0" + ":fx",
+        "00000000-0000-0000-" + "0000-000000000000" + ":fx",
+    },
+    recommendation=(
+        "Delete this key under Account > API Keys in your DeepL account and"
+        " create a replacement, then update DEEPL_AUTH_KEY wherever it is"
+        " configured. Check the account's usage page for character counts you"
+        " do not recognise."
+    ),
+    tags=["ai", "deepl", "translation"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -1700,4 +1745,7 @@ register(
     # 2026-10-19 — Tavily API key ('tvly-' / 'tvly-dev-' + 32 alphanumeric;
     # prefixes per Tavily's own docs, width measured on public samples).
     TAVILY_API_KEY,
+    # 2026-10-27 — DeepL API Free authentication key (dashed GUID + ':fx';
+    # suffix per DeepL's own auth docs). Pro keys (bare GUID) are not matched.
+    DEEPL_API_FREE_KEY,
 )

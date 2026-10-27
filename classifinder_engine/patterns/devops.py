@@ -3360,6 +3360,286 @@ LOCALSTACK_AUTH_TOKEN = SecretPattern(
 )
 
 
+YOUTRACK_PERMANENT_TOKEN = SecretPattern(
+    id="youtrack_permanent_token",
+    name="JetBrains YouTrack Permanent Token",
+    description=(
+        "JetBrains YouTrack / Hub permanent token — the literal 'perm:'"
+        " prefix, the base64 of the owner's login, a dot, the base64 of the"
+        " token's name, a dot, and a 30-character alphanumeric secret. Sent as"
+        " 'Authorization: Bearer perm:...' and acts as that user against the"
+        " YouTrack REST API and the Hub services in the token's scope."
+    ),
+    provider="jetbrains",
+    severity="high",
+    # Both of JetBrains' own examples carry a 30-character random tail; the
+    # two base64 segments are unpadded or '='/'=='-padded and bounded so the
+    # regex stays linear.
+    # Format per https://www.jetbrains.com/help/youtrack/devportal/authentication-with-permanent-token.html
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_:-])"
+        r"(?P<secret>perm:[A-Za-z0-9+/]{2,200}={0,2}\.[A-Za-z0-9+/]{2,200}={0,2}"
+        r"\.[A-Za-z0-9]{30})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.93,
+    entropy_threshold=0.0,  # literal 'perm:' + two dotted base64 segments + fixed 30-char tail
+    context_keywords=[
+        "youtrack",
+        "jetbrains",
+        "hub",
+        "YOUTRACK_TOKEN",
+        "permanent token",
+        "Bearer",
+    ],
+    known_test_values={
+        # The two examples printed in JetBrains' own permanent-token guide.
+        # Built by concatenation so no contiguous token literal is committed.
+        "perm:" + "cm9vdA==.dG9rZW4=." + "rNZ38ije7uiWwnUTRDdyFDdUkoPUPi",
+        "perm:" + "am9obi5kb2U=.UG9zdG1hbiBKb2huIERvZQ==." + "jJe0eYhhkV271j1lCpfknNYOEakNk7",
+    },
+    recommendation=(
+        "Revoke this token in YouTrack under your profile > Account Security >"
+        " Tokens (or in Hub under Authentication > Tokens), create a"
+        " replacement with the narrowest scope that works, and update the"
+        " integration that used it. The token's login segment is only base64,"
+        " so treat the named account as exposed and review its recent activity."
+    ),
+    tags=["devops", "jetbrains", "youtrack", "issue-tracker"],
+)
+
+
+SPLUNK_HEC_TOKEN = SecretPattern(
+    id="splunk_hec_token",
+    name="Splunk HTTP Event Collector Token",
+    description=(
+        "Splunk HTTP Event Collector (HEC) token — a dashed 8-4-4-4-12 hex"
+        " GUID presented as 'Authorization: Splunk <token>' or set as an HEC"
+        " token in collector configuration. Lets the holder write arbitrary"
+        " events into the Splunk indexes the token is allowed to reach."
+    ),
+    provider="splunk",
+    severity="high",
+    # A bare GUID is unshippable, so the regex requires either Splunk's own
+    # 'Authorization: Splunk' scheme or an HEC token field name; only the GUID
+    # is the secret span.
+    # Format per https://help.splunk.com/en/splunk-enterprise/get-started/get-data-in/9.4/get-data-with-http-event-collector/format-events-for-http-event-collector
+    regex=re.compile(
+        r"(?:(?i:\bAuthorization)[\"']?\s*[:=]\s*[\"']?(?i:splunk)[ \t]+"
+        r"|(?i:\b(?:splunk[_-]?hec[_-]?token|hec[_-]?token))[\"']?\s*[:=]\s*[\"']?)"
+        r"(?P<secret>[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}"
+        r"-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # anchor carries the precision; a GUID's entropy says nothing
+    context_keywords=["splunk", "hec", "services/collector", "SPLUNK_HEC_TOKEN", ":8088"],
+    known_test_values={
+        # Splunk's own documentation example (both cases it is reproduced in)
+        # and an all-zero mask. Built by concatenation.
+        "12345678-1234-1234-" + "1234-1234567890AB",
+        "12345678-1234-1234-" + "1234-1234567890ab",
+        "00000000-0000-0000-" + "0000-000000000000",
+    },
+    recommendation=(
+        "Disable this token under Settings > Data Inputs > HTTP Event Collector"
+        " in Splunk, create a replacement restricted to the indexes it needs,"
+        " and update every forwarder or collector that sends with it. Review"
+        " the affected indexes for injected or forged events."
+    ),
+    tags=["devops", "observability", "splunk", "logging"],
+)
+
+
+JENKINS_INITIAL_ADMIN_PASSWORD = SecretPattern(
+    id="jenkins_initial_admin_password",
+    name="Jenkins Initial Admin Password",
+    description=(
+        "Jenkins setup-wizard initial admin password — 32 lowercase hex"
+        " characters that Jenkins prints after 'Please use the following"
+        " password to proceed to installation:' and writes to"
+        " secrets/initialAdminPassword. It is the password of the 'admin'"
+        " account the wizard creates, and stays valid if setup is finished"
+        " without creating another admin user."
+    ),
+    provider="jenkins",
+    severity="high",
+    # Jenkins core SetupWizard generates the value as a random UUID with the
+    # dashes removed, lowercased (exactly 32 hex), and logs it inside a fixed
+    # banner. Two anchors, both from that code path: the banner sentence, or
+    # the secrets/initialAdminPassword path followed by the value on the next
+    # line (the 'cat' that every install guide tells you to run).
+    # Source: https://github.com/jenkinsci/jenkins/blob/master/core/src/main/java/jenkins/install/SetupWizard.java
+    regex=re.compile(
+        r"(?:proceed to installation:\s*"
+        r"|secrets[/\\]initialAdminPassword[\"'`]?[ \t]*\r?\n\s*)"
+        r"(?P<secret>[0-9a-f]{32})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # fixed banner anchor + exact 32-hex body
+    context_keywords=[
+        "jenkins",
+        "initialAdminPassword",
+        "setup wizard",
+        "initial setup is required",
+        "jenkins_home",
+    ],
+    known_test_values={
+        # Masks seen in redacted install guides.
+        "0" * 32,
+        "f" * 32,
+    },
+    recommendation=(
+        "If this Jenkins instance is reachable, finish or redo the setup wizard"
+        " now and create a named admin user, then delete or disable the"
+        " wizard-created 'admin' account (or change its password) and remove"
+        " secrets/initialAdminPassword. Scrub the log, CI output or ticket the"
+        " value was pasted into."
+    ),
+    tags=["devops", "jenkins", "ci-cd", "password"],
+)
+
+
+SONARQUBE_LEGACY_TOKEN = SecretPattern(
+    id="sonarqube_legacy_token",
+    name="SonarQube Legacy User Token",
+    description=(
+        "SonarQube user token in the legacy, unprefixed form — 40 lowercase"
+        " hex characters — passed as sonar.login / sonar.token or SONAR_TOKEN."
+        " Tokens issued before SonarQube added the squ_/sqp_/sqa_ prefixes are"
+        " still accepted and still common in CI configuration."
+    ),
+    provider="sonar",
+    severity="high",
+    # SonarQube's own TokenGeneratorImpl hex-encodes 20 random bytes (40
+    # lowercase hex); modern tokens prepend 'sq<type>_'. A bare 40-hex value
+    # is a SHA-1, so the regex requires a SonarQube token parameter or
+    # variable name; only the hex is the secret span. That anchor is also what
+    # keeps npm lockfile 'sonarqube-*.tgz#<sha1>' integrity hashes out. No
+    # left word boundary: the Maven/Gradle form is '-Dsonar.login='.
+    # Source: https://github.com/SonarSource/sonarqube/blob/master/server/sonar-webserver-auth/src/main/java/org/sonar/server/usertoken/TokenGeneratorImpl.java
+    regex=re.compile(
+        r"(?i:sonar[._-]?(?:login|token)|sonarLogin|sonarToken)"
+        r"[\"']?\s*(?:[:=,]|=>)\s*[\"']?"
+        r"(?P<secret>[0-9a-f]{40})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=0.0,  # anchor + exact 40-hex body; hex holds no FP-wordlist term
+    context_keywords=[
+        "sonar",
+        "sonarqube",
+        "sonarcloud",
+        "sonar.host.url",
+        "SONAR_TOKEN",
+        "sonar-scanner",
+    ],
+    known_test_values={
+        "0" * 40,
+        "f" * 40,
+    },
+    recommendation=(
+        "Revoke this token in SonarQube under My Account > Security (or"
+        " Administration > Security > Users for another user), generate a"
+        " replacement — current SonarQube versions issue prefixed squ_ tokens —"
+        " and store it as a masked CI secret rather than in the build file."
+    ),
+    tags=["security", "sonar", "code-quality", "ci-cd"],
+)
+
+
+CONVEX_DEPLOY_KEY = SecretPattern(
+    id="convex_deploy_key",
+    name="Convex Deploy Key",
+    description=(
+        "Convex deploy key — a key type ('prod', 'preview', 'dev' or"
+        " 'project'), a colon, the deployment name or team:project slugs, a"
+        " pipe, and a base64 JSON body that always begins 'eyJ2'. Set as"
+        " CONVEX_DEPLOY_KEY in build pipelines; a production key can push"
+        " arbitrary backend code and read and write the production deployment."
+    ),
+    provider="convex",
+    severity="critical",
+    # Every type in Convex's own deploy-key guide shares the shape
+    # '<type>:<name>[:<project>]|eyJ2...' ('eyJ2' is base64 of '{"v'). The
+    # docs elide the body, so its width is left open behind the anchor
+    # (bounded for linearity) rather than guessed.
+    # Format per https://docs.convex.dev/cli/deploy-key-types
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>(?:prod|preview|dev|project):"
+        r"[a-z0-9]+(?:-[a-z0-9]+){0,8}(?::[a-z0-9]+(?:-[a-z0-9]+){0,8})?"
+        r"\|eyJ2[A-Za-z0-9+/_-]{20,1000}={0,2})"
+        r"(?![A-Za-z0-9+/=_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.93,
+    entropy_threshold=0.0,  # type prefix + pipe + 'eyJ2' literal carry the precision
+    context_keywords=["convex", "CONVEX_DEPLOY_KEY", "deploy key", "npx convex deploy"],
+    known_test_values={
+        # Single-character masks in the documented layout. Built by concatenation.
+        "prod:qualified-jaguar-123|" + "eyJ2" + fill * 56
+        for fill in ("x", "X", "A", "0")
+    },
+    recommendation=(
+        "Regenerate this deploy key in the Convex dashboard (Deployment"
+        " Settings > Deploy Keys, or the project's settings for preview and"
+        " project keys) so the old one stops working, then update"
+        " CONVEX_DEPLOY_KEY in your CI and hosting provider. Review recent"
+        " deployments and function logs for pushes you did not make."
+    ),
+    tags=["devops", "convex", "database", "ci-cd"],
+)
+
+
+RUNDECK_API_TOKEN = SecretPattern(
+    id="rundeck_api_token",
+    name="Rundeck API Token",
+    description=(
+        "Rundeck / PagerDuty Process Automation API token — 32 alphanumeric"
+        " characters sent in the X-Rundeck-Auth-Token header or the"
+        " 'authtoken' URL parameter, or set as RD_TOKEN for the rd CLI. Acts"
+        " as the token's user: it can run jobs (and therefore commands on"
+        " every node those jobs reach), read execution output and change"
+        " project configuration within the token's roles."
+    ),
+    provider="rundeck",
+    severity="high",
+    # Rundeck's API docs print a complete 32-character token in both
+    # documented transports. A bare 32-character alphanumeric run is far too
+    # generic, so the regex requires the header, the URL parameter or the rd
+    # CLI's RD_TOKEN variable; only the token is the secret span.
+    # Format per https://docs.rundeck.com/docs/api/
+    regex=re.compile(
+        r"(?:(?i:X-Rundeck-Auth-Token|\bRD_TOKEN)[\"']?\s*[:=]\s*[\"']?"
+        r"|[?&]authtoken=)"
+        r"(?P<secret>[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=3.0,  # real tokens sit near 4.5+; sinks one-letter masks the anchor admits
+    context_keywords=["rundeck", "X-Rundeck-Auth-Token", "RD_TOKEN", "RD_URL", "/api/"],
+    known_test_values={
+        # The token printed in Rundeck's own API documentation.
+        "E4rNvVRV378knO9d" + "p3d73O0cs1kd0kCd",
+    },
+    recommendation=(
+        "Delete this token on the owning user's Profile page in Rundeck (or"
+        " under System > User Summary for another user), create a replacement"
+        " with the narrowest roles and a short expiration, and update RD_TOKEN"
+        " or the integration that used it. Review the activity log for job"
+        " runs and ad-hoc commands you did not start."
+    ),
+    tags=["devops", "rundeck", "automation", "ci-cd"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3472,4 +3752,24 @@ register(
     # 2026-10-19 — LocalStack auth token ('ls-' + 8-4-4-4-12 alphanumeric;
     # prefix per LocalStack's own FAQ, layout measured; all-hex UUIDs excluded).
     LOCALSTACK_AUTH_TOKEN,
+    # 2026-10-27 — JetBrains YouTrack / Hub permanent token ('perm:' + base64
+    # login + '.' + base64 name + '.' + 30 alphanumeric; per JetBrains' docs).
+    YOUTRACK_PERMANENT_TOKEN,
+    # 2026-10-27 — Splunk HTTP Event Collector token (dashed GUID behind the
+    # vendor's 'Authorization: Splunk' scheme or an HEC token field name).
+    SPLUNK_HEC_TOKEN,
+    # 2026-10-27 — Jenkins setup-wizard initial admin password (32 lowercase
+    # hex after the wizard's own log banner or a cat of initialAdminPassword;
+    # width from Jenkins core SetupWizard.java).
+    JENKINS_INITIAL_ADMIN_PASSWORD,
+    # 2026-10-27 — SonarQube legacy unprefixed user token (40 lowercase hex
+    # behind sonar.login / sonar.token / SONAR_TOKEN; width from SonarQube's
+    # own TokenGeneratorImpl).
+    SONARQUBE_LEGACY_TOKEN,
+    # 2026-10-27 — Convex deploy key ('prod:' / 'preview:' / 'dev:' /
+    # 'project:' + name + '|eyJ2' base64 JSON; per Convex's deploy-key guide).
+    CONVEX_DEPLOY_KEY,
+    # 2026-10-27 — Rundeck API token (32 alphanumeric behind the
+    # X-Rundeck-Auth-Token header, the authtoken URL parameter or RD_TOKEN).
+    RUNDECK_API_TOKEN,
 )
