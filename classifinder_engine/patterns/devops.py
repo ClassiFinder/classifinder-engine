@@ -3453,6 +3453,57 @@ SPLUNK_HEC_TOKEN = SecretPattern(
 )
 
 
+JENKINS_INITIAL_ADMIN_PASSWORD = SecretPattern(
+    id="jenkins_initial_admin_password",
+    name="Jenkins Initial Admin Password",
+    description=(
+        "Jenkins setup-wizard initial admin password — 32 lowercase hex"
+        " characters that Jenkins prints after 'Please use the following"
+        " password to proceed to installation:' and writes to"
+        " secrets/initialAdminPassword. It is the password of the 'admin'"
+        " account the wizard creates, and stays valid if setup is finished"
+        " without creating another admin user."
+    ),
+    provider="jenkins",
+    severity="high",
+    # Jenkins core SetupWizard generates the value as a random UUID with the
+    # dashes removed, lowercased (exactly 32 hex), and logs it inside a fixed
+    # banner. Two anchors, both from that code path: the banner sentence, or
+    # the secrets/initialAdminPassword path followed by the value on the next
+    # line (the 'cat' that every install guide tells you to run).
+    # Source: https://github.com/jenkinsci/jenkins/blob/master/core/src/main/java/jenkins/install/SetupWizard.java
+    regex=re.compile(
+        r"(?:proceed to installation:\s*"
+        r"|secrets[/\\]initialAdminPassword[\"'`]?[ \t]*\r?\n\s*)"
+        r"(?P<secret>[0-9a-f]{32})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # fixed banner anchor + exact 32-hex body
+    context_keywords=[
+        "jenkins",
+        "initialAdminPassword",
+        "setup wizard",
+        "initial setup is required",
+        "jenkins_home",
+    ],
+    known_test_values={
+        # Masks seen in redacted install guides.
+        "0" * 32,
+        "f" * 32,
+    },
+    recommendation=(
+        "If this Jenkins instance is reachable, finish or redo the setup wizard"
+        " now and create a named admin user, then delete or disable the"
+        " wizard-created 'admin' account (or change its password) and remove"
+        " secrets/initialAdminPassword. Scrub the log, CI output or ticket the"
+        " value was pasted into."
+    ),
+    tags=["devops", "jenkins", "ci-cd", "password"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3571,4 +3622,8 @@ register(
     # 2026-10-27 — Splunk HTTP Event Collector token (dashed GUID behind the
     # vendor's 'Authorization: Splunk' scheme or an HEC token field name).
     SPLUNK_HEC_TOKEN,
+    # 2026-10-27 — Jenkins setup-wizard initial admin password (32 lowercase
+    # hex after the wizard's own log banner or a cat of initialAdminPassword;
+    # width from Jenkins core SetupWizard.java).
+    JENKINS_INITIAL_ADMIN_PASSWORD,
 )
