@@ -4442,6 +4442,54 @@ KUBERNETES_BOOTSTRAP_TOKEN = SecretPattern(
 )
 
 
+CONSUL_ACL_TOKEN = SecretPattern(
+    id="consul_acl_token",
+    name="HashiCorp Consul ACL Token",
+    description=(
+        "HashiCorp Consul ACL token SecretID — a dashed 8-4-4-4-12 hex UUID"
+        " sent in the X-Consul-Token header, set as CONSUL_HTTP_TOKEN, or"
+        " printed as 'SecretID:' by 'consul acl token create'. Carries the"
+        " token's ACL policies; a management token controls the whole"
+        " cluster's KV store, service catalog, intentions and ACL system."
+    ),
+    provider="consul",
+    severity="high",
+    # A bare UUID is unshippable, so the regex requires Consul's own header,
+    # its CLI environment variable, or the 'SecretID:' label of its CLI
+    # output (never 'AccessorID:', which is a public identifier); only the
+    # UUID is the secret span.
+    # Format per https://developer.hashicorp.com/consul/api-docs/api-structure
+    regex=re.compile(
+        r"(?:(?i:X-Consul-Token|\bCONSUL_HTTP_TOKEN)[\"']?\s*[:=]\s*[\"']?"
+        r"|(?<![A-Za-z])SecretID:[ \t]+)"
+        r"(?P<secret>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=0.0,  # anchor carries the precision; a UUID's entropy says nothing
+    context_keywords=["consul", "X-Consul-Token", "CONSUL_HTTP_TOKEN", "acl", ":8500"],
+    known_test_values={
+        # SecretIDs printed in HashiCorp's Consul CLI and API documentation,
+        # which tutorials reproduce verbatim, plus an all-zero mask.
+        "ec15675e-2999-d789-" + "832e-8c4794daa8d7",
+        "930dafb6-5c08-040b-" + "23fb-a368a95256f9",
+        "ada7f751-f654-8872-" + "7f93-498e799158b6",
+        "0005d17e-5bb2-7e8b-" + "7bfa-15f2eee9ad14",
+        "6a1253d2-1785-24fd-" + "91c2-f8e78c745511",
+        "00000000-0000-0000-" + "0000-000000000000",
+    },
+    recommendation=(
+        "Revoke the token with 'consul acl token delete -accessor-id <id>'"
+        " (or rotate it if it is an agent or replication token), issue a"
+        " replacement bound to the narrowest policy that works, and update"
+        " CONSUL_HTTP_TOKEN wherever it was set. Review the KV store, service"
+        " registrations and ACL policies for changes you did not make."
+    ),
+    tags=["cloud", "hashicorp", "consul", "service-mesh"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -4586,4 +4634,7 @@ register(
     # 2026-10-27 — Kubernetes bootstrap token ([a-z0-9]{6}.[a-z0-9]{16} per the
     # bootstrap-tokens docs, anchored on kubeadm's --token flags or 'token:').
     KUBERNETES_BOOTSTRAP_TOKEN,
+    # 2026-10-27 — HashiCorp Consul ACL token SecretID (UUID behind
+    # X-Consul-Token, CONSUL_HTTP_TOKEN or the CLI's 'SecretID:' label).
+    CONSUL_ACL_TOKEN,
 )
