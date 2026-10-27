@@ -3553,6 +3553,50 @@ SONARQUBE_LEGACY_TOKEN = SecretPattern(
 )
 
 
+CONVEX_DEPLOY_KEY = SecretPattern(
+    id="convex_deploy_key",
+    name="Convex Deploy Key",
+    description=(
+        "Convex deploy key — a key type ('prod', 'preview', 'dev' or"
+        " 'project'), a colon, the deployment name or team:project slugs, a"
+        " pipe, and a base64 JSON body that always begins 'eyJ2'. Set as"
+        " CONVEX_DEPLOY_KEY in build pipelines; a production key can push"
+        " arbitrary backend code and read and write the production deployment."
+    ),
+    provider="convex",
+    severity="critical",
+    # Every type in Convex's own deploy-key guide shares the shape
+    # '<type>:<name>[:<project>]|eyJ2...' ('eyJ2' is base64 of '{"v'). The
+    # docs elide the body, so its width is left open behind the anchor
+    # (bounded for linearity) rather than guessed.
+    # Format per https://docs.convex.dev/cli/deploy-key-types
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>(?:prod|preview|dev|project):"
+        r"[a-z0-9]+(?:-[a-z0-9]+){0,8}(?::[a-z0-9]+(?:-[a-z0-9]+){0,8})?"
+        r"\|eyJ2[A-Za-z0-9+/_-]{20,1000}={0,2})"
+        r"(?![A-Za-z0-9+/=_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.93,
+    entropy_threshold=0.0,  # type prefix + pipe + 'eyJ2' literal carry the precision
+    context_keywords=["convex", "CONVEX_DEPLOY_KEY", "deploy key", "npx convex deploy"],
+    known_test_values={
+        # Single-character masks in the documented layout. Built by concatenation.
+        "prod:qualified-jaguar-123|" + "eyJ2" + fill * 56
+        for fill in ("x", "X", "A", "0")
+    },
+    recommendation=(
+        "Regenerate this deploy key in the Convex dashboard (Deployment"
+        " Settings > Deploy Keys, or the project's settings for preview and"
+        " project keys) so the old one stops working, then update"
+        " CONVEX_DEPLOY_KEY in your CI and hosting provider. Review recent"
+        " deployments and function logs for pushes you did not make."
+    ),
+    tags=["devops", "convex", "database", "ci-cd"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3679,4 +3723,7 @@ register(
     # behind sonar.login / sonar.token / SONAR_TOKEN; width from SonarQube's
     # own TokenGeneratorImpl).
     SONARQUBE_LEGACY_TOKEN,
+    # 2026-10-27 — Convex deploy key ('prod:' / 'preview:' / 'dev:' /
+    # 'project:' + name + '|eyJ2' base64 JSON; per Convex's deploy-key guide).
+    CONVEX_DEPLOY_KEY,
 )
