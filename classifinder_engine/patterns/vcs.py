@@ -1406,6 +1406,62 @@ BITBUCKET_ACCESS_TOKEN = SecretPattern(
 )
 
 
+GITLAB_ROUTABLE_TOKEN = SecretPattern(
+    id="gitlab_routable_token",
+    name="GitLab Routable Token",
+    description=(
+        "GitLab routable token — a GitLab token prefix (glrt-, glrtr-, glwt-,"
+        " glcbt-, gldt-, glft-, gloas-, glsoat-, glagent-, glffct-, glimt-)"
+        " followed by a base64url payload, '.01.', and a 9-character base36"
+        " length + CRC32 trailer. This is the newer routable format GitLab"
+        " generates for these token types; it carries the same access as the"
+        " classic 20-character form of the same prefix (runner registration,"
+        " workspace, CI job, deploy, feed, OAuth application, SCIM, cluster"
+        " agent, feature-flag or incoming-mail access)."
+    ),
+    provider="gitlab",
+    severity="high",
+    # GitLab's RoutableToken generator emits
+    # <prefix><base64url(16 random bytes + routing payload + length byte)>
+    # '.' <version '01'> '.' <2 base36 payload length><7 base36 CRC32>, so the
+    # '.01.' + 9 base36 trailer is a fixed, vendor-generated landmark. The
+    # classic patterns for these prefixes pin a 20-character body and cannot
+    # match this form. glpat- and glptt- are left to gitlab_pat and
+    # gitlab_pipeline_trigger, whose open-ended bodies already match it. No
+    # left guard on '-': self-managed instances may prepend an instance prefix.
+    # Source: https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/authn/token_field/generator/routable_token.rb
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>gl(?:rtr|rt|wt|cbt|dt|ft|oas|soat|agent|ffct|imt)-"
+        r"(?:t\d_)?[A-Za-z0-9_-]{27,300}\.01\.[0-9a-z]{9})"
+        r"(?![A-Za-z0-9_.-])",
+        re.ASCII,
+    ),
+    confidence_base=0.97,
+    entropy_threshold=0.0,  # vendor prefix + fixed '.01.' base36 trailer
+    context_keywords=[
+        "gitlab",
+        "runner",
+        "CI_JOB_TOKEN",
+        "deploy token",
+        "workspace",
+        "glrt",
+    ],
+    known_test_values={
+        # Single-character masks in the routable layout. Built by concatenation.
+        "glrt-" + fill * 30 + ".01." + "0" * 9 for fill in ("x", "X", "0")
+    },
+    recommendation=(
+        "Revoke or reset this token in GitLab where its type is managed (runner"
+        " settings for glrt-/glrtr-, the workspace for glwt-, deploy tokens,"
+        " feed token or OAuth application settings, the agent's page for"
+        " glagent-), then update whatever consumed it. Check the audit log for"
+        " runners, agents or applications registered or used with it."
+    ),
+    tags=["vcs", "gitlab", "ci-cd", "routable-token"],
+)
+
+
 register(
     GITHUB_PAT_CLASSIC,
     GITHUB_PAT_FINE_GRAINED,
@@ -1455,4 +1511,8 @@ register(
     # (key="ClearTextPassword" / key="Password"), structurally anchored on the
     # XML add-key/value shape; %VAR% and build placeholders excluded.
     NUGET_CONFIG_CLEARTEXT_PASSWORD,
+    # 2026-10-27 — GitLab routable token (prefix + base64url payload +
+    # '.01.' + 9 base36 length/CRC32; from GitLab's own RoutableToken
+    # generator). Classic 20-char patterns above cannot match this form.
+    GITLAB_ROUTABLE_TOKEN,
 )
