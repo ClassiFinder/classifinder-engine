@@ -4386,6 +4386,62 @@ AZURE_ENTRA_ID_CLIENT_SECRET = SecretPattern(
 )
 
 
+KUBERNETES_BOOTSTRAP_TOKEN = SecretPattern(
+    id="kubernetes_bootstrap_token",
+    name="Kubernetes Bootstrap Token",
+    description=(
+        "Kubernetes bootstrap token — a 6-character token ID, a dot and a"
+        " 16-character token secret, both lowercase alphanumeric"
+        " (abcdef.0123456789abcdef), as passed to 'kubeadm join --token' or"
+        " written in a kubeadm config or bootstrap kubeconfig 'token:' field."
+        " Lets the holder join a node to the cluster and request a kubelet"
+        " client certificate."
+    ),
+    provider="kubernetes",
+    severity="high",
+    # The bare 6.16 shape has no literal component and matches version strings
+    # and short hashes, so the regex requires the kubeadm '--token' family of
+    # flags or a 'token:' field; the whole id.secret pair is the span.
+    # '--discovery-token-ca-cert-hash' is a CA hash, not a token, and is
+    # excluded by requiring the separator right after the flag name.
+    # Format per https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens/
+    regex=re.compile(
+        r"(?:--(?:tls-bootstrap-|discovery-)?token(?:=|[ \t]+)"
+        r"|\btoken:[ \t]*[\"']?)"
+        r"(?P<secret>[a-z0-9]{6}\.[a-z0-9]{16})"
+        r"(?![A-Za-z0-9_.-])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=0.0,  # exact 6.16 shape behind a kubeadm anchor
+    context_keywords=[
+        "kubeadm",
+        "kubernetes",
+        "bootstrap",
+        "join",
+        "bootstrapTokens",
+        "discovery-token-ca-cert-hash",
+    ],
+    known_test_values={
+        # Every sample printed in the Kubernetes bootstrap-token and kubeadm
+        # reference docs, which tutorials reproduce verbatim.
+        "abcdef.0123456789abcdef",
+        "abcdef.1234567890abcdef",
+        "abcdef.abcdef0123456789",
+        "07401b.f395accd246ae52d",
+        "783bde.3f89s0fje9f38fhf",
+        "9a08jv.c0izixklcxtmnze7",
+    },
+    recommendation=(
+        "Delete the token with 'kubeadm token delete <token-id>' (or delete the"
+        " bootstrap-token-<id> Secret in kube-system), then list nodes and"
+        " certificate signing requests for anything that joined with it."
+        " Issue join tokens with a short --ttl and never commit join commands."
+    ),
+    tags=["cloud", "kubernetes", "kubeadm", "cluster"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -4527,4 +4583,7 @@ register(
     # 2026-10-21 — Azure Entra ID app client secret (identifiable 'Q~' form:
     # 3 chars + 7Q~/8Q~ + 31/34 chars; per Microsoft security-utilities SEC101/156).
     AZURE_ENTRA_ID_CLIENT_SECRET,
+    # 2026-10-27 — Kubernetes bootstrap token ([a-z0-9]{6}.[a-z0-9]{16} per the
+    # bootstrap-tokens docs, anchored on kubeadm's --token flags or 'token:').
+    KUBERNETES_BOOTSTRAP_TOKEN,
 )
