@@ -3504,6 +3504,55 @@ JENKINS_INITIAL_ADMIN_PASSWORD = SecretPattern(
 )
 
 
+SONARQUBE_LEGACY_TOKEN = SecretPattern(
+    id="sonarqube_legacy_token",
+    name="SonarQube Legacy User Token",
+    description=(
+        "SonarQube user token in the legacy, unprefixed form — 40 lowercase"
+        " hex characters — passed as sonar.login / sonar.token or SONAR_TOKEN."
+        " Tokens issued before SonarQube added the squ_/sqp_/sqa_ prefixes are"
+        " still accepted and still common in CI configuration."
+    ),
+    provider="sonar",
+    severity="high",
+    # SonarQube's own TokenGeneratorImpl hex-encodes 20 random bytes (40
+    # lowercase hex); modern tokens prepend 'sq<type>_'. A bare 40-hex value
+    # is a SHA-1, so the regex requires a SonarQube token parameter or
+    # variable name; only the hex is the secret span. That anchor is also what
+    # keeps npm lockfile 'sonarqube-*.tgz#<sha1>' integrity hashes out. No
+    # left word boundary: the Maven/Gradle form is '-Dsonar.login='.
+    # Source: https://github.com/SonarSource/sonarqube/blob/master/server/sonar-webserver-auth/src/main/java/org/sonar/server/usertoken/TokenGeneratorImpl.java
+    regex=re.compile(
+        r"(?i:sonar[._-]?(?:login|token)|sonarLogin|sonarToken)"
+        r"[\"']?\s*(?:[:=,]|=>)\s*[\"']?"
+        r"(?P<secret>[0-9a-f]{40})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=0.0,  # anchor + exact 40-hex body; hex holds no FP-wordlist term
+    context_keywords=[
+        "sonar",
+        "sonarqube",
+        "sonarcloud",
+        "sonar.host.url",
+        "SONAR_TOKEN",
+        "sonar-scanner",
+    ],
+    known_test_values={
+        "0" * 40,
+        "f" * 40,
+    },
+    recommendation=(
+        "Revoke this token in SonarQube under My Account > Security (or"
+        " Administration > Security > Users for another user), generate a"
+        " replacement — current SonarQube versions issue prefixed squ_ tokens —"
+        " and store it as a masked CI secret rather than in the build file."
+    ),
+    tags=["security", "sonar", "code-quality", "ci-cd"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3626,4 +3675,8 @@ register(
     # hex after the wizard's own log banner or a cat of initialAdminPassword;
     # width from Jenkins core SetupWizard.java).
     JENKINS_INITIAL_ADMIN_PASSWORD,
+    # 2026-10-27 — SonarQube legacy unprefixed user token (40 lowercase hex
+    # behind sonar.login / sonar.token / SONAR_TOKEN; width from SonarQube's
+    # own TokenGeneratorImpl).
+    SONARQUBE_LEGACY_TOKEN,
 )
