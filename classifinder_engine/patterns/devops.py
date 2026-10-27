@@ -3597,6 +3597,49 @@ CONVEX_DEPLOY_KEY = SecretPattern(
 )
 
 
+RUNDECK_API_TOKEN = SecretPattern(
+    id="rundeck_api_token",
+    name="Rundeck API Token",
+    description=(
+        "Rundeck / PagerDuty Process Automation API token — 32 alphanumeric"
+        " characters sent in the X-Rundeck-Auth-Token header or the"
+        " 'authtoken' URL parameter, or set as RD_TOKEN for the rd CLI. Acts"
+        " as the token's user: it can run jobs (and therefore commands on"
+        " every node those jobs reach), read execution output and change"
+        " project configuration within the token's roles."
+    ),
+    provider="rundeck",
+    severity="high",
+    # Rundeck's API docs print a complete 32-character token in both
+    # documented transports. A bare 32-character alphanumeric run is far too
+    # generic, so the regex requires the header, the URL parameter or the rd
+    # CLI's RD_TOKEN variable; only the token is the secret span.
+    # Format per https://docs.rundeck.com/docs/api/
+    regex=re.compile(
+        r"(?:(?i:X-Rundeck-Auth-Token|\bRD_TOKEN)[\"']?\s*[:=]\s*[\"']?"
+        r"|[?&]authtoken=)"
+        r"(?P<secret>[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=3.0,  # real tokens sit near 4.5+; sinks one-letter masks the anchor admits
+    context_keywords=["rundeck", "X-Rundeck-Auth-Token", "RD_TOKEN", "RD_URL", "/api/"],
+    known_test_values={
+        # The token printed in Rundeck's own API documentation.
+        "E4rNvVRV378knO9d" + "p3d73O0cs1kd0kCd",
+    },
+    recommendation=(
+        "Delete this token on the owning user's Profile page in Rundeck (or"
+        " under System > User Summary for another user), create a replacement"
+        " with the narrowest roles and a short expiration, and update RD_TOKEN"
+        " or the integration that used it. Review the activity log for job"
+        " runs and ad-hoc commands you did not start."
+    ),
+    tags=["devops", "rundeck", "automation", "ci-cd"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3726,4 +3769,7 @@ register(
     # 2026-10-27 — Convex deploy key ('prod:' / 'preview:' / 'dev:' /
     # 'project:' + name + '|eyJ2' base64 JSON; per Convex's deploy-key guide).
     CONVEX_DEPLOY_KEY,
+    # 2026-10-27 — Rundeck API token (32 alphanumeric behind the
+    # X-Rundeck-Auth-Token header, the authtoken URL parameter or RD_TOKEN).
+    RUNDECK_API_TOKEN,
 )
