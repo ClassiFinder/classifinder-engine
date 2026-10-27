@@ -4540,6 +4540,51 @@ NOMAD_ACL_TOKEN = SecretPattern(
 )
 
 
+ELASTICSEARCH_API_KEY = SecretPattern(
+    id="elasticsearch_api_key",
+    name="Elasticsearch API Key (encoded)",
+    description=(
+        "Elasticsearch / Kibana API key in its 'encoded' form — the base64 of"
+        " '<id>:<api_key>' (a 20-character key ID, a colon, the secret) sent"
+        " as 'Authorization: ApiKey <encoded>' or set as ELASTIC_API_KEY."
+        " Grants whatever cluster and index privileges the key was created"
+        " with, up to the creating user's own."
+    ),
+    provider="elastic",
+    severity="high",
+    # Elasticsearch key IDs are always 20 characters, so the ':' that follows
+    # is byte 20 of the decoded value and always encodes to '6' at character
+    # 27 of the base64 — a fixed landmark inside an otherwise random blob.
+    # The regex requires Elastic's 'ApiKey' authorization scheme or an
+    # Elastic API-key variable name in front of it; only the encoded key is
+    # the secret span.
+    # Format per https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-security-create-api-key
+    regex=re.compile(
+        r"(?:(?i:\bAuthorization)[\"']?\s*[:=]\s*[\"']?(?i:ApiKey)[ \t]+"
+        r"|(?i:\b(?:ELASTIC(?:SEARCH)?|ES|KIBANA)_API_KEY)[\"']?\s*[:=]\s*[\"']?)"
+        r"(?P<secret>[A-Za-z0-9+/]{27}6[A-Za-z0-9+/]{20,250}={0,2})"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=0.0,  # anchor + fixed '6' landmark; base64 of random bytes clears any floor
+    context_keywords=["elastic", "elasticsearch", "kibana", "ApiKey", ":9200", "_security"],
+    known_test_values={
+        # The 'encoded' value printed in Elastic's create-API-key reference
+        # (id VuaCfGcBCdbkQm-e5aOx, api_key ui2lp2axTNmsyakw9tvNnw).
+        "VnVhQ2ZHY0JDZGJrUW0tZTVhT3g6" + "dWkybHAyYXhUTm1zeWFrdzl0dk5udw==",
+    },
+    recommendation=(
+        "Invalidate the key with the Elasticsearch invalidate-API-key API (or"
+        " in Kibana under Stack Management > API Keys), create a replacement"
+        " with role descriptors limited to what the client needs and an"
+        " expiration, and update ELASTIC_API_KEY wherever it was set. Review"
+        " the security audit log for requests made with the key's ID."
+    ),
+    tags=["cloud", "elastic", "elasticsearch", "database"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -4690,4 +4735,8 @@ register(
     # 2026-10-27 — HashiCorp Nomad ACL token Secret ID (UUID behind
     # X-Nomad-Token, NOMAD_TOKEN or the CLI's 'Secret ID =' line).
     NOMAD_ACL_TOKEN,
+    # 2026-10-27 — Elasticsearch / Kibana encoded API key (base64 of
+    # '<20-char id>:<api_key>', '6' fixed at char 27; behind the 'ApiKey'
+    # authorization scheme or ELASTIC_API_KEY / ES_API_KEY).
+    ELASTICSEARCH_API_KEY,
 )
