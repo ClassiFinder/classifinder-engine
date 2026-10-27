@@ -2555,6 +2555,67 @@ INFISICAL_SERVICE_TOKEN = SecretPattern(
     tags=["cloud", "infisical", "secrets"],
 )
 
+# Phase (phase.dev) service and user tokens. Phase is an end-to-end encrypted
+# secrets manager; its tokens are a fixed-width structural composite:
+# 'pss_service:' (service account) or 'pss_user:' (personal access token),
+# 'v<digits>:', then four colon-separated 64-hex segments — the token value,
+# the key-exchange public key, a keyshare, and the wrap key. The keyshare and
+# wrap key are what let the holder decrypt the vault, so a leaked token is not
+# just an API credential but the means to read every secret it is scoped to.
+
+PHASE_SERVICE_TOKEN = SecretPattern(
+    id="phase_service_token",
+    name="Phase Service Token",
+    description=(
+        "Phase (phase.dev) service or user token — 'pss_service:' or"
+        " 'pss_user:', a 'v<digits>:' version, then four colon-separated"
+        " 64-character hex segments (token value, key-exchange public key,"
+        " keyshare, wrap key). Carries the key material to decrypt every"
+        " secret in the apps and environments it is scoped to."
+    ),
+    provider="phase",
+    severity="critical",
+    # Format read off the vendor's own SDK validators: PssServicePattern and
+    # PssUserPattern in golang-sdk phase/misc/const.go (mirrored as
+    # pss_service_pattern / pss_user_pattern in python-sdk
+    # src/phase/utils/const.py) are identical except for the family name. The
+    # lookbehind keeps it out of longer identifiers such as Shopify's 'shpss_'.
+    # No entropy threshold — every variable segment is hex (max 4.0 bits/char)
+    # and the 4 x 64-hex structure carries the signal. Independently authored.
+    # Source: https://github.com/phasehq/golang-sdk/blob/main/phase/misc/const.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>pss_(?:service|user):v\d+"
+        r"(?::[a-fA-F0-9]{64}){4})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # literal 'pss_<family>:v<n>:' prefix + fixed 4 x 64-hex body
+    entropy_threshold=0.0,
+    context_keywords=[
+        "phase",
+        "PHASE_SERVICE_TOKEN",
+        "PHASE_HOST",
+        "phase.dev",
+        "service token",
+    ],
+    known_test_values={
+        # All-zero segments — the canonical placeholder shape and definitionally
+        # not a live credential. Built by concatenation so no scannable token
+        # literal exists in source.
+        "pss_service:v2:" + ":".join(["0" * 64] * 4),
+        "pss_user:v1:" + ":".join(["0" * 64] * 4),
+    },
+    recommendation=(
+        "Revoke this token in the Phase console (Access > Service Accounts for"
+        " a pss_service token, or your account's Personal Access Tokens for a"
+        " pss_user token), issue a replacement and update PHASE_SERVICE_TOKEN"
+        " wherever it is configured. Because the token carries the key material"
+        " to decrypt the scoped environments, rotate every secret in them too."
+    ),
+    tags=["cloud", "phase", "secrets"],
+)
+
 # ===================================================
 # AZURE / MICROSOFT IDENTIFIABLE ("annotated") KEYS
 # ===================================================
@@ -4739,4 +4800,7 @@ register(
     # '<20-char id>:<api_key>', '6' fixed at char 27; behind the 'ApiKey'
     # authorization scheme or ELASTIC_API_KEY / ES_API_KEY).
     ELASTICSEARCH_API_KEY,
+    # 2026-10-27 — Phase service / user token ('pss_service:' / 'pss_user:' +
+    # 'v<n>:' + four colon-separated 64-hex segments; per the vendor SDKs).
+    PHASE_SERVICE_TOKEN,
 )
