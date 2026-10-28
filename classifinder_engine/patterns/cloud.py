@@ -2616,6 +2616,65 @@ PHASE_SERVICE_TOKEN = SecretPattern(
     tags=["cloud", "phase", "secrets"],
 )
 
+# Appwrite standard API keys. Appwrite is an open-source backend-as-a-service;
+# a project's server-side API key is generated as 'standard_' followed by
+# bin2hex(random_bytes(128)) — exactly 256 lowercase hex characters, 265 with
+# the prefix. These keys carry the project scopes chosen at creation (often
+# full database, storage, users and functions access) and are meant for
+# servers only. Sibling key types (ephemeral, organization, account, oauth2)
+# come from different generators and are not covered here.
+
+APPWRITE_STANDARD_API_KEY = SecretPattern(
+    id="appwrite_standard_api_key",
+    name="Appwrite Standard API Key",
+    description=(
+        "Appwrite project API key — the literal 'standard_' followed by exactly"
+        " 256 lowercase hex characters (128 random bytes). A server-side key"
+        " that grants every scope it was created with across the project's"
+        " databases, storage, users and functions."
+    ),
+    provider="appwrite",
+    severity="critical",
+    # Format read off the vendor's own generator: Keys/Create.php builds the
+    # secret as API_KEY_STANDARD . '_' . bin2hex(random_bytes(128)), and
+    # app/init/constants.php sets API_KEY_STANDARD = 'standard'. 'standard_' is
+    # an English word, but the exact 256-hex body is structurally anchored; the
+    # guards keep it out of longer identifiers such as 'nonstandard_'. No
+    # entropy threshold — the body is hex (max 4.0 bits/char). Independently
+    # authored.
+    # Source: https://github.com/appwrite/appwrite/blob/main/src/Appwrite/Platform/Modules/Project/Http/Project/Keys/Create.php
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>standard_[a-f0-9]{256})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # literal 'standard_' prefix + fixed 256-hex body
+    entropy_threshold=0.0,
+    context_keywords=[
+        "appwrite",
+        "APPWRITE_API_KEY",
+        "APPWRITE_KEY",
+        "APPWRITE_ENDPOINT",
+        "X-Appwrite-Key",
+        "setKey",
+    ],
+    known_test_values={
+        # All-zero body — the canonical placeholder shape and definitionally
+        # not a live credential. Built by concatenation so no scannable key
+        # literal exists in source.
+        "standard_" + "0" * 256,
+    },
+    recommendation=(
+        "Delete this key in the Appwrite console (Project > Overview >"
+        " Integrations > API keys), create a replacement with only the scopes"
+        " the server needs, and update APPWRITE_API_KEY wherever it is"
+        " configured. Review the project's audit logs for activity made with"
+        " the leaked key."
+    ),
+    tags=["cloud", "appwrite", "baas"],
+)
+
 # ===================================================
 # AZURE / MICROSOFT IDENTIFIABLE ("annotated") KEYS
 # ===================================================
@@ -4803,4 +4862,7 @@ register(
     # 2026-10-27 — Phase service / user token ('pss_service:' / 'pss_user:' +
     # 'v<n>:' + four colon-separated 64-hex segments; per the vendor SDKs).
     PHASE_SERVICE_TOKEN,
+    # 2026-10-28 — Appwrite standard API key ('standard_' + 256 lowercase hex;
+    # per the vendor's own Keys/Create.php generator).
+    APPWRITE_STANDARD_API_KEY,
 )
