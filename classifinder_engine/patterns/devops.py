@@ -3640,6 +3640,67 @@ RUNDECK_API_TOKEN = SecretPattern(
 )
 
 
+# Gitpod personal access tokens. Gitpod (Gitpod Classic, since rebranded as
+# Ona) issues user-scoped PATs as 'gitpod_pat_' + an HMAC-SHA256 signature in
+# unpadded base64url (32 bytes -> exactly 43 [A-Za-z0-9_-]) + '.' + a
+# 40-character [0-9A-Za-z] random value. Any action taken with the token acts
+# as its creator: workspaces, repositories reachable through the user's
+# connected Git providers, and the user's environment variables.
+
+GITPOD_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="gitpod_personal_access_token",
+    name="Gitpod Personal Access Token",
+    description=(
+        "Gitpod personal access token — the literal 'gitpod_pat_' prefix, a"
+        " 43-character base64url HMAC signature, a '.' and a 40-character"
+        " alphanumeric value. Acts as the user who created it: their"
+        " workspaces, environment variables and the Git provider access"
+        " those workspaces carry."
+    ),
+    provider="gitpod",
+    severity="critical",
+    # Layout read off the vendor's own generator (format facts only; no code
+    # copied): PersonalAccessTokenPrefix = "gitpod_pat_", String() is prefix +
+    # signature + "." + value, value = generateTokenValue(40) over 0-9A-Za-z,
+    # signature = base64.RawURLEncoding of an HS256 HMAC. Fully structural, so
+    # no entropy gate; guards, confidence and known_test_values are
+    # ClassiFinder's own. Independently authored.
+    # Source: https://github.com/gitpod-io/gitpod/blob/main/components/public-api-server/pkg/auth/personal_access_token.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>gitpod_pat_[A-Za-z0-9_-]{43}\.[A-Za-z0-9]{40})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # literal prefix + fixed 43 + '.' + 40 layout
+    entropy_threshold=0.0,
+    context_keywords=[
+        "gitpod",
+        "GITPOD_TOKEN",
+        "GITPOD_PAT",
+        "gitpod.io",
+        "Authorization",
+        "Bearer",
+    ],
+    known_test_values={
+        # The example printed in the vendor's own doc comment. Built by
+        # concatenation so no scannable token literal exists in source.
+        "gitpod_pat_" + "ko8KC1tJ-GkqIwqNliwF4tBUk2Jd5nEe9qOWqYfobtY"
+        + "." + "6ZDQVanpaTKj9hQuji0thCe8KFCcmEDGpsaTkSSb",
+        # Placeholder shape.
+        "gitpod_pat_" + "A" * 43 + "." + "0" * 40,
+    },
+    recommendation=(
+        "Delete this token in Gitpod (User Settings > Access Tokens) so it"
+        " stops working, create a replacement with the narrowest scope and a"
+        " short expiry, and update GITPOD_TOKEN wherever it is configured."
+        " Review workspace activity and connected Git provider audit logs for"
+        " actions you did not take."
+    ),
+    tags=["devops", "gitpod", "cde"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3772,4 +3833,7 @@ register(
     # 2026-10-27 — Rundeck API token (32 alphanumeric behind the
     # X-Rundeck-Auth-Token header, the authtoken URL parameter or RD_TOKEN).
     RUNDECK_API_TOKEN,
+    # 2026-10-29 — Gitpod personal access token ('gitpod_pat_' + 43 base64url
+    # HMAC signature + '.' + 40 alphanumeric; per the vendor's own generator).
+    GITPOD_PERSONAL_ACCESS_TOKEN,
 )
