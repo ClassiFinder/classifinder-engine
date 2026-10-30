@@ -2675,6 +2675,67 @@ APPWRITE_STANDARD_API_KEY = SecretPattern(
     tags=["cloud", "appwrite", "baas"],
 )
 
+# dotenv-vault DOTENV_KEY. The dotenv library (motdotla/dotenv) can load an
+# encrypted '.env.vault' file; the decryption key is supplied as a DOTENV_KEY
+# URI of the form 'dotenv://:key_<64 hex>@dotenvx.com/vault/.env.vault?
+# environment=<env>' (older dotenv-vault releases print the 'dotenv.org'
+# host). The 64 hex characters are a raw AES-256-GCM key, so anyone holding
+# the URI and the committed .env.vault file can decrypt every secret for that
+# environment. dotenv-vault is superseded by dotenvx but still deployed.
+
+DOTENV_VAULT_KEY = SecretPattern(
+    id="dotenv_vault_key",
+    name="dotenv-vault DOTENV_KEY",
+    description=(
+        "dotenv-vault decryption key — a DOTENV_KEY URI 'dotenv://:key_<64 hex>"
+        "@dotenvx.com/vault/.env.vault?environment=<env>' (or the legacy"
+        " dotenv.org host). The 64 hex characters are the AES-256-GCM key that"
+        " decrypts that environment's secrets in the .env.vault file."
+    ),
+    provider="dotenv",
+    severity="high",
+    # Format read off the vendor's own parser (format facts only): _parseVault
+    # parses DOTENV_KEY as a URI, takes the key from its password component and
+    # rejects it without an 'environment' parameter; decrypt() reads
+    # Buffer.from(keyStr.slice(-64), 'hex') and rejects shorter keys. Only
+    # 'key_<hex>' is the secret span. Hex body, so no entropy gate; the scheme +
+    # vault path + environment structure is the anchor. Independently authored.
+    # Source: https://github.com/motdotla/dotenv/blob/v16.4.5/lib/main.js
+    regex=re.compile(
+        r"dotenv://:(?P<secret>key_[a-f0-9]{64})"
+        r"@(?:dotenv\.org|dotenvx\.com)/vault/\.env\.vault"
+        r"\?environment=[A-Za-z0-9_-]+",
+        re.ASCII,
+    ),
+    confidence_base=0.95,  # literal scheme + 'key_' + fixed 64 hex + vault URI
+    entropy_threshold=0.0,
+    context_keywords=[
+        "DOTENV_KEY",
+        "dotenv",
+        "dotenv-vault",
+        ".env.vault",
+        "dotenvx",
+    ],
+    known_test_values={
+        # Keys printed in the vendor's own test suite
+        # (tests/test-config-vault.js). Built by concatenation so no scannable
+        # key literal exists in source.
+        "key_" + "ddcaa26504cd70a6fef9801901c39815" + "38563a1767c297cb8416e8a38c62fe00",
+        "key_" + "2c4d267b8c3865f921311612e6927366" + "6cc76c008acb577d3e22bc3046fba386",
+        "key_" + "c04959b64473e43dd60c56a536ef8481" + "388528b16759736d89515c25eec69247",
+        # Placeholder shape.
+        "key_" + "0" * 64,
+    },
+    recommendation=(
+        "Rotate this environment's DOTENV_KEY (npx dotenv-vault rotatekey, or"
+        " migrate to dotenvx and re-encrypt), rebuild .env.vault and update"
+        " DOTENV_KEY in CI and on every deploy target. Anyone with the old key"
+        " and a copy of .env.vault can decrypt that environment, so rotate every"
+        " secret it contained too."
+    ),
+    tags=["cloud", "dotenv", "secrets"],
+)
+
 # ===================================================
 # AZURE / MICROSOFT IDENTIFIABLE ("annotated") KEYS
 # ===================================================
@@ -4865,4 +4926,7 @@ register(
     # 2026-10-28 — Appwrite standard API key ('standard_' + 256 lowercase hex;
     # per the vendor's own Keys/Create.php generator).
     APPWRITE_STANDARD_API_KEY,
+    # 2026-10-30 — dotenv-vault DOTENV_KEY ('dotenv://:key_' + 64 lowercase hex
+    # + '@dotenvx.com' / '@dotenv.org' vault URI; per the vendor's own parser).
+    DOTENV_VAULT_KEY,
 )
