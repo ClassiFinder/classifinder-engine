@@ -1512,6 +1512,88 @@ DBT_CLOUD_PERSONAL_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# LIGHTDASH
+# ===================================================
+# Lightdash (open-source BI) personal access tokens and service-account
+# tokens: the literal 'ldpat_' (personal access token) or 'ldsvc_' (service
+# account) prefix followed by exactly 32 lowercase hex characters (16 random
+# bytes hex-encoded), 38 characters in total. Sent as
+# 'Authorization: ApiKey ldpat_...' (or Bearer for service accounts) to the
+# Lightdash REST API and used by the Lightdash CLI (LIGHTDASH_API_KEY).
+# - PREFIXES, VENDOR SOURCE: the AuthTokenPrefix enum in Lightdash's own
+#   MIT-licensed repository defines SERVICE_ACCOUNT = 'ldsvc_' and
+#   PERSONAL_ACCESS_TOKEN = 'ldpat_'. The OAuth 'ldapp_' / 'ldref_' prefixes
+#   are deliberately NOT matched (their bodies were not verified).
+# - BODY, VENDOR SOURCE: PersonalAccessTokenModel.create() builds the token as
+#   the prefix + crypto.randomBytes(16).toString('hex'); the service-accounts
+#   doc states ldsvc_<32 hex>.
+# - RECALL CAVEAT: PersonalAccessTokenModel.rotate() issues a bare 32-hex
+#   token with no prefix; a bare 32-hex run is unshippable, so rotated PATs
+#   are not covered by this pattern.
+#
+# Both guards refuse [A-Za-z0-9_]: a 33rd hex character matches nothing
+# rather than being truncated. Confidence 0.95, no entropy gate (fixed-width
+# hex behind a vendor prefix). Severity high: the token carries its
+# creator's (or the service account's) access to every project, saved chart,
+# dashboard and warehouse query the Lightdash instance exposes.
+
+LIGHTDASH_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="lightdash_personal_access_token",
+    name="Lightdash Personal Access / Service Account Token",
+    description=(
+        "Lightdash personal access token or service-account token — the literal"
+        " 'ldpat_' or 'ldsvc_' prefix followed by exactly 32 lowercase hex"
+        " characters, 38 characters in total. Grants API access to the"
+        " Lightdash BI instance: projects, charts, dashboards and the warehouse"
+        " queries they run."
+    ),
+    provider="lightdash",
+    severity="high",
+    # Prefixes per the AuthTokenPrefix enum; body per the vendor's generator,
+    # packages/backend/src/models/DashboardModel/PersonalAccessTokenModel.ts
+    # (crypto.randomBytes(16).toString('hex')). Independently authored.
+    # Source: https://github.com/lightdash/lightdash/blob/main/packages/common/src/types/auth.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>(?:ldpat|ldsvc)_[0-9a-f]{32})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # vendor prefix plus fixed-width hex body carries the precision
+    context_keywords=[
+        "lightdash",
+        "LIGHTDASH_API_KEY",
+        "LIGHTDASH_URL",
+        "ApiKey",
+        "Authorization",
+        "service account",
+        "personal access token",
+    ],
+    known_test_values={
+        # Single-character masks for both prefixes. Built by concatenation so
+        # no scannable token literal exists in source.
+        "ld" + kind + "_" + fill * 32
+        for kind in ("pat", "svc")
+        for fill in ("0", "a", "f", "x")
+    }
+    | {
+        # Sequential-hex placeholder shape.
+        "ld" + kind + "_" + "0123456789abcdef" * 2
+        for kind in ("pat", "svc")
+    },
+    recommendation=(
+        "Revoke this token in Lightdash (Settings > Personal access tokens, or"
+        " Organization settings > Service accounts for an ldsvc_ token), create"
+        " a replacement with the shortest workable expiry and update"
+        " LIGHTDASH_API_KEY wherever it is configured. Review recent query and"
+        " content activity for actions you did not take."
+    ),
+    tags=["data", "lightdash", "analytics", "business-intelligence"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -1567,4 +1649,7 @@ register(
     # 2026-10-19 — dbt platform personal access token ('dbtu_' + 50 base64url;
     # prefix per dbt Labs' own README, width measured; 'dbtc_' not encoded).
     DBT_CLOUD_PERSONAL_ACCESS_TOKEN,
+    # 2026-10-31 — Lightdash personal access / service-account token ('ldpat_'
+    # / 'ldsvc_' + 32 lowercase hex; per the vendor's own generator).
+    LIGHTDASH_PERSONAL_ACCESS_TOKEN,
 )
