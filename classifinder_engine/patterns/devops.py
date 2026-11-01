@@ -3701,6 +3701,99 @@ GITPOD_PERSONAL_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# HEADSCALE
+# ===================================================
+# Headscale (open-source Tailscale control server) credentials. Since 0.28.0
+# every headscale-issued credential is one string of the shape
+# '<prefix><identifier(12)>-<secret(64)>', where the prefix names the kind:
+#   hskey-api-       API key (full control-plane admin over the headscale API)
+#   hskey-auth-      pre-auth key (enrols a node into the tailnet)
+#   hskey-client-    OAuth client secret (mints scoped access tokens)
+#   hskey-oauthtok-  OAuth access token (scope-limited API access)
+# The identifier is the public, indexed lookup key; only the secret is hashed.
+# - WIDTHS, VENDOR SOURCE: hscontrol/db/secret.go keyIdentifierLength = 12,
+#   keySecretLength = 64; generateSecret() returns
+#   prefix + identifier + "-" + secret. parsePrefixedKey() parses by FIXED
+#   WIDTH ('-' at position 12, exactly 64 after it) so the regex does too.
+# - PREFIXES, VENDOR SOURCE: hscontrol/db/api_key.go apiKeyPrefix,
+#   hscontrol/db/preauth_keys.go authKeyPrefix, hscontrol/types/oauth.go
+#   OAuthClientPrefix and AccessTokenPrefix.
+# - CHARSET: from v0.29.4 both segments are lowercase hex (rands.HexString);
+#   v0.28.0..v0.29.3 used base64url [A-Za-z0-9_-] at the same widths, and
+#   isValidBase64URLSafe() still accepts both eras. The wider alphabet with
+#   fixed widths covers both; the hex era is a subset.
+# - NOT MATCHED: 'hskey-authreq-' (auth request id), 'hskey-reg-'
+#   (registration tracking id) and the masked 'hskey-auth-legacy-<id>-***'
+#   display form are identifiers, not credentials. 'tskey-client-' is an
+#   alias headscale accepts for stock Tailscale clients and stays with
+#   tailscale_api_key.
+#
+# Both guards refuse the key alphabet: an 13th identifier character or a 65th
+# secret character matches nothing rather than being truncated. Confidence
+# 0.95, no entropy gate (literal prefix + two fixed-width segments). Severity
+# high: an API key is full admin over the control plane, a pre-auth key joins
+# arbitrary machines to the tailnet.
+
+HEADSCALE_API_KEY = SecretPattern(
+    id="headscale_api_key",
+    name="Headscale API / Pre-Auth / OAuth Key",
+    description=(
+        "Headscale credential — the literal 'hskey-api-' (API key),"
+        " 'hskey-auth-' (pre-auth key), 'hskey-client-' (OAuth client secret)"
+        " or 'hskey-oauthtok-' (OAuth access token) prefix followed by a"
+        " 12-character identifier, '-', and a 64-character secret (lowercase"
+        " hex since 0.29.4, base64url before). Grants admin API access to, or"
+        " node enrolment into, a self-hosted Tailscale-compatible tailnet."
+    ),
+    provider="headscale",
+    severity="high",
+    # Prefixes per hscontrol/db/api_key.go, hscontrol/db/preauth_keys.go and
+    # hscontrol/types/oauth.go; widths per generateSecret() / parsePrefixedKey()
+    # in the vendor's own BSD-3-Clause repository. Independently authored.
+    # Source: https://github.com/juanfont/headscale/blob/main/hscontrol/db/secret.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>hskey-(?:api|auth|client|oauthtok)-"
+        r"[A-Za-z0-9_-]{12}-[A-Za-z0-9_-]{64})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # literal prefix plus two fixed-width segments carries the precision
+    context_keywords=[
+        "headscale",
+        "hskey",
+        "HEADSCALE_API_KEY",
+        "preauthkey",
+        "preauthkeys",
+        "tailnet",
+        "authkey",
+        "Authorization",
+    ],
+    known_test_values={
+        # Single-character masks for all four kinds. Built by concatenation so
+        # no scannable key literal exists in source.
+        "hs" + "key-" + kind + "-" + fill * 12 + "-" + fill * 64
+        for kind in ("api", "auth", "client", "oauthtok")
+        for fill in ("0", "a", "f", "x")
+    }
+    | {
+        # Sequential-hex placeholder shape.
+        "hs" + "key-" + kind + "-" + "0123456789ab" + "-" + "0123456789abcdef" * 4
+        for kind in ("api", "auth", "client", "oauthtok")
+    },
+    recommendation=(
+        "Expire the key with the headscale CLI ('headscale apikeys expire"
+        " --prefix <identifier>' for an API key, 'headscale preauthkeys expire'"
+        " for a pre-auth key, or delete the OAuth client) and issue a"
+        " replacement with the shortest workable expiry. Review the tailnet's"
+        " node list and API audit logs for nodes or changes you did not make."
+    ),
+    tags=["devops", "headscale", "networking", "vpn"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3836,4 +3929,8 @@ register(
     # 2026-10-29 — Gitpod personal access token ('gitpod_pat_' + 43 base64url
     # HMAC signature + '.' + 40 alphanumeric; per the vendor's own generator).
     GITPOD_PERSONAL_ACCESS_TOKEN,
+    # 2026-11-01 — Headscale API / pre-auth / OAuth key ('hskey-api-' /
+    # 'hskey-auth-' / 'hskey-client-' / 'hskey-oauthtok-' + 12-char identifier
+    # + '-' + 64-char secret; widths per the vendor's own generateSecret()).
+    HEADSCALE_API_KEY,
 )
