@@ -3955,6 +3955,99 @@ KEYGEN_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# GROWTHBOOK SECRET API KEY — 'secret_<role>_' (2026-11-02)
+# ===================================================
+# GrowthBook (feature flags / experimentation) secret API key: the literal
+# 'secret_' prefix, a role segment, '_' and the key body. Sent as
+# 'Authorization: Bearer secret_...' to the GrowthBook REST API; it reads and
+# writes features, experiments, SDK connections and (for admin / user keys)
+# organization settings.
+# - BODY, VENDOR SOURCE: packages/back-end/src/util/api-key.util.ts
+#   generateSigningKey(prefix, bytes = 32) = prefix +
+#   crypto.randomBytes(32).toString("base64").replace(/[=/+]/g, "") — base64
+#   of 32 bytes is 44 characters with one '=' of padding, so the body is 43
+#   [A-Za-z0-9] minus every '+' or '/' that was stripped. THE WIDTH IS A
+#   NARROW RANGE BY CONSTRUCTION, not a guess: with each of the 43 positions
+#   being '+' or '/' with probability 2/64, the body is 43 wide 25.5% of the
+#   time, >= 40 wide 95.5%, >= 38 wide 99.79% and >= 36 wide 99.995%; {36,43}
+#   therefore covers all but ~5 keys in 100,000 while staying anchored.
+# - ROLE SEGMENT, VENDOR SOURCE: packages/back-end/src/models/ApiKeyModel.ts
+#   prefixForApiKey(): 'secret_' + 'user_' for a personal key, else
+#   `${role.slice(0, 20)}_` for a role-scoped key. Built-in roles are admin,
+#   readonly, collaborator, visualEditor, engineer, analyst, experimenter,
+#   noaccess and gbDefault_projectAdmin (sliced to 20 → 'gbDefault_projectAdm');
+#   Enterprise custom roles are user-named and validated server-side as
+#   /^[a-zA-Z0-9_]+$/ (OrganizationModel.ts), so the slot is
+#   [A-Za-z0-9_]{1,20} rather than a closed alternation. A key issued with
+#   neither user nor role has no role segment at all and is byte-identical to
+#   a Notion 'secret_<43>' token; it is left to notion_api_key.
+# - NOT MATCHED: SDK (client) keys — 'sdk-…' / '<env>_…' — are publishable.
+#
+# DISJOINT from notion_api_key ('secret_' + exactly 43 alphanumerics): the
+# role segment's trailing '_' breaks Notion's alphanumeric run, and Notion's
+# body never contains the '_' this pattern requires. Guards refuse
+# [A-Za-z0-9_] on the left and [A-Za-z0-9] on the right. Confidence 0.90 —
+# the 'secret_<word>_' prefix is semi-generic English, so the vendor-derived
+# width band and GrowthBook context keywords carry it rather than a 0.95
+# vendor-literal tier — and above the 0.85 FP-wordlist gate. No entropy gate.
+# Severity high: the key changes feature flags and experiments in production.
+
+GROWTHBOOK_SECRET_API_KEY = SecretPattern(
+    id="growthbook_secret_api_key",
+    name="GrowthBook Secret API Key",
+    description=(
+        "GrowthBook secret API key — 'secret_' + a role segment ('user' for a"
+        " personal key, otherwise the role id cut to 20 characters) + '_' + a"
+        " 36-43 character alphanumeric body (base64 of 32 random bytes with"
+        " '+', '/' and '=' stripped). Presented as a Bearer token to the"
+        " GrowthBook REST API; reads and writes features, experiments and SDK"
+        " connections. SDK (client) keys are not matched."
+    ),
+    provider="growthbook",
+    severity="high",
+    # Body per api-key.util.ts generateSigningKey() (base64 of 32 bytes, '=/+'
+    # stripped → 36-43 alphanumerics by construction); role segment per
+    # ApiKeyModel.ts prefixForApiKey() and the custom-role validator in
+    # OrganizationModel.ts. Independently authored from the vendor's own
+    # MIT-licensed source; no third-party detector consulted.
+    # Source: https://github.com/growthbook/growthbook/blob/main/packages/back-end/src/util/api-key.util.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>secret_[A-Za-z0-9_]{1,20}_[A-Za-z0-9]{36,43})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # vendor-derived width band plus the literal prefix carries the precision
+    context_keywords=[
+        "growthbook",
+        "GROWTHBOOK_API_KEY",
+        "GROWTHBOOK_SECRET_KEY",
+        "api.growthbook.io",
+        "GrowthBook",
+        "Bearer",
+        "feature",
+    ],
+    known_test_values={
+        # Single-character masks at the nominal width for the two documented
+        # shapes. Built by concatenation so no scannable key literal exists in
+        # source.
+        "sec" + "ret_" + role + "_" + fill * 43
+        for role in ("user", "admin", "readonly")
+        for fill in ("x", "X", "0")
+    },
+    recommendation=(
+        "Delete this key in GrowthBook under Settings > API Keys and create a"
+        " replacement with the narrowest role that still works (a read-only"
+        " role for SDK syncing, never admin). Review the audit log for feature"
+        " flag, experiment and SDK connection changes you did not make while"
+        " the key was exposed."
+    ),
+    tags=["devops", "growthbook", "feature-flags", "experimentation"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -4101,4 +4194,8 @@ register(
     # 'activ-' + 32 hex + 'v3'; widths, suffix and kind prefixes per the
     # vendor's own token.rb / tokenable.rb generator).
     KEYGEN_API_TOKEN,
+    # 2026-11-02 — GrowthBook secret API key ('secret_<role>_' + 36-43
+    # alphanumeric: base64 of 32 bytes with '=/+' stripped, per the vendor's
+    # own generateSigningKey(); role per prefixForApiKey()).
+    GROWTHBOOK_SECRET_API_KEY,
 )
