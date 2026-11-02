@@ -1847,6 +1847,87 @@ DIFY_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# E2B
+# ===================================================
+# E2B (cloud sandboxes for AI agents) team API key: the literal 'e2b_' prefix
+# followed by lowercase hex. Read from E2B_API_KEY by the SDKs and CLI and
+# sent as the X-API-Key header to api.e2b.app; it creates, connects to and
+# kills every sandbox the team owns.
+# - PREFIX, VENDOR SOURCE: packages/shared/pkg/keys/constants.go
+#   `const ApiKeyPrefix = "e2b_"`.
+# - WIDTH, VENDOR SOURCE: packages/shared/pkg/keys/key.go `keyLength = 20`,
+#   GenerateKey() = prefix + hex.EncodeToString(20 random bytes) → 40 hex.
+# - SECOND WIDTH, VENDOR SOURCE: the vendor's own install tests and seed
+#   fixtures pin a 32-hex team-key shape ('e2b_<32 hex> is the team-key
+#   shape', embed/tests/team-api-key.bats; packages/local-dev/
+#   seed-local-database_test.go). Both widths are matched exactly — 32 or 40,
+#   nothing in between and nothing longer.
+# - The vendor repository was renamed from e2b-dev/infra to e2b-dev/runtime;
+#   the old URL redirects to the same files.
+#
+# entropy_threshold 0.0 ON PURPOSE: a hex body scores ~3.7-4.0 bits and the
+# generic patterns already sink it to 0.19; the literal prefix + exact width
+# is the anchor, so no entropy gate is applied. Guards refuse [A-Za-z0-9] on
+# both sides, so a 33rd..39th or 41st hex character matches nothing rather
+# than being truncated. Confidence 0.95 (vendor generator width), severity
+# high: the key is the whole team's sandbox fleet.
+
+E2B_API_KEY = SecretPattern(
+    id="e2b_api_key",
+    name="E2B Sandbox API Key",
+    description=(
+        "E2B team API key — the literal 'e2b_' prefix followed by exactly 40"
+        " lowercase hex characters (the generator's 20 random bytes) or the"
+        " 32-hex shape the vendor's own seed fixtures pin. Read from E2B_API_KEY"
+        " and sent as X-API-Key; creates, connects to and kills every sandbox"
+        " the team owns."
+    ),
+    provider="e2b",
+    severity="high",
+    # Prefix per keys/constants.go, 40-hex width per keys/key.go GenerateKey(),
+    # 32-hex shape per the vendor's own team-api-key.bats and seed test, all in
+    # E2B's own Apache-2.0 repository. Independently authored.
+    # Source: https://github.com/e2b-dev/runtime/blob/main/packages/shared/pkg/keys/key.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>e2b_[0-9a-f]{32}(?:[0-9a-f]{8})?)"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # hex body must not inherit the generic entropy penalty
+    context_keywords=[
+        "e2b",
+        "E2B_API_KEY",
+        "e2b.dev",
+        "e2b.app",
+        "sandbox",
+        "X-API-Key",
+    ],
+    known_test_values={
+        # The vendor's own seed / install-test fixtures (sequential byte runs).
+        # Built by concatenation so no scannable key literal exists in source.
+        "e2" + "b_" + "ffeeddccbbaa99887766554433221100",
+        "e2" + "b_" + "0f0e0d0c0b0a09080706050403020100",
+        "e2" + "b_" + "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+    }
+    | {
+        # Single-character masks at both widths.
+        "e2" + "b_" + fill * width
+        for fill in ("0", "a", "f")
+        for width in (32, 40)
+    },
+    recommendation=(
+        "Delete this key in the E2B dashboard under Team > API Keys and create a"
+        " replacement, then update every agent, CI job and SDK config that reads"
+        " E2B_API_KEY. Review the team's sandbox list and usage for sandboxes"
+        " you did not start while the key was exposed."
+    ),
+    tags=["ai", "e2b", "sandbox", "agent-infra"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -1916,4 +1997,7 @@ register(
     # alphanumeric per the vendor's own generator; context-gated at 0.48
     # because 'app-' is a generic prefix).
     DIFY_API_KEY,
+    # 2026-11-02 — E2B sandbox API key ('e2b_' + 40 lowercase hex per the
+    # vendor's own GenerateKey(), or the 32-hex shape its seed fixtures pin).
+    E2B_API_KEY,
 )
