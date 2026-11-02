@@ -1763,6 +1763,90 @@ CEREBRAS_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# DIFY
+# ===================================================
+# Dify (open-source LLM app platform) API keys: a kind prefix + exactly 24
+# alphanumerics. The vendor's own generator is ApiToken.generate_api_key(prefix,
+# n) = prefix + generate_string(n), where generate_string draws from
+# string.ascii_letters + string.digits with a CSPRNG (api/libs/helper.py), and
+# every caller passes n=24 (api/repositories/app/api_key_repository.py and
+# api/repositories/knowledge/dataset_api_key_repository.py). The prefixes name
+# the kind:
+#   app-      app API key (api/services/app/api_key_service.py) — calls the
+#             app's chat / completion / workflow endpoints as the app
+#   dataset-  knowledge-base API key (api/services/knowledge/api_key_service.py)
+#   ds-       per-dataset API key (same service)
+# Sent as 'Authorization: Bearer app-...' to api.dify.ai or a self-hosted
+# /v1/... endpoint and read from DIFY_API_KEY by the SDKs and integrations.
+#
+# CONTEXT-GATED ON PURPOSE (tuning-guide Fix 5): 'app-' and 'ds-' are generic
+# English prefixes, so a bare 'app-<24 alnum>' is not a credential claim on its
+# own. confidence_base 0.48 sits below the default min_confidence of 0.50; the
+# finding surfaces only when at least one context keyword (+0.02 each) is
+# within 50 characters — a DIFY_* variable, the vendor host, a Dify endpoint
+# path, or the Bearer carrier the key is always presented in. entropy_threshold
+# 3.0 sinks single-character masks (-0.50). The 24-wide mixed-case run with
+# guards on both sides is the structural anchor; a 23rd or 25th character
+# matches nothing rather than being truncated. Severity high: an app key is
+# the app's full API, a dataset key reads and writes the knowledge base.
+
+DIFY_API_KEY = SecretPattern(
+    id="dify_api_key",
+    name="Dify App / Dataset API Key",
+    description=(
+        "Dify API key — the 'app-' (app API key), 'dataset-' (knowledge-base"
+        " API key) or 'ds-' (dataset API key) prefix followed by exactly 24"
+        " alphanumerics, per the vendor's own generator. Presented as a Bearer"
+        " token to api.dify.ai or a self-hosted Dify; grants the app's API or"
+        " read/write access to its knowledge base. Context-gated: surfaces at"
+        " the default threshold only beside a Dify keyword or a Bearer carrier."
+    ),
+    provider="dify",
+    severity="high",
+    # Prefixes per api/services/app/api_key_service.py ('app-') and
+    # api/services/knowledge/api_key_service.py ('dataset-', 'ds-'); width 24
+    # per the repository callers; charset per libs/helper.py generate_string.
+    # Independently authored from the vendor's own Apache-2.0 repository.
+    # Source: https://github.com/langgenius/dify/blob/main/api/models/model.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>(?:app|dataset|ds)-[A-Za-z0-9]{24})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    # Below the 0.50 default threshold by design — one context keyword lifts it
+    # over (0.48 + 0.02). Depends on _context_boost adding +0.02 per keyword.
+    confidence_base=0.48,
+    entropy_threshold=3.0,  # 24 random mixed-case chars sit near 4.3 bits; masks near 0
+    context_keywords=[
+        "dify",
+        "DIFY_API_KEY",
+        "DIFY_API_BASE",
+        "api.dify.ai",
+        "chat-messages",
+        "completion-messages",
+        "workflows/run",
+        "datasets",
+        "Bearer",
+    ],
+    known_test_values={
+        # Single-character masks for all three kinds. Built by concatenation so
+        # no scannable key literal exists in source.
+        kind + "-" + fill * 24
+        for kind in ("app", "dataset", "ds")
+        for fill in ("x", "X", "0")
+    },
+    recommendation=(
+        "Delete this key in the Dify console (the app's API Access page for an"
+        " 'app-' key, the knowledge base's API page for 'dataset-' / 'ds-') and"
+        " create a replacement. Review the app's logs and the knowledge base's"
+        " documents for calls or edits you did not make while it was exposed."
+    ),
+    tags=["ai", "dify", "llm", "agent-platform"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -1828,4 +1912,8 @@ register(
     # 2026-11-02 — Cerebras Inference API key ('csk-' + 48 mixed-case
     # alphanumeric; prefix per the vendor's own docs, width measured).
     CEREBRAS_API_KEY,
+    # 2026-11-02 — Dify app / dataset API key ('app-' / 'dataset-' / 'ds-' + 24
+    # alphanumeric per the vendor's own generator; context-gated at 0.48
+    # because 'app-' is a generic prefix).
+    DIFY_API_KEY,
 )
