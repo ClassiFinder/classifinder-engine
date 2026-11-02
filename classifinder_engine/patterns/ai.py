@@ -38,7 +38,10 @@ OPENAI_API_KEY = SecretPattern(
     # url-safe body ([A-Za-z0-9_-]), with optional proj-/svcacct-/admin- scope.
     # Format per https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/openai.go (MIT)
     # Branch 2: legacy alphanumeric sk- / sk-proj- keys.
+    # Left guard (2026-11-02): neither branch had a left boundary, so a key with
+    # a longer prefix ending in 'sk-' (Cerebras 'csk-') was reported as OpenAI.
     regex=re.compile(
+        r"(?<![A-Za-z0-9])"
         r"(?P<secret>sk-(?:(?:proj|svcacct|admin)-)?[A-Za-z0-9_-]{20,100}T3BlbkFJ"
         r"[A-Za-z0-9_-]{20,100}(?![A-Za-z0-9_-])"
         r"|sk-(?:proj-)?[a-zA-Z0-9]{32,}(?![a-zA-Z0-9]))",
@@ -1686,6 +1689,80 @@ DEEPL_API_FREE_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# CEREBRAS
+# ===================================================
+# Cerebras Inference API key: the literal 'csk-' prefix followed by exactly 48
+# mixed-case alphanumerics. Sent as 'Authorization: Bearer csk-...' to
+# api.cerebras.ai and read by the vendor SDKs from CEREBRAS_API_KEY.
+# - PREFIX, VENDOR SOURCE: the vendor's own integration guide tells users to
+#   "verify your API key is correct and starts with csk-".
+# - WIDTH AND CHARSET ARE MEASURED, NOT VENDOR-DOCUMENTED: Cerebras does not
+#   publish the body length. A narrow 2026-11-02 measurement of public .env
+#   files found seven distinct real values, every one exactly 48 mixed-case
+#   alphanumerics and nothing else (the measured sources are deliberately not
+#   named because they hold live keys). The mixed-case alphabet is the
+#   measured one; a lowercase-only reading seen in some third-party catalogs
+#   is wrong.
+# - COLLISION, FIXED HERE: the legacy branch of openai_api_key
+#   ('sk-(?:proj-)?[a-zA-Z0-9]{32,}') had no left boundary, so 'csk-<48>' used
+#   to be reported as the OpenAI key 'sk-<48>'. openai_api_key now carries a
+#   (?<![A-Za-z0-9]) left guard, which is the only change made to it.
+#
+# Guards refuse [A-Za-z0-9] on both sides, so a 49th body character matches
+# nothing rather than being truncated. Confidence 0.90 (not the 0.95
+# vendor-width tier: the width is measured, the prefix short) with no entropy
+# gate — still above the 0.85 FP-wordlist gate, so a random body that happens
+# to contain 'test' / 'demo' is not sunk. Severity high: the key bills
+# inference to the account and reads every model the account can reach.
+
+CEREBRAS_API_KEY = SecretPattern(
+    id="cerebras_api_key",
+    name="Cerebras Inference API Key",
+    description=(
+        "Cerebras Inference API key — the literal 'csk-' prefix followed by"
+        " exactly 48 mixed-case alphanumerics. Presented as a Bearer token to"
+        " api.cerebras.ai; grants billable access to every model the account"
+        " can reach."
+    ),
+    provider="cerebras",
+    severity="high",
+    # Prefix per the vendor's own integration guide ("starts with csk-"); the
+    # 48-character mixed-case body is measured on public values. Guards,
+    # confidence and known_test_values are ClassiFinder's own. Independently
+    # authored; no third-party detector consulted.
+    # Source: https://inference-docs.cerebras.ai/integrations/dify
+    regex=re.compile(
+        r"(?<![A-Za-z0-9])"
+        r"(?P<secret>csk-[A-Za-z0-9]{48})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # literal prefix plus exact width carries the precision
+    context_keywords=[
+        "cerebras",
+        "CEREBRAS_API_KEY",
+        "api.cerebras.ai",
+        "csk",
+        "Authorization",
+        "Bearer",
+    ],
+    known_test_values={
+        # Single-character masks. Built by concatenation so no scannable key
+        # literal exists in source.
+        "cs" + "k-" + fill * 48
+        for fill in ("x", "X", "0", "a")
+    },
+    recommendation=(
+        "Revoke this key in the Cerebras Cloud console under API Keys and"
+        " issue a replacement. Review the account's usage dashboard for"
+        " inference you did not run while the key was exposed."
+    ),
+    tags=["ai", "cerebras", "llm", "inference"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -1748,4 +1825,7 @@ register(
     # 2026-10-27 — DeepL API Free authentication key (dashed GUID + ':fx';
     # suffix per DeepL's own auth docs). Pro keys (bare GUID) are not matched.
     DEEPL_API_FREE_KEY,
+    # 2026-11-02 — Cerebras Inference API key ('csk-' + 48 mixed-case
+    # alphanumeric; prefix per the vendor's own docs, width measured).
+    CEREBRAS_API_KEY,
 )
