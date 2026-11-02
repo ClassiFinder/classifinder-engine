@@ -3794,6 +3794,80 @@ HEADSCALE_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# CHROMATIC PROJECT TOKEN — 'chpt_' (2026-11-02)
+# ===================================================
+# Chromatic (visual testing for Storybook) project token: the literal 'chpt_'
+# prefix followed by exactly 15 lowercase hex characters. Passed to the CLI as
+# --project-token or CHROMATIC_PROJECT_TOKEN and as a Bearer token to
+# Chromatic's API; it publishes builds and snapshots into the project.
+# - PREFIX, VENDOR SOURCE: the vendor's own CLI repository names "project
+#   tokens (`chpt_…`)" among the credentials that must never be committed
+#   (AGENTS.md) and guards its diagnostics with the jq test
+#   test("^chpt_|^Bearer ") (.agents/skills/verify-chromatic-cli/features/
+#   publish-build.md).
+# - WIDTH IS MEASURED, NOT VENDOR-DOCUMENTED: a narrow 2026-11-02 survey of
+#   public .env files found nine distinct real values across ten repositories,
+#   every one exactly 15 lowercase hex and no other width. The measured
+#   sources are deliberately not named because they hold live tokens.
+#
+# entropy_threshold 0.0 ON PURPOSE: a 15-character hex body scores ~3.5 bits
+# and the generic patterns already sink it to 0.19; the literal prefix + exact
+# width is the anchor. Guards refuse [A-Za-z0-9_] on the left and [A-Za-z0-9]
+# on the right, so a 16th hex character matches nothing rather than being
+# truncated. Confidence 0.90 (vendor prefix, measured width). Severity MEDIUM:
+# the token publishes builds into one Storybook project and reads its
+# snapshots — not account takeover, not billing.
+
+CHROMATIC_PROJECT_TOKEN = SecretPattern(
+    id="chromatic_project_token",
+    name="Chromatic Project Token",
+    description=(
+        "Chromatic project token — the literal 'chpt_' prefix followed by"
+        " exactly 15 lowercase hex characters. Passed as --project-token or"
+        " CHROMATIC_PROJECT_TOKEN to the Chromatic CLI; publishes builds and"
+        " snapshots into one Storybook project."
+    ),
+    provider="chromatic",
+    severity="medium",
+    # Prefix per the vendor's own CLI repository (AGENTS.md "project tokens
+    # (`chpt_…`)" and the diagnostics guard test("^chpt_|^Bearer ")); the
+    # 15-hex width is measured on public values. Guards, confidence and
+    # known_test_values are ClassiFinder's own. Independently authored.
+    # Source: https://github.com/chromaui/chromatic-cli/blob/main/AGENTS.md
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>chpt_[0-9a-f]{15})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # short hex body must not inherit the generic entropy penalty
+    context_keywords=[
+        "chromatic",
+        "CHROMATIC_PROJECT_TOKEN",
+        "project-token",
+        "projectToken",
+        "storybook",
+        "chromatic.com",
+    ],
+    known_test_values={
+        # Single-character and sequential-hex masks. Built by concatenation so
+        # no scannable token literal exists in source.
+        "ch" + "pt_" + fill * 15
+        for fill in ("0", "a", "f")
+    }
+    | {"ch" + "pt_" + "0123456789abcde"},
+    recommendation=(
+        "Regenerate the project token in Chromatic under the project's Manage >"
+        " Configure page and update the CHROMATIC_PROJECT_TOKEN secret in every"
+        " CI workflow that runs the CLI. Review the project's recent builds for"
+        " snapshots you did not publish while the token was exposed."
+    ),
+    tags=["devops", "chromatic", "storybook", "visual-testing", "ci"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3933,4 +4007,7 @@ register(
     # 'hskey-auth-' / 'hskey-client-' / 'hskey-oauthtok-' + 12-char identifier
     # + '-' + 64-char secret; widths per the vendor's own generateSecret()).
     HEADSCALE_API_KEY,
+    # 2026-11-02 — Chromatic project token ('chpt_' + 15 lowercase hex; prefix
+    # per the vendor's own CLI repository, width measured).
+    CHROMATIC_PROJECT_TOKEN,
 )
