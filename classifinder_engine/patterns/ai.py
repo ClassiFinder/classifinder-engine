@@ -1686,6 +1686,95 @@ DEEPL_API_FREE_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# FIREWORKS AI API KEY — 'fw_' (2026-11-02)
+# ===================================================
+# Fireworks AI (hosted open-model inference: Llama, DeepSeek, Qwen, Mixtral
+# serverless + dedicated deployments, fine-tuning) API key: the literal
+# 'fw_' prefix followed by exactly 22 or 24 alphanumeric characters. Sent as
+# 'Authorization: Bearer fw_...' to api.fireworks.ai and read by the
+# Fireworks SDKs, firectl and the OpenAI-compatible client from
+# FIREWORKS_API_KEY.
+# - PREFIX, VENDOR-CONFIRMED: Fireworks' own CLI source (fw-ai/nexus-cli,
+#   packages/setup-cli/lib/keys/key-type.mjs) tests
+#   key.startsWith("fw_") as isFireworksKey, and its validateFireworksKey
+#   rejects anything else (error text "expected fw_…"); the vendor test suite
+#   now explicitly REJECTS the older 'fpk_' spelling, so only 'fw_' is
+#   matched. The vendor validator is prefix-only.
+# - WIDTH + ALPHABET, MEASURED: docs.fireworks.ai uses the placeholder
+#   your_api_key_here. Every public value in a narrow single-prefix
+#   measurement (12 samples) was 24 (8x) or 22 (4x) characters of
+#   [A-Za-z0-9] — two generations, no third width; the measured sources are
+#   not named because they hold live keys.
+#
+# 'fw_' is short and semi-generic (firmware / framework identifiers), so
+# precision comes from four things rather than the prefix alone: the body
+# alphabet excludes '_' and '-', so a snake_case identifier (fw_update_
+# firmware_image) can never fit the shape; both guards refuse [A-Za-z0-9_-],
+# so 'fw_' is never carved out of a longer identifier and a 23rd / 25th
+# character matches nothing rather than being truncated; a 3.5-bit entropy
+# gate sinks masks, digit runs and repeated-pair bodies (random base62
+# bodies score >= ~3.5 at 22 wide, >= ~3.8 at 24 — p0.1 = 3.78 / 3.91 —
+# so the gate costs no measurable recall); and confidence_base 0.85
+# (vendor prefix, measured width, semi-generic prefix) sits AT the 0.85
+# FP-wordlist gate, so a real key whose body happens to spell 'test' is
+# not penalised, while the fireworks context keywords lift real carriers
+# above it. Severity high: whoever holds the key spends the owner's
+# inference credits and can reach their deployments and fine-tuned models.
+
+FIREWORKS_API_KEY = SecretPattern(
+    id="fireworks_api_key",
+    name="Fireworks AI API Key",
+    description=(
+        "Fireworks AI API key (hosted open-model inference, fine-tuning and"
+        " dedicated deployments) — the literal 'fw_' prefix followed by exactly"
+        " 22 or 24 alphanumeric characters. Sent as 'Authorization: Bearer"
+        " fw_...' to api.fireworks.ai; whoever holds it spends the owner's"
+        " inference credits and can reach their deployments and fine-tuned"
+        " models."
+    ),
+    provider="fireworks",
+    severity="high",
+    # Source: https://github.com/fw-ai/nexus-cli/blob/main/packages/setup-cli/lib/keys/key-type.mjs
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>fw_[A-Za-z0-9]{22}(?:[A-Za-z0-9]{2})?)"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=3.5,  # random 22/24-char base62 bodies score >= ~3.5; masks, digit runs and repeated pairs fall below
+    context_keywords=[
+        "fireworks",
+        "FIREWORKS_API_KEY",
+        "FIREWORKS_KEY",
+        "api.fireworks.ai",
+        "fireworks.ai",
+        "firectl",
+        "inference",
+    ],
+    known_test_values={
+        # Single-character masks at both widths — how docs and redacted
+        # configs render this key — plus sequential-digit masks, which clear
+        # the entropy gate. Pinned (~0.15). Built by concatenation: no
+        # contiguous key literal sits in source (GitHub push protection).
+        *("fw" + "_" + fill * width for width in (22, 24) for fill in ("x", "X", "0", "a")),
+        *(
+            "fw" + "_" + (run * 3)[:width]
+            for width in (22, 24)
+            for run in ("0123456789", "1234567890")
+        ),
+    },
+    recommendation=(
+        "Delete this key in the Fireworks AI dashboard (fireworks.ai > Account"
+        " > API Keys), create a replacement and update FIREWORKS_API_KEY wherever"
+        " it is set (agent configs, CI secrets, notebooks, firectl). Check the"
+        " account's usage for inference calls you did not make."
+    ),
+    tags=["ai", "fireworks", "llm", "inference"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -1748,4 +1837,7 @@ register(
     # 2026-10-27 — DeepL API Free authentication key (dashed GUID + ':fx';
     # suffix per DeepL's own auth docs). Pro keys (bare GUID) are not matched.
     DEEPL_API_FREE_KEY,
+    # 2026-11-02 — Fireworks AI API key ('fw_' + 22 or 24 alphanumeric; prefix
+    # per the vendor's own CLI validator, widths measured on public samples).
+    FIREWORKS_API_KEY,
 )
