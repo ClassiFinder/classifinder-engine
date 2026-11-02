@@ -1505,7 +1505,7 @@ LOGFIRE_WRITE_TOKEN = SecretPattern(
     tags=["devops", "logfire", "pydantic", "observability", "telemetry"],
 )
 
-# SETTLEMINT (2026-08-24)
+# SETTLEMINT (2026-08-24; sm_sat_ added 2026-11-02)
 # ===================================================
 
 # SettleMint issues three access-token families and distinguishes them purely by
@@ -1522,11 +1522,13 @@ LOGFIRE_WRITE_TOKEN = SecretPattern(
 # (?![0-9a-zA-Z]) guard makes the greedy run take the whole token rather than a
 # 16-character prefix of it.
 #
-# 'sm_pat_' and 'sm_aat_' are shipped as two separate patterns rather than one
-# alternation because the two credentials have genuinely different blast radii
-# and remediation paths — a personal token is revoked by its owner, an
-# application token by rotating the application's credential — and a single
-# finding type would collapse that distinction in the API response.
+# 'sm_pat_', 'sm_aat_' and 'sm_sat_' are shipped as three separate patterns
+# rather than one alternation because the credentials have genuinely different
+# blast radii and remediation paths — a personal token is revoked by its owner,
+# an application token by rotating the application's credential, a service
+# account token by rotating the service account's — and a single finding type
+# would collapse that distinction in the API response. 'sm_sat_' followed the
+# two siblings on 2026-11-02 on the same vendor source and the same floor.
 
 SETTLEMINT_PERSONAL_ACCESS_TOKEN = SecretPattern(
     id="settlemint_personal_access_token",
@@ -1628,6 +1630,62 @@ SETTLEMINT_APPLICATION_ACCESS_TOKEN = SecretPattern(
         " rotation is the only containment. Audit the application's blockchain"
         " node and smart-contract activity for transactions or deployments"
         " originating outside your own automation while it was exposed."
+    ),
+    tags=["devops", "settlemint", "blockchain", "machine-to-machine"],
+)
+
+
+SETTLEMINT_SERVICE_ACCESS_TOKEN = SecretPattern(
+    id="settlemint_service_access_token",
+    name="SettleMint Service Access Token",
+    description=(
+        "SettleMint service account token — the 'sm_sat_' prefix followed by"
+        " at least 16 alphanumerics. This is a service account's credential:"
+        " a non-human identity with its own permissions over the workspaces"
+        " and applications it was granted, used by automation and integrations"
+        " that must outlive any one user, so a leak is durable and acts with"
+        " the service account's full reach."
+    ),
+    provider="settlemint",
+    severity="high",
+    # Prefix and the strictly-alphanumeric body charset are SettleMint's own,
+    # attested by the masking regex /sm_(pat|aat|sat)_[0-9a-zA-Z]+/g in the
+    # vendor SDK's token masker (sdk/utils/src/logging/mask-tokens.ts), the
+    # same source and the same {16,} floor the sm_pat_ / sm_aat_ siblings
+    # above were shipped on. Body floor, boundary guard, confidence and
+    # known_test_values are ClassiFinder's own.
+    # Source: https://github.com/settlemint/sdk/blob/main/sdk/utils/src/logging/mask-tokens.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>sm_sat_[0-9a-zA-Z]{16,})"
+        r"(?![0-9a-zA-Z])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier, and above the 0.85 FP-wordlist gate.
+    confidence_base=0.95,
+    # 0.0 on purpose — see the personal-access-token note above.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "settlemint",
+        "SETTLEMINT_ACCESS_TOKEN",
+        "service account token",
+        "service account",
+        "sm_sat",
+    ],
+    known_test_values={
+        # The vendor's own masked placeholder shape (prefix + sixteen x's).
+        # Assembled by concatenation. Down-scores to ~0.15.
+        "sm_sat_" + "x" * 16,
+    },
+    recommendation=(
+        "Revoke this token in the SettleMint platform under the service"
+        " account's Access tokens and issue a replacement scoped to the"
+        " narrowest workspace the automation needs, then update every"
+        " deployment, CI job and integration that presents it. Service account"
+        " tokens do not expire on their own, so rotation is the only"
+        " containment. Audit the blockchain node and smart-contract activity"
+        " of every workspace the service account can reach for transactions or"
+        " deployments originating outside your own automation."
     ),
     tags=["devops", "settlemint", "blockchain", "machine-to-machine"],
 )
@@ -4105,6 +4163,9 @@ register(
     # (swarmkit CA constants: 50-char base-36 digest + 25-char secret).
     SETTLEMINT_PERSONAL_ACCESS_TOKEN,
     SETTLEMINT_APPLICATION_ACCESS_TOKEN,
+    # 2026-11-02 — SettleMint service account token ('sm_sat_' + 16+
+    # alphanumeric; third sibling on the vendor's own masking regex).
+    SETTLEMINT_SERVICE_ACCESS_TOKEN,
     DOCKER_SWARM_JOIN_TOKEN,
     # 2026-08-29 — Unleash API token (vendor generator: crypto.randomBytes(28)
     # hex behind a mandatory '<projects>:<environment>.' structure)
