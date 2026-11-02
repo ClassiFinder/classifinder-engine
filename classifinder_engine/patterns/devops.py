@@ -3868,6 +3868,93 @@ CHROMATIC_PROJECT_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# KEYGEN API TOKEN — '<kind>-<hex>v3' (2026-11-02)
+# ===================================================
+# Keygen (software licensing API) v3 API token: a kind prefix, '-', the raw
+# token and the literal algorithm-version suffix 'v3'. Sent as
+# 'Authorization: Bearer prod-...' (or 'Token token=...') to api.keygen.sh and
+# read from KEYGEN_TOKEN / KEYGEN_PRODUCT_TOKEN by the SDKs and CLI.
+# - SHAPE, VENDOR SOURCE: app/models/token.rb generate!(): the raw length is
+#   16 bytes for an activation token and 32 bytes otherwise; for version "v3"
+#   the stored token is "#{prefix}-#{token}". app/models/concerns/tokenable.rb:
+#   ALGO_VERSION = "v3" and, for "v3", raw = SecureRandom.hex(length) +
+#   version — so 32 or 64 lowercase hex with 'v3' APPENDED (v1/v2 overwrite
+#   the tail instead and have different shapes; they are not matched).
+# - KIND PREFIXES, VENDOR SOURCE: token.rb prefix(): env (environment), prod
+#   (product), admin, user, activ (activation / license), dev (developer),
+#   sales, spprt (support), read (read-only) and token (fallback).
+# - The kind words are ordinary English, so the ANCHOR is the exact hex width
+#   plus the literal 'v3' suffix: 'prod-' + 64 hex alone (no 'v3') is not a
+#   v3 token and is not matched; 'activ-' takes exactly 32 hex, every other
+#   kind exactly 64. Keygen context keywords add confidence in real carriers.
+#
+# Guards refuse [A-Za-z0-9_-] on the left (so 'my-prod-…' or 'x_prod-…' is a
+# longer identifier) and [A-Za-z0-9] on the right (so 'v30' / 'v3a' matches
+# nothing). Confidence 0.95 (vendor generator widths and suffix), no entropy
+# gate (a hex body must not inherit the generic entropy penalty). Severity
+# high: admin / product / environment tokens create and revoke licenses,
+# machines and policies for the whole account; an activation token activates
+# machines against a license.
+
+KEYGEN_API_TOKEN = SecretPattern(
+    id="keygen_api_token",
+    name="Keygen API Token (v3)",
+    description=(
+        "Keygen v3 API token — an 'env-', 'prod-', 'admin-', 'user-', 'dev-',"
+        " 'sales-', 'spprt-', 'read-' or 'token-' kind prefix followed by 64"
+        " lowercase hex, or 'activ-' (activation token) followed by 32"
+        " lowercase hex, each ending in the literal algorithm suffix 'v3'."
+        " Authenticates to api.keygen.sh with the token's kind-level rights"
+        " over licenses, machines and policies."
+    ),
+    provider="keygen",
+    severity="high",
+    # Widths and the 'v3' suffix per app/models/concerns/tokenable.rb
+    # (SecureRandom.hex(length) + "v3") and app/models/token.rb generate!()
+    # (length 16 for activation tokens, 32 otherwise; "#{prefix}-#{token}");
+    # kind prefixes per token.rb prefix(). Independently authored from the
+    # vendor's own source; no third-party detector consulted.
+    # Source: https://github.com/keygen-sh/keygen-api/blob/master/app/models/token.rb
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>(?:env|prod|admin|user|dev|sales|spprt|read|token)-[0-9a-f]{64}v3"
+        r"|activ-[0-9a-f]{32}v3)"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # hex body must not inherit the generic entropy penalty
+    context_keywords=[
+        "keygen",
+        "KEYGEN_TOKEN",
+        "KEYGEN_PRODUCT_TOKEN",
+        "KEYGEN_ADMIN_TOKEN",
+        "api.keygen.sh",
+        "keygen.sh",
+        "Bearer",
+        "license",
+    ],
+    known_test_values={
+        # Single-character masks for every kind at its width. Built by
+        # concatenation so no scannable token literal exists in source.
+        kind + "-" + fill * 64 + "v" + "3"
+        for kind in ("env", "prod", "admin", "user", "dev", "sales", "spprt", "read", "token")
+        for fill in ("0", "a", "f")
+    }
+    | {"activ" + "-" + fill * 32 + "v" + "3" for fill in ("0", "a", "f")},
+    recommendation=(
+        "Revoke this token in the Keygen dashboard (Tokens) or via DELETE"
+        " /v1/accounts/<account>/tokens/<id> and issue a replacement scoped to"
+        " the narrowest kind the caller needs (an environment or product token"
+        " rather than an admin token). Review the account's request logs and"
+        " license / machine events for changes you did not make while it was"
+        " exposed."
+    ),
+    tags=["devops", "keygen", "licensing"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -4010,4 +4097,8 @@ register(
     # 2026-11-02 — Chromatic project token ('chpt_' + 15 lowercase hex; prefix
     # per the vendor's own CLI repository, width measured).
     CHROMATIC_PROJECT_TOKEN,
+    # 2026-11-02 — Keygen v3 API token ('<kind>-' + 64 lowercase hex + 'v3', or
+    # 'activ-' + 32 hex + 'v3'; widths, suffix and kind prefixes per the
+    # vendor's own token.rb / tokenable.rb generator).
+    KEYGEN_API_TOKEN,
 )
