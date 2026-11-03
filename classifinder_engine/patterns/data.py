@@ -762,6 +762,60 @@ APIFY_API_TOKEN = SecretPattern(
 
 
 # ===================================================
+# APIFY PROXY (2026-11-03)
+# ===================================================
+
+APIFY_PROXY_PASSWORD = SecretPattern(
+    id="apify_proxy_password",
+    name="Apify Proxy Password",
+    description=(
+        "Apify Proxy password — the literal 'apify_proxy_' prefix followed by"
+        " exactly 36 alphanumeric characters (48 in total). It is the password"
+        " component of the proxy connection string"
+        " http://<username>:<password>@proxy.apify.com:8000, where the username"
+        " selects proxy groups and country and the password authenticates the"
+        " whole account. The vendor documents that it is sent unencrypted in"
+        " plain HTTP proxy authentication, and every request made through it is"
+        " billed to the account's proxy usage. Distinct from the 'apify_api_'"
+        " API token, which has its own pattern."
+    ),
+    provider="apify",
+    severity="high",
+    # Prefix and 36-char [A-Za-z0-9] body width taken from the full-width
+    # "External connection" example in the vendor's own proxy usage guide.
+    # Independently authored; no third-party detector consulted.
+    # Source: https://docs.apify.com/platform/proxy/usage
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])(?P<secret>apify_proxy_[A-Za-z0-9]{36})(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # literal prefix plus exact body width carries the precision
+    context_keywords=[
+        "apify",
+        "apify_proxy_",
+        "APIFY_PROXY_PASSWORD",
+        "proxy.apify.com",
+        "proxy",
+        "proxies",
+    ],
+    known_test_values={
+        # Single-character masks, built by concatenation so no scannable
+        # literal exists in source. Down-score to ~0.15.
+        "apify_" + "proxy_" + fill * 36
+        for fill in ("A", "0", "x")
+    },
+    recommendation=(
+        "Reset the proxy password in the Apify Console under Proxy > Settings,"
+        " update every scraper, SDK proxy configuration and environment file"
+        " that used it, and review the account's proxy usage statistics for"
+        " traffic you did not generate."
+    ),
+    tags=["data", "apify", "proxy", "scraping"],
+)
+
+
+# ===================================================
 # DATABENTO (2026-07-27)
 # ===================================================
 
@@ -1623,6 +1677,10 @@ register(
     FRAMEIO_DEVELOPER_TOKEN,
     # Batch 12 — vendor-sourced patterns (2026-07-13)
     APIFY_API_TOKEN,
+    # 2026-11-03 — Apify Proxy password ('apify_proxy_' + 36 alphanumeric; the
+    # proxy-URL password per the vendor's own proxy usage guide, distinct prefix
+    # from the apify_api_ token above)
+    APIFY_PROXY_PASSWORD,
     # 2026-07-27 — Databento API key (vendor SDK enforces the exact 32-char length)
     DATABENTO_API_KEY,
     # 2026-08-01 — Contentful Management personal access token (CFPAT- prefix,
