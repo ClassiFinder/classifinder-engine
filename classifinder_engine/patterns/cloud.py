@@ -1416,6 +1416,89 @@ VAULT_UNSEAL_KEY = SecretPattern(
 
 
 # ===================================================
+# HASHICORP BOUNDARY — AUTH TOKEN (2026-11-04)
+# ===================================================
+#
+# A Boundary auth token, as printed by 'boundary authenticate' / 'boundary
+# config get-token' and carried in BOUNDARY_TOKEN or an 'Authorization: Bearer'
+# header, is the token's PUBLIC ID joined by '_' to an ENCRYPTED SECRET segment:
+#
+#   at_<10 base62>_s1<base58, variable width>
+#
+# - 'at' is globals.AuthTokenPrefix; internal/db/id.go builds every public id
+#   as prefix + '_' + base62.Random(10).
+# - 's1' is globals.ServiceTokenV1; internal/authtoken/authtoken.go
+#   EncryptToken wraps the 25-character raw token plus a random 0-29 byte
+#   confounder, encrypts it, protobuf-marshals the blob and returns
+#   's1' + base58.FastBase58Encoding(blob). The confounder makes the base58
+#   tail VARIABLE width by design: the vendor's own published example carries
+#   112 base58 characters (128 in total), and {60,160} is a conservative
+#   envelope around it.
+# - internal/daemon/controller/auth/auth.go splits the presented value on '_'
+#   into exactly three segments (public id = first two, encrypted token = third).
+#
+# A bare public id such as 'at_Gvd3jsqSO2' is an IDENTIFIER (it appears in
+# 'boundary auth-tokens read -id ...' and audit logs), not a secret, and must
+# not match: the '_s1' landmark plus a strictly-base58 tail is what makes the
+# three-character prefix safe to anchor on. The left guard also keeps the
+# pattern off other vendors' '...at_' prefixes (Cloudflare cfat_, Upstash
+# ucat_), which carry a word character before 'at_'.
+
+HASHICORP_BOUNDARY_AUTH_TOKEN = SecretPattern(
+    id="hashicorp_boundary_auth_token",
+    name="HashiCorp Boundary Auth Token",
+    description=(
+        "HashiCorp Boundary auth token — the token's public id ('at_' plus 10"
+        " alphanumeric characters) joined by '_' to the 's1'-versioned,"
+        " base58-encoded encrypted secret segment (60-160 characters; the"
+        " vendor's published example carries 112). Issued by 'boundary"
+        " authenticate', stored by the CLI, read back by 'boundary config"
+        " get-token', and presented in BOUNDARY_TOKEN or an 'Authorization:"
+        " Bearer' header. The bare public id without the '_s1' segment is an"
+        " identifier, not a secret, and does not match."
+    ),
+    provider="boundary",
+    severity="critical",
+    # Public-id prefix and width from Boundary's own globals (AuthTokenPrefix)
+    # and internal/db/id.go (base62.Random(10)); the 's1' marker and base58
+    # tail from internal/authtoken/authtoken.go EncryptToken; the three-segment
+    # layout from internal/daemon/controller/auth/auth.go; the full-width
+    # example from the vendor's config get-token reference. Independently
+    # authored; no third-party detector consulted.
+    # Source: https://developer.hashicorp.com/boundary/docs/commands/config/get-token
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>at_[A-Za-z0-9]{10}_s1[1-9A-HJ-NP-Za-km-z]{60,160})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # literal prefix + fixed-width id + '_s1' landmark carry the precision
+    context_keywords=[
+        "boundary",
+        "BOUNDARY_TOKEN",
+        "boundary authenticate",
+        "config get-token",
+        "hashicorp",
+        "Authorization",
+    ],
+    known_test_values={
+        # Single-character masks (base58-valid fillers), built by concatenation
+        # so no scannable literal exists in source. Down-score to ~0.15.
+        "at_" + fill * 10 + "_s1" + fill * 112
+        for fill in ("A", "1", "x")
+    },
+    recommendation=(
+        "Revoke the token with 'boundary auth-tokens delete -id <public id>' (the"
+        " 'at_...' segment before '_s1') or re-authenticate to rotate it, clear"
+        " it from the CLI keyring and any BOUNDARY_TOKEN variable, and review"
+        " the controller's audit events for sessions opened with it."
+    ),
+    tags=["cloud", "hashicorp", "boundary", "auth-token"],
+)
+
+
+# ===================================================
 # PULUMI
 # ===================================================
 
@@ -4858,6 +4941,9 @@ register(
     # unseal key share (anchored on the 'Unseal Key N:' label).
     VAULT_LEGACY_SERVICE_TOKEN,
     VAULT_UNSEAL_KEY,
+    # 2026-11-04 — HashiCorp Boundary auth token ('at_' + 10 base62 public id +
+    # '_s1' + 60-160 base58 encrypted segment per the vendor's own generator)
+    HASHICORP_BOUNDARY_AUTH_TOKEN,
     OPENSHIFT_OAUTH_ACCESS_TOKEN,
     SCALINGO_API_TOKEN,
     YANDEX_PASSPORT_OAUTH_TOKEN,
