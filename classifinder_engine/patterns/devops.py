@@ -1505,7 +1505,7 @@ LOGFIRE_WRITE_TOKEN = SecretPattern(
     tags=["devops", "logfire", "pydantic", "observability", "telemetry"],
 )
 
-# SETTLEMINT (2026-08-24)
+# SETTLEMINT (2026-08-24; sm_sat_ added 2026-11-02)
 # ===================================================
 
 # SettleMint issues three access-token families and distinguishes them purely by
@@ -1522,11 +1522,13 @@ LOGFIRE_WRITE_TOKEN = SecretPattern(
 # (?![0-9a-zA-Z]) guard makes the greedy run take the whole token rather than a
 # 16-character prefix of it.
 #
-# 'sm_pat_' and 'sm_aat_' are shipped as two separate patterns rather than one
-# alternation because the two credentials have genuinely different blast radii
-# and remediation paths — a personal token is revoked by its owner, an
-# application token by rotating the application's credential — and a single
-# finding type would collapse that distinction in the API response.
+# 'sm_pat_', 'sm_aat_' and 'sm_sat_' are shipped as three separate patterns
+# rather than one alternation because the credentials have genuinely different
+# blast radii and remediation paths — a personal token is revoked by its owner,
+# an application token by rotating the application's credential, a service
+# account token by rotating the service account's — and a single finding type
+# would collapse that distinction in the API response. 'sm_sat_' followed the
+# two siblings on 2026-11-02 on the same vendor source and the same floor.
 
 SETTLEMINT_PERSONAL_ACCESS_TOKEN = SecretPattern(
     id="settlemint_personal_access_token",
@@ -1628,6 +1630,62 @@ SETTLEMINT_APPLICATION_ACCESS_TOKEN = SecretPattern(
         " rotation is the only containment. Audit the application's blockchain"
         " node and smart-contract activity for transactions or deployments"
         " originating outside your own automation while it was exposed."
+    ),
+    tags=["devops", "settlemint", "blockchain", "machine-to-machine"],
+)
+
+
+SETTLEMINT_SERVICE_ACCESS_TOKEN = SecretPattern(
+    id="settlemint_service_access_token",
+    name="SettleMint Service Access Token",
+    description=(
+        "SettleMint service account token — the 'sm_sat_' prefix followed by"
+        " at least 16 alphanumerics. This is a service account's credential:"
+        " a non-human identity with its own permissions over the workspaces"
+        " and applications it was granted, used by automation and integrations"
+        " that must outlive any one user, so a leak is durable and acts with"
+        " the service account's full reach."
+    ),
+    provider="settlemint",
+    severity="high",
+    # Prefix and the strictly-alphanumeric body charset are SettleMint's own,
+    # attested by the masking regex /sm_(pat|aat|sat)_[0-9a-zA-Z]+/g in the
+    # vendor SDK's token masker (sdk/utils/src/logging/mask-tokens.ts), the
+    # same source and the same {16,} floor the sm_pat_ / sm_aat_ siblings
+    # above were shipped on. Body floor, boundary guard, confidence and
+    # known_test_values are ClassiFinder's own.
+    # Source: https://github.com/settlemint/sdk/blob/main/sdk/utils/src/logging/mask-tokens.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>sm_sat_[0-9a-zA-Z]{16,})"
+        r"(?![0-9a-zA-Z])",
+        re.ASCII,
+    ),
+    # Prefix-anchored tier, and above the 0.85 FP-wordlist gate.
+    confidence_base=0.95,
+    # 0.0 on purpose — see the personal-access-token note above.
+    entropy_threshold=0.0,
+    context_keywords=[
+        "settlemint",
+        "SETTLEMINT_ACCESS_TOKEN",
+        "service account token",
+        "service account",
+        "sm_sat",
+    ],
+    known_test_values={
+        # The vendor's own masked placeholder shape (prefix + sixteen x's).
+        # Assembled by concatenation. Down-scores to ~0.15.
+        "sm_sat_" + "x" * 16,
+    },
+    recommendation=(
+        "Revoke this token in the SettleMint platform under the service"
+        " account's Access tokens and issue a replacement scoped to the"
+        " narrowest workspace the automation needs, then update every"
+        " deployment, CI job and integration that presents it. Service account"
+        " tokens do not expire on their own, so rotation is the only"
+        " containment. Audit the blockchain node and smart-contract activity"
+        " of every workspace the service account can reach for transactions or"
+        " deployments originating outside your own automation."
     ),
     tags=["devops", "settlemint", "blockchain", "machine-to-machine"],
 )
@@ -3794,6 +3852,260 @@ HEADSCALE_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# CHROMATIC PROJECT TOKEN — 'chpt_' (2026-11-02)
+# ===================================================
+# Chromatic (visual testing for Storybook) project token: the literal 'chpt_'
+# prefix followed by exactly 15 lowercase hex characters. Passed to the CLI as
+# --project-token or CHROMATIC_PROJECT_TOKEN and as a Bearer token to
+# Chromatic's API; it publishes builds and snapshots into the project.
+# - PREFIX, VENDOR SOURCE: the vendor's own CLI repository names "project
+#   tokens (`chpt_…`)" among the credentials that must never be committed
+#   (AGENTS.md) and guards its diagnostics with the jq test
+#   test("^chpt_|^Bearer ") (.agents/skills/verify-chromatic-cli/features/
+#   publish-build.md).
+# - WIDTH IS MEASURED, NOT VENDOR-DOCUMENTED: a narrow 2026-11-02 survey of
+#   public .env files found nine distinct real values across ten repositories,
+#   every one exactly 15 lowercase hex and no other width. The measured
+#   sources are deliberately not named because they hold live tokens.
+#
+# entropy_threshold 0.0 ON PURPOSE: a 15-character hex body scores ~3.5 bits
+# and the generic patterns already sink it to 0.19; the literal prefix + exact
+# width is the anchor. Guards refuse [A-Za-z0-9_] on the left and [A-Za-z0-9]
+# on the right, so a 16th hex character matches nothing rather than being
+# truncated. Confidence 0.90 (vendor prefix, measured width). Severity MEDIUM:
+# the token publishes builds into one Storybook project and reads its
+# snapshots — not account takeover, not billing.
+
+CHROMATIC_PROJECT_TOKEN = SecretPattern(
+    id="chromatic_project_token",
+    name="Chromatic Project Token",
+    description=(
+        "Chromatic project token — the literal 'chpt_' prefix followed by"
+        " exactly 15 lowercase hex characters. Passed as --project-token or"
+        " CHROMATIC_PROJECT_TOKEN to the Chromatic CLI; publishes builds and"
+        " snapshots into one Storybook project."
+    ),
+    provider="chromatic",
+    severity="medium",
+    # Prefix per the vendor's own CLI repository (AGENTS.md "project tokens
+    # (`chpt_…`)" and the diagnostics guard test("^chpt_|^Bearer ")); the
+    # 15-hex width is measured on public values. Guards, confidence and
+    # known_test_values are ClassiFinder's own. Independently authored.
+    # Source: https://github.com/chromaui/chromatic-cli/blob/main/AGENTS.md
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>chpt_[0-9a-f]{15})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # short hex body must not inherit the generic entropy penalty
+    context_keywords=[
+        "chromatic",
+        "CHROMATIC_PROJECT_TOKEN",
+        "project-token",
+        "projectToken",
+        "storybook",
+        "chromatic.com",
+    ],
+    known_test_values={
+        # Single-character and sequential-hex masks. Built by concatenation so
+        # no scannable token literal exists in source.
+        "ch" + "pt_" + fill * 15
+        for fill in ("0", "a", "f")
+    }
+    | {"ch" + "pt_" + "0123456789abcde"},
+    recommendation=(
+        "Regenerate the project token in Chromatic under the project's Manage >"
+        " Configure page and update the CHROMATIC_PROJECT_TOKEN secret in every"
+        " CI workflow that runs the CLI. Review the project's recent builds for"
+        " snapshots you did not publish while the token was exposed."
+    ),
+    tags=["devops", "chromatic", "storybook", "visual-testing", "ci"],
+)
+
+
+# ===================================================
+# KEYGEN API TOKEN — '<kind>-<hex>v3' (2026-11-02)
+# ===================================================
+# Keygen (software licensing API) v3 API token: a kind prefix, '-', the raw
+# token and the literal algorithm-version suffix 'v3'. Sent as
+# 'Authorization: Bearer prod-...' (or 'Token token=...') to api.keygen.sh and
+# read from KEYGEN_TOKEN / KEYGEN_PRODUCT_TOKEN by the SDKs and CLI.
+# - SHAPE, VENDOR SOURCE: app/models/token.rb generate!(): the raw length is
+#   16 bytes for an activation token and 32 bytes otherwise; for version "v3"
+#   the stored token is "#{prefix}-#{token}". app/models/concerns/tokenable.rb:
+#   ALGO_VERSION = "v3" and, for "v3", raw = SecureRandom.hex(length) +
+#   version — so 32 or 64 lowercase hex with 'v3' APPENDED (v1/v2 overwrite
+#   the tail instead and have different shapes; they are not matched).
+# - KIND PREFIXES, VENDOR SOURCE: token.rb prefix(): env (environment), prod
+#   (product), admin, user, activ (activation / license), dev (developer),
+#   sales, spprt (support), read (read-only) and token (fallback).
+# - The kind words are ordinary English, so the ANCHOR is the exact hex width
+#   plus the literal 'v3' suffix: 'prod-' + 64 hex alone (no 'v3') is not a
+#   v3 token and is not matched; 'activ-' takes exactly 32 hex, every other
+#   kind exactly 64. Keygen context keywords add confidence in real carriers.
+#
+# Guards refuse [A-Za-z0-9_-] on the left (so 'my-prod-…' or 'x_prod-…' is a
+# longer identifier) and [A-Za-z0-9] on the right (so 'v30' / 'v3a' matches
+# nothing). Confidence 0.95 (vendor generator widths and suffix), no entropy
+# gate (a hex body must not inherit the generic entropy penalty). Severity
+# high: admin / product / environment tokens create and revoke licenses,
+# machines and policies for the whole account; an activation token activates
+# machines against a license.
+
+KEYGEN_API_TOKEN = SecretPattern(
+    id="keygen_api_token",
+    name="Keygen API Token (v3)",
+    description=(
+        "Keygen v3 API token — an 'env-', 'prod-', 'admin-', 'user-', 'dev-',"
+        " 'sales-', 'spprt-', 'read-' or 'token-' kind prefix followed by 64"
+        " lowercase hex, or 'activ-' (activation token) followed by 32"
+        " lowercase hex, each ending in the literal algorithm suffix 'v3'."
+        " Authenticates to api.keygen.sh with the token's kind-level rights"
+        " over licenses, machines and policies."
+    ),
+    provider="keygen",
+    severity="high",
+    # Widths and the 'v3' suffix per app/models/concerns/tokenable.rb
+    # (SecureRandom.hex(length) + "v3") and app/models/token.rb generate!()
+    # (length 16 for activation tokens, 32 otherwise; "#{prefix}-#{token}");
+    # kind prefixes per token.rb prefix(). Independently authored from the
+    # vendor's own source; no third-party detector consulted.
+    # Source: https://github.com/keygen-sh/keygen-api/blob/master/app/models/token.rb
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>(?:env|prod|admin|user|dev|sales|spprt|read|token)-[0-9a-f]{64}v3"
+        r"|activ-[0-9a-f]{32}v3)"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # hex body must not inherit the generic entropy penalty
+    context_keywords=[
+        "keygen",
+        "KEYGEN_TOKEN",
+        "KEYGEN_PRODUCT_TOKEN",
+        "KEYGEN_ADMIN_TOKEN",
+        "api.keygen.sh",
+        "keygen.sh",
+        "Bearer",
+        "license",
+    ],
+    known_test_values={
+        # Single-character masks for every kind at its width. Built by
+        # concatenation so no scannable token literal exists in source.
+        kind + "-" + fill * 64 + "v" + "3"
+        for kind in ("env", "prod", "admin", "user", "dev", "sales", "spprt", "read", "token")
+        for fill in ("0", "a", "f")
+    }
+    | {"activ" + "-" + fill * 32 + "v" + "3" for fill in ("0", "a", "f")},
+    recommendation=(
+        "Revoke this token in the Keygen dashboard (Tokens) or via DELETE"
+        " /v1/accounts/<account>/tokens/<id> and issue a replacement scoped to"
+        " the narrowest kind the caller needs (an environment or product token"
+        " rather than an admin token). Review the account's request logs and"
+        " license / machine events for changes you did not make while it was"
+        " exposed."
+    ),
+    tags=["devops", "keygen", "licensing"],
+)
+
+
+# ===================================================
+# GROWTHBOOK SECRET API KEY — 'secret_<role>_' (2026-11-02)
+# ===================================================
+# GrowthBook (feature flags / experimentation) secret API key: the literal
+# 'secret_' prefix, a role segment, '_' and the key body. Sent as
+# 'Authorization: Bearer secret_...' to the GrowthBook REST API; it reads and
+# writes features, experiments, SDK connections and (for admin / user keys)
+# organization settings.
+# - BODY, VENDOR SOURCE: packages/back-end/src/util/api-key.util.ts
+#   generateSigningKey(prefix, bytes = 32) = prefix +
+#   crypto.randomBytes(32).toString("base64").replace(/[=/+]/g, "") — base64
+#   of 32 bytes is 44 characters with one '=' of padding, so the body is 43
+#   [A-Za-z0-9] minus every '+' or '/' that was stripped. THE WIDTH IS A
+#   NARROW RANGE BY CONSTRUCTION, not a guess: with each of the 43 positions
+#   being '+' or '/' with probability 2/64, the body is 43 wide 25.5% of the
+#   time, >= 40 wide 95.5%, >= 38 wide 99.79% and >= 36 wide 99.995%; {36,43}
+#   therefore covers all but ~5 keys in 100,000 while staying anchored.
+# - ROLE SEGMENT, VENDOR SOURCE: packages/back-end/src/models/ApiKeyModel.ts
+#   prefixForApiKey(): 'secret_' + 'user_' for a personal key, else
+#   `${role.slice(0, 20)}_` for a role-scoped key. Built-in roles are admin,
+#   readonly, collaborator, visualEditor, engineer, analyst, experimenter,
+#   noaccess and gbDefault_projectAdmin (sliced to 20 → 'gbDefault_projectAdm');
+#   Enterprise custom roles are user-named and validated server-side as
+#   /^[a-zA-Z0-9_]+$/ (OrganizationModel.ts), so the slot is
+#   [A-Za-z0-9_]{1,20} rather than a closed alternation. A key issued with
+#   neither user nor role has no role segment at all and is byte-identical to
+#   a Notion 'secret_<43>' token; it is left to notion_api_key.
+# - NOT MATCHED: SDK (client) keys — 'sdk-…' / '<env>_…' — are publishable.
+#
+# DISJOINT from notion_api_key ('secret_' + exactly 43 alphanumerics): the
+# role segment's trailing '_' breaks Notion's alphanumeric run, and Notion's
+# body never contains the '_' this pattern requires. Guards refuse
+# [A-Za-z0-9_] on the left and [A-Za-z0-9] on the right. Confidence 0.90 —
+# the 'secret_<word>_' prefix is semi-generic English, so the vendor-derived
+# width band and GrowthBook context keywords carry it rather than a 0.95
+# vendor-literal tier — and above the 0.85 FP-wordlist gate. No entropy gate.
+# Severity high: the key changes feature flags and experiments in production.
+
+GROWTHBOOK_SECRET_API_KEY = SecretPattern(
+    id="growthbook_secret_api_key",
+    name="GrowthBook Secret API Key",
+    description=(
+        "GrowthBook secret API key — 'secret_' + a role segment ('user' for a"
+        " personal key, otherwise the role id cut to 20 characters) + '_' + a"
+        " 36-43 character alphanumeric body (base64 of 32 random bytes with"
+        " '+', '/' and '=' stripped). Presented as a Bearer token to the"
+        " GrowthBook REST API; reads and writes features, experiments and SDK"
+        " connections. SDK (client) keys are not matched."
+    ),
+    provider="growthbook",
+    severity="high",
+    # Body per api-key.util.ts generateSigningKey() (base64 of 32 bytes, '=/+'
+    # stripped → 36-43 alphanumerics by construction); role segment per
+    # ApiKeyModel.ts prefixForApiKey() and the custom-role validator in
+    # OrganizationModel.ts. Independently authored from the vendor's own
+    # MIT-licensed source; no third-party detector consulted.
+    # Source: https://github.com/growthbook/growthbook/blob/main/packages/back-end/src/util/api-key.util.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>secret_[A-Za-z0-9_]{1,20}_[A-Za-z0-9]{36,43})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # vendor-derived width band plus the literal prefix carries the precision
+    context_keywords=[
+        "growthbook",
+        "GROWTHBOOK_API_KEY",
+        "GROWTHBOOK_SECRET_KEY",
+        "api.growthbook.io",
+        "GrowthBook",
+        "Bearer",
+        "feature",
+    ],
+    known_test_values={
+        # Single-character masks at the nominal width for the two documented
+        # shapes. Built by concatenation so no scannable key literal exists in
+        # source.
+        "sec" + "ret_" + role + "_" + fill * 43
+        for role in ("user", "admin", "readonly")
+        for fill in ("x", "X", "0")
+    },
+    recommendation=(
+        "Delete this key in GrowthBook under Settings > API Keys and create a"
+        " replacement with the narrowest role that still works (a read-only"
+        " role for SDK syncing, never admin). Review the audit log for feature"
+        " flag, experiment and SDK connection changes you did not make while"
+        " the key was exposed."
+    ),
+    tags=["devops", "growthbook", "feature-flags", "experimentation"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -3851,6 +4163,9 @@ register(
     # (swarmkit CA constants: 50-char base-36 digest + 25-char secret).
     SETTLEMINT_PERSONAL_ACCESS_TOKEN,
     SETTLEMINT_APPLICATION_ACCESS_TOKEN,
+    # 2026-11-02 — SettleMint service account token ('sm_sat_' + 16+
+    # alphanumeric; third sibling on the vendor's own masking regex).
+    SETTLEMINT_SERVICE_ACCESS_TOKEN,
     DOCKER_SWARM_JOIN_TOKEN,
     # 2026-08-29 — Unleash API token (vendor generator: crypto.randomBytes(28)
     # hex behind a mandatory '<projects>:<environment>.' structure)
@@ -3933,4 +4248,15 @@ register(
     # 'hskey-auth-' / 'hskey-client-' / 'hskey-oauthtok-' + 12-char identifier
     # + '-' + 64-char secret; widths per the vendor's own generateSecret()).
     HEADSCALE_API_KEY,
+    # 2026-11-02 — Chromatic project token ('chpt_' + 15 lowercase hex; prefix
+    # per the vendor's own CLI repository, width measured).
+    CHROMATIC_PROJECT_TOKEN,
+    # 2026-11-02 — Keygen v3 API token ('<kind>-' + 64 lowercase hex + 'v3', or
+    # 'activ-' + 32 hex + 'v3'; widths, suffix and kind prefixes per the
+    # vendor's own token.rb / tokenable.rb generator).
+    KEYGEN_API_TOKEN,
+    # 2026-11-02 — GrowthBook secret API key ('secret_<role>_' + 36-43
+    # alphanumeric: base64 of 32 bytes with '=/+' stripped, per the vendor's
+    # own generateSigningKey(); role per prefixForApiKey()).
+    GROWTHBOOK_SECRET_API_KEY,
 )

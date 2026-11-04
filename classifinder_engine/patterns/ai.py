@@ -38,7 +38,10 @@ OPENAI_API_KEY = SecretPattern(
     # url-safe body ([A-Za-z0-9_-]), with optional proj-/svcacct-/admin- scope.
     # Format per https://github.com/gitleaks/gitleaks/blob/master/cmd/generate/config/rules/openai.go (MIT)
     # Branch 2: legacy alphanumeric sk- / sk-proj- keys.
+    # Left guard (2026-11-02): neither branch had a left boundary, so a key with
+    # a longer prefix ending in 'sk-' (Cerebras 'csk-') was reported as OpenAI.
     regex=re.compile(
+        r"(?<![A-Za-z0-9])"
         r"(?P<secret>sk-(?:(?:proj|svcacct|admin)-)?[A-Za-z0-9_-]{20,100}T3BlbkFJ"
         r"[A-Za-z0-9_-]{20,100}(?![A-Za-z0-9_-])"
         r"|sk-(?:proj-)?[a-zA-Z0-9]{32,}(?![a-zA-Z0-9]))",
@@ -1687,6 +1690,245 @@ DEEPL_API_FREE_KEY = SecretPattern(
 
 
 # ===================================================
+# CEREBRAS
+# ===================================================
+# Cerebras Inference API key: the literal 'csk-' prefix followed by exactly 48
+# mixed-case alphanumerics. Sent as 'Authorization: Bearer csk-...' to
+# api.cerebras.ai and read by the vendor SDKs from CEREBRAS_API_KEY.
+# - PREFIX, VENDOR SOURCE: the vendor's own integration guide tells users to
+#   "verify your API key is correct and starts with csk-".
+# - WIDTH AND CHARSET ARE MEASURED, NOT VENDOR-DOCUMENTED: Cerebras does not
+#   publish the body length. A narrow 2026-11-02 measurement of public .env
+#   files found seven distinct real values, every one exactly 48 mixed-case
+#   alphanumerics and nothing else (the measured sources are deliberately not
+#   named because they hold live keys). The mixed-case alphabet is the
+#   measured one; a lowercase-only reading seen in some third-party catalogs
+#   is wrong.
+# - COLLISION, FIXED HERE: the legacy branch of openai_api_key
+#   ('sk-(?:proj-)?[a-zA-Z0-9]{32,}') had no left boundary, so 'csk-<48>' used
+#   to be reported as the OpenAI key 'sk-<48>'. openai_api_key now carries a
+#   (?<![A-Za-z0-9]) left guard, which is the only change made to it.
+#
+# Guards refuse [A-Za-z0-9] on both sides, so a 49th body character matches
+# nothing rather than being truncated. Confidence 0.90 (not the 0.95
+# vendor-width tier: the width is measured, the prefix short) with no entropy
+# gate — still above the 0.85 FP-wordlist gate, so a random body that happens
+# to contain 'test' / 'demo' is not sunk. Severity high: the key bills
+# inference to the account and reads every model the account can reach.
+
+CEREBRAS_API_KEY = SecretPattern(
+    id="cerebras_api_key",
+    name="Cerebras Inference API Key",
+    description=(
+        "Cerebras Inference API key — the literal 'csk-' prefix followed by"
+        " exactly 48 mixed-case alphanumerics. Presented as a Bearer token to"
+        " api.cerebras.ai; grants billable access to every model the account"
+        " can reach."
+    ),
+    provider="cerebras",
+    severity="high",
+    # Prefix per the vendor's own integration guide ("starts with csk-"); the
+    # 48-character mixed-case body is measured on public values. Guards,
+    # confidence and known_test_values are ClassiFinder's own. Independently
+    # authored; no third-party detector consulted.
+    # Source: https://inference-docs.cerebras.ai/integrations/dify
+    regex=re.compile(
+        r"(?<![A-Za-z0-9])"
+        r"(?P<secret>csk-[A-Za-z0-9]{48})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # literal prefix plus exact width carries the precision
+    context_keywords=[
+        "cerebras",
+        "CEREBRAS_API_KEY",
+        "api.cerebras.ai",
+        "csk",
+        "Authorization",
+        "Bearer",
+    ],
+    known_test_values={
+        # Single-character masks. Built by concatenation so no scannable key
+        # literal exists in source.
+        "cs" + "k-" + fill * 48
+        for fill in ("x", "X", "0", "a")
+    },
+    recommendation=(
+        "Revoke this key in the Cerebras Cloud console under API Keys and"
+        " issue a replacement. Review the account's usage dashboard for"
+        " inference you did not run while the key was exposed."
+    ),
+    tags=["ai", "cerebras", "llm", "inference"],
+)
+
+
+# ===================================================
+# DIFY
+# ===================================================
+# Dify (open-source LLM app platform) API keys: a kind prefix + exactly 24
+# alphanumerics. The vendor's own generator is ApiToken.generate_api_key(prefix,
+# n) = prefix + generate_string(n), where generate_string draws from
+# string.ascii_letters + string.digits with a CSPRNG (api/libs/helper.py), and
+# every caller passes n=24 (api/repositories/app/api_key_repository.py and
+# api/repositories/knowledge/dataset_api_key_repository.py). The prefixes name
+# the kind:
+#   app-      app API key (api/services/app/api_key_service.py) — calls the
+#             app's chat / completion / workflow endpoints as the app
+#   dataset-  knowledge-base API key (api/services/knowledge/api_key_service.py)
+#   ds-       per-dataset API key (same service)
+# Sent as 'Authorization: Bearer app-...' to api.dify.ai or a self-hosted
+# /v1/... endpoint and read from DIFY_API_KEY by the SDKs and integrations.
+#
+# CONTEXT-GATED ON PURPOSE (tuning-guide Fix 5): 'app-' and 'ds-' are generic
+# English prefixes, so a bare 'app-<24 alnum>' is not a credential claim on its
+# own. confidence_base 0.48 sits below the default min_confidence of 0.50; the
+# finding surfaces only when at least one context keyword (+0.02 each) is
+# within 50 characters — a DIFY_* variable, the vendor host, a Dify endpoint
+# path, or the Bearer carrier the key is always presented in. entropy_threshold
+# 3.0 sinks single-character masks (-0.50). The 24-wide mixed-case run with
+# guards on both sides is the structural anchor; a 23rd or 25th character
+# matches nothing rather than being truncated. Severity high: an app key is
+# the app's full API, a dataset key reads and writes the knowledge base.
+
+DIFY_API_KEY = SecretPattern(
+    id="dify_api_key",
+    name="Dify App / Dataset API Key",
+    description=(
+        "Dify API key — the 'app-' (app API key), 'dataset-' (knowledge-base"
+        " API key) or 'ds-' (dataset API key) prefix followed by exactly 24"
+        " alphanumerics, per the vendor's own generator. Presented as a Bearer"
+        " token to api.dify.ai or a self-hosted Dify; grants the app's API or"
+        " read/write access to its knowledge base. Context-gated: surfaces at"
+        " the default threshold only beside a Dify keyword or a Bearer carrier."
+    ),
+    provider="dify",
+    severity="high",
+    # Prefixes per api/services/app/api_key_service.py ('app-') and
+    # api/services/knowledge/api_key_service.py ('dataset-', 'ds-'); width 24
+    # per the repository callers; charset per libs/helper.py generate_string.
+    # Independently authored from the vendor's own Apache-2.0 repository.
+    # Source: https://github.com/langgenius/dify/blob/main/api/models/model.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>(?:app|dataset|ds)-[A-Za-z0-9]{24})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    # Below the 0.50 default threshold by design — one context keyword lifts it
+    # over (0.48 + 0.02). Depends on _context_boost adding +0.02 per keyword.
+    confidence_base=0.48,
+    entropy_threshold=3.0,  # 24 random mixed-case chars sit near 4.3 bits; masks near 0
+    context_keywords=[
+        "dify",
+        "DIFY_API_KEY",
+        "DIFY_API_BASE",
+        "api.dify.ai",
+        "chat-messages",
+        "completion-messages",
+        "workflows/run",
+        "datasets",
+        "Bearer",
+    ],
+    known_test_values={
+        # Single-character masks for all three kinds. Built by concatenation so
+        # no scannable key literal exists in source.
+        kind + "-" + fill * 24
+        for kind in ("app", "dataset", "ds")
+        for fill in ("x", "X", "0")
+    },
+    recommendation=(
+        "Delete this key in the Dify console (the app's API Access page for an"
+        " 'app-' key, the knowledge base's API page for 'dataset-' / 'ds-') and"
+        " create a replacement. Review the app's logs and the knowledge base's"
+        " documents for calls or edits you did not make while it was exposed."
+    ),
+    tags=["ai", "dify", "llm", "agent-platform"],
+)
+
+
+# ===================================================
+# E2B
+# ===================================================
+# E2B (cloud sandboxes for AI agents) team API key: the literal 'e2b_' prefix
+# followed by lowercase hex. Read from E2B_API_KEY by the SDKs and CLI and
+# sent as the X-API-Key header to api.e2b.app; it creates, connects to and
+# kills every sandbox the team owns.
+# - PREFIX, VENDOR SOURCE: packages/shared/pkg/keys/constants.go
+#   `const ApiKeyPrefix = "e2b_"`.
+# - WIDTH, VENDOR SOURCE: packages/shared/pkg/keys/key.go `keyLength = 20`,
+#   GenerateKey() = prefix + hex.EncodeToString(20 random bytes) → 40 hex.
+# - SECOND WIDTH, VENDOR SOURCE: the vendor's own install tests and seed
+#   fixtures pin a 32-hex team-key shape ('e2b_<32 hex> is the team-key
+#   shape', embed/tests/team-api-key.bats; packages/local-dev/
+#   seed-local-database_test.go). Both widths are matched exactly — 32 or 40,
+#   nothing in between and nothing longer.
+# - The vendor repository was renamed from e2b-dev/infra to e2b-dev/runtime;
+#   the old URL redirects to the same files.
+#
+# entropy_threshold 0.0 ON PURPOSE: a hex body scores ~3.7-4.0 bits and the
+# generic patterns already sink it to 0.19; the literal prefix + exact width
+# is the anchor, so no entropy gate is applied. Guards refuse [A-Za-z0-9] on
+# both sides, so a 33rd..39th or 41st hex character matches nothing rather
+# than being truncated. Confidence 0.95 (vendor generator width), severity
+# high: the key is the whole team's sandbox fleet.
+
+E2B_API_KEY = SecretPattern(
+    id="e2b_api_key",
+    name="E2B Sandbox API Key",
+    description=(
+        "E2B team API key — the literal 'e2b_' prefix followed by exactly 40"
+        " lowercase hex characters (the generator's 20 random bytes) or the"
+        " 32-hex shape the vendor's own seed fixtures pin. Read from E2B_API_KEY"
+        " and sent as X-API-Key; creates, connects to and kills every sandbox"
+        " the team owns."
+    ),
+    provider="e2b",
+    severity="high",
+    # Prefix per keys/constants.go, 40-hex width per keys/key.go GenerateKey(),
+    # 32-hex shape per the vendor's own team-api-key.bats and seed test, all in
+    # E2B's own Apache-2.0 repository. Independently authored.
+    # Source: https://github.com/e2b-dev/runtime/blob/main/packages/shared/pkg/keys/key.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>e2b_[0-9a-f]{32}(?:[0-9a-f]{8})?)"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # hex body must not inherit the generic entropy penalty
+    context_keywords=[
+        "e2b",
+        "E2B_API_KEY",
+        "e2b.dev",
+        "e2b.app",
+        "sandbox",
+        "X-API-Key",
+    ],
+    known_test_values={
+        # The vendor's own seed / install-test fixtures (sequential byte runs).
+        # Built by concatenation so no scannable key literal exists in source.
+        "e2" + "b_" + "ffeeddccbbaa99887766554433221100",
+        "e2" + "b_" + "0f0e0d0c0b0a09080706050403020100",
+        "e2" + "b_" + "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+    }
+    | {
+        # Single-character masks at both widths.
+        "e2" + "b_" + fill * width
+        for fill in ("0", "a", "f")
+        for width in (32, 40)
+    },
+    recommendation=(
+        "Delete this key in the E2B dashboard under Team > API Keys and create a"
+        " replacement, then update every agent, CI job and SDK config that reads"
+        " E2B_API_KEY. Review the team's sandbox list and usage for sandboxes"
+        " you did not start while the key was exposed."
+    ),
+    tags=["ai", "e2b", "sandbox", "agent-infra"],
+)
+
+
+# ===================================================
 # FIREWORKS AI API KEY — 'fw_' (2026-11-02)
 # ===================================================
 # Fireworks AI (hosted open-model inference: Llama, DeepSeek, Qwen, Mixtral
@@ -1837,6 +2079,16 @@ register(
     # 2026-10-27 — DeepL API Free authentication key (dashed GUID + ':fx';
     # suffix per DeepL's own auth docs). Pro keys (bare GUID) are not matched.
     DEEPL_API_FREE_KEY,
+    # 2026-11-02 — Cerebras Inference API key ('csk-' + 48 mixed-case
+    # alphanumeric; prefix per the vendor's own docs, width measured).
+    CEREBRAS_API_KEY,
+    # 2026-11-02 — Dify app / dataset API key ('app-' / 'dataset-' / 'ds-' + 24
+    # alphanumeric per the vendor's own generator; context-gated at 0.48
+    # because 'app-' is a generic prefix).
+    DIFY_API_KEY,
+    # 2026-11-02 — E2B sandbox API key ('e2b_' + 40 lowercase hex per the
+    # vendor's own GenerateKey(), or the 32-hex shape its seed fixtures pin).
+    E2B_API_KEY,
     # 2026-11-02 — Fireworks AI API key ('fw_' + 22 or 24 alphanumeric; prefix
     # per the vendor's own CLI validator, widths measured on public samples).
     FIREWORKS_API_KEY,

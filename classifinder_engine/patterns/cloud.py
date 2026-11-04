@@ -1416,6 +1416,89 @@ VAULT_UNSEAL_KEY = SecretPattern(
 
 
 # ===================================================
+# HASHICORP BOUNDARY — AUTH TOKEN (2026-11-04)
+# ===================================================
+#
+# A Boundary auth token, as printed by 'boundary authenticate' / 'boundary
+# config get-token' and carried in BOUNDARY_TOKEN or an 'Authorization: Bearer'
+# header, is the token's PUBLIC ID joined by '_' to an ENCRYPTED SECRET segment:
+#
+#   at_<10 base62>_s1<base58, variable width>
+#
+# - 'at' is globals.AuthTokenPrefix; internal/db/id.go builds every public id
+#   as prefix + '_' + base62.Random(10).
+# - 's1' is globals.ServiceTokenV1; internal/authtoken/authtoken.go
+#   EncryptToken wraps the 25-character raw token plus a random 0-29 byte
+#   confounder, encrypts it, protobuf-marshals the blob and returns
+#   's1' + base58.FastBase58Encoding(blob). The confounder makes the base58
+#   tail VARIABLE width by design: the vendor's own published example carries
+#   112 base58 characters (128 in total), and {60,160} is a conservative
+#   envelope around it.
+# - internal/daemon/controller/auth/auth.go splits the presented value on '_'
+#   into exactly three segments (public id = first two, encrypted token = third).
+#
+# A bare public id such as 'at_Gvd3jsqSO2' is an IDENTIFIER (it appears in
+# 'boundary auth-tokens read -id ...' and audit logs), not a secret, and must
+# not match: the '_s1' landmark plus a strictly-base58 tail is what makes the
+# three-character prefix safe to anchor on. The left guard also keeps the
+# pattern off other vendors' '...at_' prefixes (Cloudflare cfat_, Upstash
+# ucat_), which carry a word character before 'at_'.
+
+HASHICORP_BOUNDARY_AUTH_TOKEN = SecretPattern(
+    id="hashicorp_boundary_auth_token",
+    name="HashiCorp Boundary Auth Token",
+    description=(
+        "HashiCorp Boundary auth token — the token's public id ('at_' plus 10"
+        " alphanumeric characters) joined by '_' to the 's1'-versioned,"
+        " base58-encoded encrypted secret segment (60-160 characters; the"
+        " vendor's published example carries 112). Issued by 'boundary"
+        " authenticate', stored by the CLI, read back by 'boundary config"
+        " get-token', and presented in BOUNDARY_TOKEN or an 'Authorization:"
+        " Bearer' header. The bare public id without the '_s1' segment is an"
+        " identifier, not a secret, and does not match."
+    ),
+    provider="boundary",
+    severity="critical",
+    # Public-id prefix and width from Boundary's own globals (AuthTokenPrefix)
+    # and internal/db/id.go (base62.Random(10)); the 's1' marker and base58
+    # tail from internal/authtoken/authtoken.go EncryptToken; the three-segment
+    # layout from internal/daemon/controller/auth/auth.go; the full-width
+    # example from the vendor's config get-token reference. Independently
+    # authored; no third-party detector consulted.
+    # Source: https://developer.hashicorp.com/boundary/docs/commands/config/get-token
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>at_[A-Za-z0-9]{10}_s1[1-9A-HJ-NP-Za-km-z]{60,160})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # literal prefix + fixed-width id + '_s1' landmark carry the precision
+    context_keywords=[
+        "boundary",
+        "BOUNDARY_TOKEN",
+        "boundary authenticate",
+        "config get-token",
+        "hashicorp",
+        "Authorization",
+    ],
+    known_test_values={
+        # Single-character masks (base58-valid fillers), built by concatenation
+        # so no scannable literal exists in source. Down-score to ~0.15.
+        "at_" + fill * 10 + "_s1" + fill * 112
+        for fill in ("A", "1", "x")
+    },
+    recommendation=(
+        "Revoke the token with 'boundary auth-tokens delete -id <public id>' (the"
+        " 'at_...' segment before '_s1') or re-authenticate to rotate it, clear"
+        " it from the CLI keyring and any BOUNDARY_TOKEN variable, and review"
+        " the controller's audit events for sessions opened with it."
+    ),
+    tags=["cloud", "hashicorp", "boundary", "auth-token"],
+)
+
+
+# ===================================================
 # PULUMI
 # ===================================================
 
@@ -4766,6 +4849,90 @@ ELASTICSEARCH_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# VERCEL BLOB — READ-WRITE TOKEN (2026-11-02)
+# ===================================================
+# Vercel Blob (object storage) read-write token: BLOB_READ_WRITE_TOKEN, the
+# long-lived static credential Vercel adds to a project when a Blob store is
+# created. It writes, overwrites, lists and deletes every blob in the store and
+# reads private ones, and it is what mints client upload tokens.
+# - STRUCTURE, VENDOR SOURCE: the @vercel/blob SDK parses the store id out of
+#   the token with `token.split('_')` at index 3
+#   (parseStoreIdFromReadWriteToken in packages/blob/src/helpers.ts), i.e. the
+#   token is 'vercel_blob_rw_<storeId>_<secret>'. Vercel's own docs name the
+#   variable (BLOB_READ_WRITE_TOKEN) and describe it as the long-lived token
+#   used off-platform; the SDK's own test fixture
+#   'vercel_blob_rw_12345fakeStoreId_30FakeRandomCharacters12345678' renders a
+#   16-character store id and a 30-character secret.
+# - WIDTHS ARE MEASURED: a narrow 2026-11-02 survey of public .env files found
+#   seven distinct real values across ten repositories, every one 16
+#   mixed-case alphanumerics + '_' + 30 mixed-case alphanumerics — exactly the
+#   SDK fixture's shape — and no other width (the measured sources are
+#   deliberately not named because they hold live tokens).
+# - NOT MATCHED: read-only or any other Blob token kind, BLOB_STORE_ID (an
+#   identifier, not a secret) and the short-lived VERCEL_OIDC_TOKEN. Only the
+#   'rw' read-write kind is attested.
+#
+# Guards refuse [A-Za-z0-9_] on both sides, so a 31st secret character or an
+# extra '_' segment matches nothing rather than being truncated. Confidence
+# 0.90 (vendor structure, measured widths), no entropy gate, severity high:
+# the token is full read/write/delete over the store's contents.
+
+VERCEL_BLOB_READ_WRITE_TOKEN = SecretPattern(
+    id="vercel_blob_read_write_token",
+    name="Vercel Blob Read-Write Token",
+    description=(
+        "Vercel Blob read-write token (BLOB_READ_WRITE_TOKEN) — the literal"
+        " 'vercel_blob_rw_' prefix, a 16-character store id, '_' and a"
+        " 30-character secret, all alphanumeric. Long-lived; grants full"
+        " read, write, list and delete over every blob in the store and mints"
+        " client upload tokens."
+    ),
+    provider="vercel",
+    severity="high",
+    # Structure per the vendor SDK's parseStoreIdFromReadWriteToken (split on
+    # '_', store id at index 3) and its own test fixture; widths measured on
+    # public values. Guards, confidence and known_test_values are
+    # ClassiFinder's own. Independently authored.
+    # Source: https://github.com/vercel/storage/blob/main/packages/blob/src/helpers.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>vercel_blob_rw_[A-Za-z0-9]{16}_[A-Za-z0-9]{30})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # literal prefix plus two fixed-width segments carries the precision
+    context_keywords=[
+        "vercel",
+        "BLOB_READ_WRITE_TOKEN",
+        "blob",
+        "@vercel/blob",
+        "vercel-storage",
+    ],
+    known_test_values={
+        # The vendor SDK's own test fixture (16 + 30, as shipped in
+        # packages/blob/src/*.test.ts). Built by concatenation so no scannable
+        # token literal exists in source.
+        "vercel_blob_" + "rw_" + "12345fakeStoreId" + "_" + "30FakeRandomCharacters12345678",
+    }
+    | {
+        # Single-character masks.
+        "vercel_blob_" + "rw_" + fill * 16 + "_" + fill * 30
+        for fill in ("x", "X", "0")
+    },
+    recommendation=(
+        "Rotate the token in the Vercel dashboard (Storage > the Blob store >"
+        " Settings) and redeploy every project and CI job that reads"
+        " BLOB_READ_WRITE_TOKEN. Prefer the OIDC-based access Vercel connects"
+        " by default and keep the static token to off-platform callers only."
+        " Review the store for blobs added, overwritten or deleted while the"
+        " token was exposed."
+    ),
+    tags=["cloud", "vercel", "storage", "blob"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -4858,6 +5025,9 @@ register(
     # unseal key share (anchored on the 'Unseal Key N:' label).
     VAULT_LEGACY_SERVICE_TOKEN,
     VAULT_UNSEAL_KEY,
+    # 2026-11-04 — HashiCorp Boundary auth token ('at_' + 10 base62 public id +
+    # '_s1' + 60-160 base58 encrypted segment per the vendor's own generator)
+    HASHICORP_BOUNDARY_AUTH_TOKEN,
     OPENSHIFT_OAUTH_ACCESS_TOKEN,
     SCALINGO_API_TOKEN,
     YANDEX_PASSPORT_OAUTH_TOKEN,
@@ -4929,4 +5099,8 @@ register(
     # 2026-10-30 — dotenv-vault DOTENV_KEY ('dotenv://:key_' + 64 lowercase hex
     # + '@dotenvx.com' / '@dotenv.org' vault URI; per the vendor's own parser).
     DOTENV_VAULT_KEY,
+    # 2026-11-02 — Vercel Blob read-write token ('vercel_blob_rw_' + 16-char
+    # store id + '_' + 30-char secret; structure per the vendor SDK's token
+    # parser, widths measured).
+    VERCEL_BLOB_READ_WRITE_TOKEN,
 )
