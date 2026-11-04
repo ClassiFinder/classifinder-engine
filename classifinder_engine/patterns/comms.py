@@ -2970,6 +2970,84 @@ MAILERSEND_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# LIVEBLOCKS SECRET KEY — 'sk_prod_' (2026-11-02)
+# ===================================================
+# Liveblocks (realtime collaboration infrastructure) secret API key: the
+# literal 'sk_prod_' prefix followed by exactly 64 base64url characters. It is
+# the server-side credential — passed as `secret` to the @liveblocks/node
+# client and as a Bearer token to api.liveblocks.io — that mints ID / access
+# tokens for every user, and reads and writes every room, thread and
+# notification in the project.
+# - PREFIX, VENDOR SOURCE: Liveblocks' own authentication docs show the
+#   server client constructed with `secret: "sk_prod_..."` and distinguish the
+#   secret key from the prototyping-only public key ('pk_').
+# - WIDTH AND CHARSET ARE MEASURED, NOT VENDOR-DOCUMENTED: a narrow 2026-11-02
+#   survey of public .env files found ten distinct real values across ten
+#   repositories, every one a 64-character body over [A-Za-z0-9_-] (with '_'
+#   and '-' present in several) and no other width. The measured sources are
+#   deliberately not named because they hold live keys.
+# - NOT MATCHED: the 'sk_dev_' development-key sibling is UNMEASURED (the docs
+#   only ever show 'sk_dev_123') and is deliberately not inferred from the
+#   production shape; public keys ('pk_prod_' / 'pk_dev_') are not secrets.
+# - DISJOINT from stripe_live_secret_key / stripe_test_secret_key ('sk_live_'
+#   / 'sk_test_') and cartesia_api_key ('sk_car_'): the literal 'sk_prod_'
+#   cannot satisfy any of them.
+#
+# Guards refuse [A-Za-z0-9_-] on both sides, so a 65th body character matches
+# nothing rather than being truncated. Confidence 0.90 (vendor prefix,
+# measured width), no entropy gate, severity high: the key impersonates any
+# user and owns every room's data.
+
+LIVEBLOCKS_SECRET_KEY = SecretPattern(
+    id="liveblocks_secret_key",
+    name="Liveblocks Secret Key",
+    description=(
+        "Liveblocks secret API key — the literal 'sk_prod_' prefix followed by"
+        " exactly 64 base64url characters. The server-side credential that"
+        " mints user tokens and reads and writes every room, thread and"
+        " notification in the project. The 'sk_dev_' sibling is not matched."
+    ),
+    provider="liveblocks",
+    severity="high",
+    # Prefix per Liveblocks' own authentication docs (`secret: "sk_prod_..."`);
+    # the 64-character base64url body is measured on public values. Guards,
+    # confidence and known_test_values are ClassiFinder's own. Independently
+    # authored; no third-party detector consulted.
+    # Source: https://liveblocks.io/docs/api-reference/authentication
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>sk_prod_[A-Za-z0-9_-]{64})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # literal prefix plus exact width carries the precision
+    context_keywords=[
+        "liveblocks",
+        "LIVEBLOCKS_SECRET_KEY",
+        "api.liveblocks.io",
+        "@liveblocks/node",
+        "secret",
+    ],
+    known_test_values={
+        # Single-character masks at the measured width. Built by concatenation
+        # so no scannable key literal exists in source. (The docs' own
+        # 'sk_prod_xxxxxxxxxxxxxxxxxxxxxxxx' is 24 wide and never matches.)
+        "sk_" + "prod_" + fill * 64
+        for fill in ("x", "X", "0")
+    },
+    recommendation=(
+        "Roll the secret key in the Liveblocks dashboard under the project's"
+        " API keys and update every server, edge function and CI job that"
+        " constructs the @liveblocks/node client or calls api.liveblocks.io."
+        " Treat every room, thread and user token issued while the key was"
+        " exposed as potentially read or modified by a third party."
+    ),
+    tags=["comms", "liveblocks", "collaboration", "realtime"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -3069,4 +3147,7 @@ register(
     # 2026-10-15 — MailerSend API token ('mlsn.' + 64 lowercase hex; prefix
     # from the vendor's own CLI docs, width measured on public samples).
     MAILERSEND_API_TOKEN,
+    # 2026-11-02 — Liveblocks secret key ('sk_prod_' + 64 base64url; prefix per
+    # the vendor's own auth docs, width measured; 'sk_dev_' not matched).
+    LIVEBLOCKS_SECRET_KEY,
 )

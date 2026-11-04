@@ -4849,6 +4849,90 @@ ELASTICSEARCH_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# VERCEL BLOB — READ-WRITE TOKEN (2026-11-02)
+# ===================================================
+# Vercel Blob (object storage) read-write token: BLOB_READ_WRITE_TOKEN, the
+# long-lived static credential Vercel adds to a project when a Blob store is
+# created. It writes, overwrites, lists and deletes every blob in the store and
+# reads private ones, and it is what mints client upload tokens.
+# - STRUCTURE, VENDOR SOURCE: the @vercel/blob SDK parses the store id out of
+#   the token with `token.split('_')` at index 3
+#   (parseStoreIdFromReadWriteToken in packages/blob/src/helpers.ts), i.e. the
+#   token is 'vercel_blob_rw_<storeId>_<secret>'. Vercel's own docs name the
+#   variable (BLOB_READ_WRITE_TOKEN) and describe it as the long-lived token
+#   used off-platform; the SDK's own test fixture
+#   'vercel_blob_rw_12345fakeStoreId_30FakeRandomCharacters12345678' renders a
+#   16-character store id and a 30-character secret.
+# - WIDTHS ARE MEASURED: a narrow 2026-11-02 survey of public .env files found
+#   seven distinct real values across ten repositories, every one 16
+#   mixed-case alphanumerics + '_' + 30 mixed-case alphanumerics — exactly the
+#   SDK fixture's shape — and no other width (the measured sources are
+#   deliberately not named because they hold live tokens).
+# - NOT MATCHED: read-only or any other Blob token kind, BLOB_STORE_ID (an
+#   identifier, not a secret) and the short-lived VERCEL_OIDC_TOKEN. Only the
+#   'rw' read-write kind is attested.
+#
+# Guards refuse [A-Za-z0-9_] on both sides, so a 31st secret character or an
+# extra '_' segment matches nothing rather than being truncated. Confidence
+# 0.90 (vendor structure, measured widths), no entropy gate, severity high:
+# the token is full read/write/delete over the store's contents.
+
+VERCEL_BLOB_READ_WRITE_TOKEN = SecretPattern(
+    id="vercel_blob_read_write_token",
+    name="Vercel Blob Read-Write Token",
+    description=(
+        "Vercel Blob read-write token (BLOB_READ_WRITE_TOKEN) — the literal"
+        " 'vercel_blob_rw_' prefix, a 16-character store id, '_' and a"
+        " 30-character secret, all alphanumeric. Long-lived; grants full"
+        " read, write, list and delete over every blob in the store and mints"
+        " client upload tokens."
+    ),
+    provider="vercel",
+    severity="high",
+    # Structure per the vendor SDK's parseStoreIdFromReadWriteToken (split on
+    # '_', store id at index 3) and its own test fixture; widths measured on
+    # public values. Guards, confidence and known_test_values are
+    # ClassiFinder's own. Independently authored.
+    # Source: https://github.com/vercel/storage/blob/main/packages/blob/src/helpers.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>vercel_blob_rw_[A-Za-z0-9]{16}_[A-Za-z0-9]{30})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # literal prefix plus two fixed-width segments carries the precision
+    context_keywords=[
+        "vercel",
+        "BLOB_READ_WRITE_TOKEN",
+        "blob",
+        "@vercel/blob",
+        "vercel-storage",
+    ],
+    known_test_values={
+        # The vendor SDK's own test fixture (16 + 30, as shipped in
+        # packages/blob/src/*.test.ts). Built by concatenation so no scannable
+        # token literal exists in source.
+        "vercel_blob_" + "rw_" + "12345fakeStoreId" + "_" + "30FakeRandomCharacters12345678",
+    }
+    | {
+        # Single-character masks.
+        "vercel_blob_" + "rw_" + fill * 16 + "_" + fill * 30
+        for fill in ("x", "X", "0")
+    },
+    recommendation=(
+        "Rotate the token in the Vercel dashboard (Storage > the Blob store >"
+        " Settings) and redeploy every project and CI job that reads"
+        " BLOB_READ_WRITE_TOKEN. Prefer the OIDC-based access Vercel connects"
+        " by default and keep the static token to off-platform callers only."
+        " Review the store for blobs added, overwritten or deleted while the"
+        " token was exposed."
+    ),
+    tags=["cloud", "vercel", "storage", "blob"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -5015,4 +5099,8 @@ register(
     # 2026-10-30 — dotenv-vault DOTENV_KEY ('dotenv://:key_' + 64 lowercase hex
     # + '@dotenvx.com' / '@dotenv.org' vault URI; per the vendor's own parser).
     DOTENV_VAULT_KEY,
+    # 2026-11-02 — Vercel Blob read-write token ('vercel_blob_rw_' + 16-char
+    # store id + '_' + 30-char secret; structure per the vendor SDK's token
+    # parser, widths measured).
+    VERCEL_BLOB_READ_WRITE_TOKEN,
 )

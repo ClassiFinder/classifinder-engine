@@ -1794,6 +1794,91 @@ ORY_NETWORK_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# RADAR SECRET KEY — 'prj_live_sk_' / 'prj_test_sk_' (2026-11-02)
+# ===================================================
+# Radar (geofencing / location platform) secret API key: the literal
+# 'prj_live_sk_' (live) or 'prj_test_sk_' (test environment) prefix followed
+# by exactly 40 lowercase hex characters. Sent bare in the Authorization
+# header ('Authorization: prj_live_sk_...', no scheme) to api.radar.io; the
+# vendor's API reference marks the endpoints it unlocks "Secret — only safe to
+# call server-side": user and geofence CRUD, trip and event history, and
+# project configuration.
+# - PREFIXES, VENDOR SOURCE: Radar's own API reference prints both secret
+#   prefixes in its curl examples ('Authorization: prj_live_sk_...' /
+#   'prj_test_sk_...') and names the 'prj_live_pk_' / 'prj_test_pk_'
+#   publishable keys as the client-safe counterparts.
+# - WIDTH IS MEASURED, NOT VENDOR-DOCUMENTED: narrow 2026-11-02 surveys of
+#   public .env files found three distinct live and two distinct test values
+#   across five repositories, all exactly 40 lowercase hex, no other width.
+#   The measured sources are deliberately not named because they hold live
+#   keys.
+# - NOT MATCHED: 'prj_live_pk_' / 'prj_test_pk_' publishable keys are
+#   client-side by design and not secrets.
+#
+# One pattern for both environments, following the engine's convention for
+# live/test siblings with the same shape (duffel_, shippo_, rzp_). Confidence
+# 0.90 (vendor prefix, measured width) — ABOVE the 0.85 FP-wordlist gate on
+# purpose, so the literal 'test' inside every 'prj_test_sk_' key is not priced
+# below threshold. No entropy gate (a hex body must not inherit the generic
+# entropy penalty). Guards refuse [A-Za-z0-9_] on the left and [A-Za-z0-9] on
+# the right. Severity high: the live key is full server-side control of the
+# project's location data.
+
+RADAR_SECRET_KEY = SecretPattern(
+    id="radar_secret_key",
+    name="Radar Secret Key",
+    description=(
+        "Radar secret API key — the literal 'prj_live_sk_' or 'prj_test_sk_'"
+        " prefix followed by exactly 40 lowercase hex characters. Sent bare in"
+        " the Authorization header to api.radar.io; unlocks the server-side"
+        " endpoints (users, geofences, trips, events, project settings)."
+        " Publishable 'prj_*_pk_' keys are not matched."
+    ),
+    provider="radar",
+    severity="high",
+    # Prefixes per Radar's own API reference ('Authorization: prj_live_sk_...'
+    # / 'prj_test_sk_...'; publishable keys are 'prj_*_pk_'); the 40-hex width
+    # is measured on public values. Guards, confidence and known_test_values
+    # are ClassiFinder's own. Independently authored.
+    # Source: https://radar.com/documentation/api
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>prj_(?:live|test)_sk_[0-9a-f]{40})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    # Above the 0.85 FP-wordlist gate so 'prj_test_sk_' keys are not sunk for
+    # containing the word 'test'.
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # hex body must not inherit the generic entropy penalty
+    context_keywords=[
+        "radar",
+        "RADAR_SECRET_KEY",
+        "RADAR_API_KEY",
+        "api.radar.io",
+        "radar.com",
+        "Authorization",
+        "geofence",
+    ],
+    known_test_values={
+        # Single-character masks for both environments. Built by concatenation
+        # so no scannable key literal exists in source.
+        "prj_" + env + "_sk_" + fill * 40
+        for env in ("live", "test")
+        for fill in ("0", "a", "f")
+    },
+    recommendation=(
+        "Regenerate the secret key in the Radar dashboard under Settings > API"
+        " keys for the affected environment and update every server, job and"
+        " integration that sends it. Publishable keys need not change. Review"
+        " the project's users, geofences and events for changes you did not"
+        " make while the key was exposed."
+    ),
+    tags=["identity", "radar", "location", "geofencing"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -1860,4 +1945,8 @@ register(
     # 2026-10-19 — Ory Network project API key ('ory_pat_' + 32 alphanumeric;
     # prefix per Ory's token-formats page, width measured on public samples).
     ORY_NETWORK_API_KEY,
+    # 2026-11-02 — Radar secret key ('prj_live_sk_' / 'prj_test_sk_' + 40
+    # lowercase hex; prefixes per the vendor's own API reference, width
+    # measured; publishable 'prj_*_pk_' keys not matched).
+    RADAR_SECRET_KEY,
 )
