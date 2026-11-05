@@ -3048,6 +3048,106 @@ LIVEBLOCKS_SECRET_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# NTFY ACCESS TOKEN — 'tk_' (2026-11-05)
+# ===================================================
+# ntfy (open-source pub-sub push notifications — ntfy.sh and self-hosted
+# servers) access token: the literal 'tk_' prefix followed by exactly 29
+# lowercase alphanumeric characters, 32 characters in all. Issued by
+# 'ntfy token add' (or provisioned server-side through auth-tokens /
+# NTFY_AUTH_TOKENS) and carried as 'Authorization: Bearer tk_...', as the
+# password of an empty-user basic-auth pair ('curl -u :tk_...'), as the
+# client's --token / NTFY_TOKEN / default-token, and as the server's
+# upstream-access-token / NTFY_UPSTREAM_ACCESS_TOKEN. It acts as the owning
+# user: every topic that user may read or publish to (an admin's token is
+# every topic plus user management).
+# - PREFIX + WIDTH + ALPHABET, VENDOR-STATED (source, not measured): in
+#   binwiederhier/ntfy (Apache-2.0 / GPL-2.0 dual-licensed) user/manager.go
+#   sets tokenPrefix = "tk_" and tokenLength = 32; user/util.go
+#   GenerateToken() returns util.RandomLowerStringPrefix(tokenPrefix,
+#   tokenLength), whose alphabet (util/util.go
+#   randomStringLowerCaseCharset) is [a-z0-9], so every generated token is
+#   'tk_' + 29 lowercase alnum; docs/config.md states a token "must start
+#   with tk_ and be 32 characters long (including the prefix)" and prints
+#   three full examples. The server's own validator (user/util.go
+#   allowedTokenRegex, ^tk_[-_A-Za-z0-9]{29}$) is wider because
+#   admin-provisioned auth-tokens may carry upper-case, '-' and '_'; the
+#   generator alphabet is what is matched because it is what every real
+#   documented token looks like and it keeps snake_case identifiers out.
+#
+# 'tk_' is short and semi-generic (Tk / Tkinter identifiers, 'tk_' ticket
+# ids), so precision comes from the shape rather than the prefix: the body
+# alphabet excludes '_', '-' and upper-case, so a snake_case or camelCase
+# identifier (tk_focusFollowsMouse, tk_update_handler) can never fit the
+# shape; both guards refuse [A-Za-z0-9_-], so 'tk_' is never carved out of a
+# longer identifier and a 28- or 30-character body matches nothing rather
+# than being truncated; a 3.5-bit entropy gate sinks single-character masks
+# and repeated-pair fillers (random base36 bodies score >= ~3.8 bits at p0.1
+# as a 32-character token and the three vendor examples score 4.33-4.45, so
+# the gate costs no measurable recall); and confidence_base 0.85 sits AT the
+# 0.85 FP-wordlist gate, so a real token whose body happens to spell 'test'
+# is not penalised, while the ntfy context keywords lift real carriers above
+# it. Severity medium: topic publish / subscribe access as the owning user,
+# not infrastructure.
+
+NTFY_ACCESS_TOKEN = SecretPattern(
+    id="ntfy_access_token",
+    name="ntfy Access Token",
+    description=(
+        "ntfy (pub-sub push notifications, ntfy.sh or self-hosted) access"
+        " token — the literal 'tk_' prefix followed by exactly 29 lowercase"
+        " alphanumeric characters (32 in all). Sent as 'Authorization:"
+        " Bearer tk_...', as 'curl -u :tk_...' or via NTFY_TOKEN; whoever"
+        " holds it publishes to and reads every topic the owning user can"
+        " (an admin's token also manages users)."
+    ),
+    provider="ntfy",
+    severity="medium",
+    # Source: https://github.com/binwiederhier/ntfy/blob/main/user/util.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>tk_[a-z0-9]{29})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.85,
+    entropy_threshold=3.5,  # random base36 bodies score >= ~3.8 bits; masks / fillers fall below
+    context_keywords=[
+        "ntfy",
+        "NTFY_TOKEN",
+        "NTFY_AUTH_TOKENS",
+        "ntfy.sh",
+        "Authorization: Bearer tk_",
+        "auth-tokens",
+        "default-token",
+        "upstream-access-token",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # token — plus sequential-digit masks, which clear the entropy gate.
+        # Pinned (~0.15). Built by concatenation: no contiguous token literal
+        # sits in source.
+        *("tk" + "_" + fill * 29 for fill in ("x", "0", "a")),
+        *("tk" + "_" + (run * 3)[:29] for run in ("0123456789", "1234567890")),
+        # The three full example tokens the vendor prints in docs/config.md
+        # (ntfy token list output and the auth-tokens / NTFY_AUTH_TOKENS
+        # provisioning examples) — public, never live.
+        "tk" + "_" + "7eevizlsiwf9yi4uxsrs83r4352o0",
+        "tk" + "_" + "3gd7d2yftt4b8ixyfe9mnmro88o76",
+        "tk" + "_" + "f099we8uzj7xi5qshzajwp6jffvkz",
+    },
+    recommendation=(
+        "Revoke the token with 'ntfy token remove <user> <token>' (or drop it"
+        " from the server's auth-tokens / NTFY_AUTH_TOKENS), issue a"
+        " replacement with 'ntfy token add' and update every publisher,"
+        " subscriber and client config (--token, NTFY_TOKEN, default-token,"
+        " upstream-access-token) that used it. Check the owning user's topics"
+        " for messages you did not send."
+    ),
+    tags=["comms", "ntfy", "notifications", "push"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -3150,4 +3250,7 @@ register(
     # 2026-11-02 — Liveblocks secret key ('sk_prod_' + 64 base64url; prefix per
     # the vendor's own auth docs, width measured; 'sk_dev_' not matched).
     LIVEBLOCKS_SECRET_KEY,
+    # 2026-11-05 — ntfy access token ('tk_' + 29 lowercase alnum = 32 chars;
+    # prefix, width and alphabet per the vendor's own generator and docs).
+    NTFY_ACCESS_TOKEN,
 )
