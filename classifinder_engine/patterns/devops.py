@@ -4106,6 +4106,161 @@ GROWTHBOOK_SECRET_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# RANCHER API BEARER TOKEN — 'token-xxxxx:<secret>' (2026-11-09)
+# ===================================================
+# Rancher (SUSE Rancher Kubernetes management) API key in its bearer form:
+# the token name 'token-' + 5 characters, a ':' and the 54-character secret
+# key, 66 characters in all. Rancher's API-keys docs describe the bearer
+# token as the access key (token name) and secret key concatenated; it is
+# what 'rancher login --token' and 'Authorization: Bearer' carry and acts
+# as the creating user across every downstream cluster that user can reach.
+# - WIDTHS + ALPHABETS, VENDOR SOURCE: rancher/wrangler
+#   pkg/randomtoken/token.go sets characters = "bcdfghjklmnpqrstvwxz2456789"
+#   and tokenLength = 54; rancher/rancher pkg/auth/tokens/manager.go
+#   generates the key with randomtoken.Generate() and names the token object
+#   with GenerateName = "token-", to which Kubernetes appends 5 characters
+#   from the same consonant-and-digit alphabet.
+#
+# 'token-' is generic, so only the colon-joined PAIR is matched: the 5-wide
+# name and the 54-wide secret must both come from that vowel-free alphabet,
+# both guards refuse word characters and '-', so a bare 'token-xxxxx' name
+# (a public identifier) or any other width never fires. Only the 54-char
+# secret is the span, so redaction keeps the token name for revocation. The
+# alphabet has no vowels, so the FP wordlist cannot hit a real secret; a
+# 3.5-bit entropy gate sinks masks (random bodies score >= ~4.2 bits).
+
+RANCHER_API_TOKEN = SecretPattern(
+    id="rancher_api_token",
+    name="Rancher API Bearer Token",
+    description=(
+        "Rancher API key in bearer form — 'token-' + a 5-character token name,"
+        " ':' and the 54-character secret key, both drawn from Rancher's"
+        " vowel-free alphabet. Carried by 'rancher login --token' and"
+        " 'Authorization: Bearer'; it acts as the creating user on Rancher and"
+        " every downstream cluster that user can reach."
+    ),
+    provider="rancher",
+    severity="critical",
+    # Source: https://github.com/rancher/wrangler/blob/master/pkg/randomtoken/token.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"token-[bcdfghjklmnpqrstvwxz2456789]{5}:"
+        r"(?P<secret>[bcdfghjklmnpqrstvwxz2456789]{54})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.5,  # random 27-symbol bodies score >= ~4.2 bits; masks fall below
+    context_keywords=[
+        "rancher",
+        "CATTLE_",
+        "RANCHER_TOKEN",
+        "RANCHER_SECRET_KEY",
+        "rancher login",
+        "Authorization: Bearer token-",
+        "/v3",
+    ],
+    known_test_values={
+        # Single-character masks of the 54-character secret (the span).
+        *(fill * 54 for fill in ("x", "b", "z", "2")),
+    },
+    recommendation=(
+        "Delete the API key in Rancher (User > Account & API Keys, or the"
+        " tokens.management.cattle.io object), create a replacement with the"
+        " narrowest scope and an expiry, and update every CLI config, CI job"
+        " and kubeconfig that used it. Review Rancher audit logs for its use."
+    ),
+    tags=["devops", "rancher", "kubernetes"],
+)
+
+
+# ===================================================
+# SOURCEGRAPH ENTERPRISE SUBSCRIPTION / LICENSE KEY TOKENS — 'sgs_' / 'slk_'
+# (2026-11-09)
+# ===================================================
+# Sourcegraph's own secret-format table (sourcegraph-public-snapshot
+# doc/dev/security/secret_formats.md) lists two backend tokens derived from
+# a Sourcegraph license key, each the literal prefix + 64 hex characters:
+# - 'sgs_' — Enterprise ("product") subscription token;
+# - 'slk_' — license key token, used for product subscriptions.
+# Both authenticate a Sourcegraph instance's licence to Sourcegraph-run
+# services (subscription checks, Cody Gateway); a leak lets anyone present
+# the customer's subscription. Distinct from the shipped user access token
+# 'sgp_' (sourcegraph_access_token) — different literal, no overlap.
+#
+# Prefix + exact hex width are vendor-published, so confidence_base 0.95; a
+# hex body cannot spell the FP-wordlist terms. A 3.0-bit entropy gate sinks
+# masks (random 64-hex bodies score >= ~3.8 bits as a 68-character token).
+
+SOURCEGRAPH_SUBSCRIPTION_TOKEN = SecretPattern(
+    id="sourcegraph_subscription_token",
+    name="Sourcegraph Enterprise Subscription Token",
+    description=(
+        "Sourcegraph Enterprise (product) subscription token — the literal"
+        " 'sgs_' prefix followed by 64 hex characters, derived from the"
+        " customer's Sourcegraph license key and presented to Sourcegraph-run"
+        " services on the instance's behalf."
+    ),
+    provider="sourcegraph",
+    severity="high",
+    # Source: https://github.com/sourcegraph/sourcegraph-public-snapshot/blob/main/doc/dev/security/secret_formats.md
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>sgs_[a-fA-F0-9]{64})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,  # random 64-hex bodies score >= ~3.8 bits; masks fall below
+    context_keywords=["sourcegraph", "subscription", "license", "cody", "SRC_LICENSE"],
+    known_test_values={
+        *("sgs" + "_" + fill * 64 for fill in ("0", "a", "f")),
+        "sgs" + "_" + "0123456789abcdef" * 4,
+    },
+    recommendation=(
+        "Contact Sourcegraph to rotate the license key the token was derived"
+        " from (which invalidates its subscription tokens), apply the new"
+        " license on the instance and remove the token from any config or log"
+        " it appeared in."
+    ),
+    tags=["devops", "sourcegraph", "code-search", "license"],
+)
+
+
+SOURCEGRAPH_LICENSE_KEY_TOKEN = SecretPattern(
+    id="sourcegraph_license_key_token",
+    name="Sourcegraph License Key Token",
+    description=(
+        "Sourcegraph license key token — the literal 'slk_' prefix followed by"
+        " 64 hex characters, derived from the customer's Sourcegraph license"
+        " key and used to authenticate product-subscription calls."
+    ),
+    provider="sourcegraph",
+    severity="high",
+    # Source: https://github.com/sourcegraph/sourcegraph-public-snapshot/blob/main/doc/dev/security/secret_formats.md
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>slk_[a-fA-F0-9]{64})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,  # random 64-hex bodies score >= ~3.8 bits; masks fall below
+    context_keywords=["sourcegraph", "subscription", "license", "cody", "SRC_LICENSE"],
+    known_test_values={
+        *("slk" + "_" + fill * 64 for fill in ("0", "a", "f")),
+        "slk" + "_" + "0123456789abcdef" * 4,
+    },
+    recommendation=(
+        "Contact Sourcegraph to rotate the license key this token was derived"
+        " from, apply the new license on the instance and remove the token from"
+        " any config or log it appeared in."
+    ),
+    tags=["devops", "sourcegraph", "code-search", "license"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -4259,4 +4414,13 @@ register(
     # alphanumeric: base64 of 32 bytes with '=/+' stripped, per the vendor's
     # own generateSigningKey(); role per prefixForApiKey()).
     GROWTHBOOK_SECRET_API_KEY,
+    # 2026-11-09 — Rancher API bearer token ('token-' + 5 + ':' + 54 from the
+    # vowel-free alphabet of rancher/wrangler randomtoken; only the pair).
+    RANCHER_API_TOKEN,
+    # 2026-11-09 — Sourcegraph Enterprise subscription token ('sgs_' + 64 hex;
+    # per the vendor's own secret-format table).
+    SOURCEGRAPH_SUBSCRIPTION_TOKEN,
+    # 2026-11-09 — Sourcegraph license key token ('slk_' + 64 hex; per the
+    # vendor's own secret-format table).
+    SOURCEGRAPH_LICENSE_KEY_TOKEN,
 )

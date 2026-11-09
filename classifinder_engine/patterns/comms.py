@@ -3148,6 +3148,76 @@ NTFY_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# PUBNUB SECRET KEY — 'sec-c-' (2026-11-09)
+# ===================================================
+# PubNub keyset secret key: the literal 'sec-c-' prefix followed by 48
+# base64 characters, 54 in all. The secret key signs Access Manager grants
+# and server-side admin calls; PubNub's own keyset docs say it "grants
+# privileged access to your PubNub application" and must never ship in
+# client code. The keyset's publish ('pub-c-') and subscribe ('sub-c-')
+# keys are client-side identifiers that ship in browser / mobile bundles by
+# design and are deliberately NOT matched.
+# - PREFIX + ALPHABET, VENDOR-STATED: PubNub's own JavaScript SDK
+#   (pubnub/javascript docs-snippets/harness/redact.cjs) masks "any key
+#   shaped like ... sec-c-<base64>" and notes "secret keys can contain +, /
+#   and ="; PubNub's own Go SDK (pubnub/go config.go) renders a redacted
+#   secret key as 'sec-c-YT... (len=54)'.
+# - WIDTH, MEASURED: 54 total (sec-c- + 48) — consistent with the vendor's
+#   len=54 and with base64 of a 36-character UUID string (no padding).
+#
+# Precision comes from the six-character 'sec-c-' literal plus the exact
+# 48-wide base64 body; both guards refuse word characters (and the right
+# guard also '+', '/', '='), so a 47- or 49-wide body matches nothing.
+# confidence_base 0.92 sits above the 0.85 FP-wordlist gate (base64 bodies
+# can spell 'test' / 'demo'); a 3.5-bit entropy gate sinks masks (random
+# bodies score >= ~4.4 bits as a 54-character key).
+
+PUBNUB_SECRET_KEY = SecretPattern(
+    id="pubnub_secret_key",
+    name="PubNub Secret Key",
+    description=(
+        "PubNub keyset secret key — the literal 'sec-c-' prefix followed by 48"
+        " base64 characters (54 in all). Server-side only: it signs Access"
+        " Manager grants and admin calls for the whole keyset. The public"
+        " 'pub-c-' / 'sub-c-' publish and subscribe keys are not matched."
+    ),
+    provider="pubnub",
+    severity="high",
+    # Source: https://github.com/pubnub/javascript/blob/master/docs-snippets/harness/redact.cjs
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>sec-c-[A-Za-z0-9+/]{48})"
+        r"(?![A-Za-z0-9+/=_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=3.5,  # random base64 bodies score >= ~4.4 bits; masks fall below
+    context_keywords=[
+        "pubnub",
+        "secret_key",
+        "secretKey",
+        "PUBNUB_SECRET_KEY",
+        "publish_key",
+        "subscribe_key",
+        "publishKey",
+        "subscribeKey",
+    ],
+    known_test_values={
+        # Single-character masks, built by concatenation so no contiguous key
+        # literal sits in source. Pinned (~0.15).
+        *("sec" + "-c-" + fill * 48 for fill in ("x", "X", "A", "0")),
+    },
+    recommendation=(
+        "Rotate the keyset's secret key in the PubNub Admin Portal (stage the"
+        " replacement, move every server that signs Access Manager grants to it,"
+        " then retire the old key) and audit Access Manager grants issued while"
+        " it was exposed. Never ship the secret key in client code."
+    ),
+    tags=["comms", "pubnub", "realtime", "pubsub"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -3253,4 +3323,7 @@ register(
     # 2026-11-05 — ntfy access token ('tk_' + 29 lowercase alnum = 32 chars;
     # prefix, width and alphabet per the vendor's own generator and docs).
     NTFY_ACCESS_TOKEN,
+    # 2026-11-09 — PubNub keyset secret key ('sec-c-' + 48 base64 = 54 chars;
+    # prefix per the vendor's own SDKs; 'pub-c-' / 'sub-c-' not matched).
+    PUBNUB_SECRET_KEY,
 )

@@ -1738,6 +1738,173 @@ FORMBRICKS_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# RIOT GAMES API KEY — 'RGAPI-' (2026-11-09)
+# ===================================================
+# Riot Games developer API key (League of Legends / TFT / VALORANT APIs):
+# the literal 'RGAPI-' prefix followed by a dashed 8-4-4-4-12 hex UUID, 42
+# characters in all, sent as the X-Riot-Token header or the api_key query
+# parameter to *.api.riotgames.com. Personal / development keys expire
+# every 24 hours, production keys do not; a leak spends the owner's rate
+# limit and can get the registered application suspended.
+# - FORMAT: the riven crate's API docs (docs.rs) state keys "are obtained
+#   from the Riot Developer Portal" and print the shape
+#   RGAPI-01234567-89ab-cdef-0123-456789abcdef; Riot's own portal docs
+#   publish no format. Width measured (every public sample 42 characters).
+#
+# Prefix + exact UUID layout, so confidence_base 0.95; a hex body cannot
+# spell the FP-wordlist terms. Severity medium (short-lived dev keys, game
+# data only). The riven doc example and an all-zero UUID are known test
+# values; a 3.0-bit entropy gate sinks other masks.
+
+RIOT_GAMES_API_KEY = SecretPattern(
+    id="riot_games_api_key",
+    name="Riot Games API Key",
+    description=(
+        "Riot Games developer API key — the literal 'RGAPI-' prefix followed by"
+        " an 8-4-4-4-12 hex UUID (42 characters). Sent as X-Riot-Token to"
+        " api.riotgames.com; development keys expire after 24 hours,"
+        " production keys do not."
+    ),
+    provider="riot_games",
+    severity="medium",
+    # Source: https://docs.rs/riven/latest/riven/struct.RiotApi.html
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>RGAPI-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
+        r"-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,  # random UUID keys score >= ~3.7 bits; masks fall below
+    context_keywords=[
+        "riot",
+        "RIOT_API_KEY",
+        "X-Riot-Token",
+        "api.riotgames.com",
+        "riotgames",
+        "api_key",
+    ],
+    known_test_values={
+        # The riven crate's documented example shape, and an all-zero UUID.
+        "RGAPI" + "-" + "01234567-89ab-cdef-0123-456789abcdef",
+        "RGAPI" + "-" + "00000000-0000-0000-0000-000000000000",
+    },
+    recommendation=(
+        "Regenerate the key in the Riot Developer Portal"
+        " (developer.riotgames.com), move it to a server-side secret store and"
+        " never embed it in a client or public repository. Production keys"
+        " should be rotated through the portal's application page."
+    ),
+    tags=["data", "riot_games", "gaming", "api"],
+)
+
+
+# ===================================================
+# TOLGEE PERSONAL ACCESS TOKEN / PROJECT API KEY — 'tgpat_' / 'tgpak_'
+# (2026-11-09)
+# ===================================================
+# Tolgee (open-source localization platform, app.tolgee.io or self-hosted)
+# credentials, both sent as the X-API-Key header (and TOLGEE_API_KEY for
+# the CLI / SDKs):
+# - 'tgpat_' personal access token — acts as the user across every project
+#   they can reach. Vendor source (tolgee/tolgee-platform, Apache-2.0):
+#   security/constants.kt PAT_PREFIX = "tgpat_"; PatService.generateToken()
+#   returns keyGenerator.generate(256), i.e. BigInteger(256 random bits)
+#   .toString(32) — digits [0-9a-v], 52 wide (51 when the top digit is 0,
+#   rarely shorter). The vendor docs print a 51-character example body.
+# - 'tgpak_' project API key — scoped to one project. ApiKeyService
+#   encodeKey() base32-encodes "<projectId>_<key>" (Guava base32, lower
+#   case, no padding: [a-z2-7]) where key = BigInteger(130 bits)
+#   .toString(32), so the width varies with the project id's digit count
+#   (~44-60). The vendor docs print a 47-character example body.
+#
+# Six-character vendor prefixes, a body alphabet with no '_' / '-' /
+# upper-case (snake_case and camelCase identifiers cannot fit), word guards
+# on both sides, a 3.5-bit entropy gate (random bodies score >= ~4.2 bits)
+# and confidence_base >= 0.90, above the 0.85 FP-wordlist gate (both
+# alphabets can spell 'test' / 'demo'). The vendor docs' example values are
+# known test values.
+
+TOLGEE_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="tolgee_personal_access_token",
+    name="Tolgee Personal Access Token",
+    description=(
+        "Tolgee personal access token — the literal 'tgpat_' prefix followed by"
+        " 45-52 base-32 digits ([0-9a-v], a 256-bit random number). Sent as"
+        " X-API-Key / TOLGEE_API_KEY; acts as the user across every Tolgee"
+        " project they can reach."
+    ),
+    provider="tolgee",
+    severity="high",
+    # Source: https://github.com/tolgee/tolgee-platform/blob/main/backend/data/src/main/kotlin/io/tolgee/service/security/PatService.kt
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>tgpat_[0-9a-v]{45,52})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=3.5,  # random base-32 bodies score >= ~4.4 bits; masks fall below
+    context_keywords=["tolgee", "TOLGEE_API_KEY", "X-API-Key", "app.tolgee.io", "tolgee.io"],
+    known_test_values={
+        # The example token printed in Tolgee's own docs, plus masks.
+        "tgpat" + "_" + "c813fppevpm6smlv8gld2fqq7knqqfht5ri1vgo57gj6ivkbhp5",
+        *("tgpat" + "_" + fill * 51 for fill in ("0", "a", "v")),
+    },
+    recommendation=(
+        "Revoke the token in Tolgee (User settings > Personal Access Tokens),"
+        " create a replacement with an expiry, and update every CLI config, CI"
+        " job and SDK setup that used it."
+    ),
+    tags=["data", "tolgee", "localization", "i18n"],
+)
+
+
+TOLGEE_PROJECT_API_KEY = SecretPattern(
+    id="tolgee_project_api_key",
+    name="Tolgee Project API Key",
+    description=(
+        "Tolgee project API key — the literal 'tgpak_' prefix followed by"
+        " 40-60 lower-case base32 characters ([a-z2-7], the encoded project id"
+        " and a 130-bit random key). Sent as X-API-Key / TOLGEE_API_KEY;"
+        " grants the key's scopes on one Tolgee project."
+    ),
+    provider="tolgee",
+    severity="medium",
+    # Source: https://github.com/tolgee/tolgee-platform/blob/main/backend/data/src/main/kotlin/io/tolgee/service/security/ApiKeyService.kt
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>tgpak_[a-z2-7]{40,60})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=3.5,  # random base32 bodies score >= ~4.2 bits; masks fall below
+    context_keywords=[
+        "tolgee",
+        "TOLGEE_API_KEY",
+        "VITE_APP_TOLGEE_API_KEY",
+        "X-API-Key",
+        "app.tolgee.io",
+        "tolgee.io",
+    ],
+    known_test_values={
+        # The example key printed in Tolgee's own docs, plus masks.
+        "tgpak" + "_" + "mmztgz2hmaxts2rynu3w6zlkobsksksnfvg6mlrgq2gc2dq",
+        *("tgpak" + "_" + fill * 47 for fill in ("a", "x", "2")),
+    },
+    recommendation=(
+        "Delete the project API key in Tolgee (Project > Integrate / API keys),"
+        " issue a replacement with the narrowest scopes, and keep it out of"
+        " front-end bundles in production (in-context editing keys belong in"
+        " development builds only)."
+    ),
+    tags=["data", "tolgee", "localization", "i18n"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -1803,4 +1970,12 @@ register(
     # 2026-11-09 — Formbricks organization API key ('fbk_' + 43 base64url =
     # 47 chars; prefix, width and alphabet per the vendor's own generator).
     FORMBRICKS_API_KEY,
+    # 2026-11-09 — Riot Games API key ('RGAPI-' + 8-4-4-4-12 hex UUID).
+    RIOT_GAMES_API_KEY,
+    # 2026-11-09 — Tolgee personal access token ('tgpat_' + 45-52 base-32
+    # digits; per the vendor's own PatService generator).
+    TOLGEE_PERSONAL_ACCESS_TOKEN,
+    # 2026-11-09 — Tolgee project API key ('tgpak_' + 40-60 lowercase base32;
+    # per the vendor's own ApiKeyService encodeKey()).
+    TOLGEE_PROJECT_API_KEY,
 )

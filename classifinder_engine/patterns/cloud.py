@@ -5034,6 +5034,66 @@ PROXMOX_VE_API_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# YANDEX SMARTCAPTCHA SERVER KEY — 'ysc2_' (2026-11-09)
+# ===================================================
+# Yandex Cloud SmartCaptcha server key: the literal 'ysc2_' prefix followed
+# by 48 alphanumeric characters, 53 in all. Sent as the 'secret' parameter
+# to smartcaptcha.yandexcloud.net/validate; whoever holds it can validate
+# (and so forge acceptance of) the captcha's tokens. Yandex's own docs:
+# "The client key is always prefixed with ysc1_, and the server key, with
+# ysc2_" and "The server key is private and should be stored in a secure
+# location". The client key ('ysc1_') is public — embedded in the page —
+# and is deliberately NOT matched.
+# - PREFIX, VENDOR-STATED; WIDTH + ALPHABET, MEASURED (every public sample
+#   53 characters, [A-Za-z0-9]).
+#
+# Five-character vendor prefix + exact 48-wide alphanumeric body, word/'-'
+# guards on both sides, a 3.5-bit entropy gate (random bodies score >= ~4.8
+# bits), confidence_base 0.92 above the 0.85 FP-wordlist gate. Severity
+# medium: captcha bypass, not account access.
+
+YANDEX_SMARTCAPTCHA_SERVER_KEY = SecretPattern(
+    id="yandex_smartcaptcha_server_key",
+    name="Yandex SmartCaptcha Server Key",
+    description=(
+        "Yandex Cloud SmartCaptcha server key — the literal 'ysc2_' prefix"
+        " followed by 48 alphanumeric characters (53 in all), used server-side"
+        " to validate captcha tokens. The public 'ysc1_' client key is not"
+        " matched."
+    ),
+    provider="yandex_cloud",
+    severity="medium",
+    # Source: https://yandex.cloud/en/docs/smartcaptcha/concepts/keys
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>ysc2_[A-Za-z0-9]{48})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=3.5,  # random alphanumeric bodies score >= ~4.8 bits; masks fall below
+    context_keywords=[
+        "smartcaptcha",
+        "SMARTCAPTCHA_SERVER_KEY",
+        "captcha",
+        "yandex",
+        "server_key",
+        "smartcaptcha.yandexcloud.net",
+    ],
+    known_test_values={
+        *("ysc2" + "_" + fill * 48 for fill in ("x", "X", "0", "A")),
+    },
+    recommendation=(
+        "Regenerate the captcha's server key in the Yandex Cloud console"
+        " (SmartCaptcha > captcha > Overview), store the new key in Yandex"
+        " Lockbox or another secret store, and update the back end that calls"
+        " the validate endpoint."
+    ),
+    tags=["cloud", "yandex_cloud", "captcha"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -5208,4 +5268,7 @@ register(
     # USER@REALM!TOKENID + '=' + the UUID value TokenConfig.pm generates;
     # only the UUID is the secret span).
     PROXMOX_VE_API_TOKEN,
+    # 2026-11-09 — Yandex SmartCaptcha server key ('ysc2_' + 48 alnum;
+    # prefix per Yandex Cloud docs, width measured; 'ysc1_' not matched).
+    YANDEX_SMARTCAPTCHA_SERVER_KEY,
 )
