@@ -2017,6 +2017,74 @@ FIREWORKS_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# VECTARA API KEY — 'zut_' / 'zqt_' / 'zwt_' (2026-11-09)
+# ===================================================
+# Vectara (RAG / semantic search platform) API key, sent as the x-api-key
+# header to api.vectara.io. Vectara's own docs: "For ease of
+# identification, the API Key types each have a specific prefix: Personal
+# API Keys begin with zut_ / Query API Keys begin with zqt_ / Index API Keys
+# begin with zwt_". Personal keys act as the user across the account; query
+# keys read corpora; index keys read and write them.
+# - PREFIXES, VENDOR-STATED (console-ui/api-access-overview).
+# - WIDTH + ALPHABET, MEASURED: every public zut_ / zqt_ sample was exactly
+#   38 base64url characters after the prefix (42 in all); the vendor states
+#   zwt_ uses the same scheme (its short doc example is illustrative only).
+#
+# A four-character prefix, so precision comes from the shape: an exact
+# 38-wide base64url body, word/'-' guards on both sides, and lookaheads
+# requiring at least one digit and one upper-case letter in the body
+# (random base64url bodies lack either with probability < 0.2%), which keeps
+# snake_case identifiers such as 'zut_some_long_identifier_...' out. A
+# 3.5-bit entropy gate sinks masks; confidence_base 0.88 stays above the
+# 0.85 FP-wordlist gate. One pattern covers all three key types; severity
+# high (the personal key is full-account).
+
+VECTARA_API_KEY = SecretPattern(
+    id="vectara_api_key",
+    name="Vectara API Key",
+    description=(
+        "Vectara API key — 'zut_' (personal), 'zqt_' (query) or 'zwt_' (index)"
+        " followed by 38 base64url characters (42 in all). Sent as x-api-key to"
+        " api.vectara.io; a personal key acts as the user across the account,"
+        " query / index keys read or write the corpora they are scoped to."
+    ),
+    provider="vectara",
+    severity="high",
+    # Source: https://docs.vectara.com/docs/console-ui/api-access-overview
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>z(?:ut|qt|wt)_"
+        r"(?=[A-Za-z0-9_-]{0,37}[0-9])(?=[A-Za-z0-9_-]{0,37}[A-Z])"
+        r"[A-Za-z0-9_-]{38})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=3.5,  # random base64url bodies score >= ~4.3 bits; masks fall below
+    context_keywords=[
+        "vectara",
+        "VECTARA_API_KEY",
+        "x-api-key",
+        "api.vectara.io",
+        "corpus_key",
+        "customer_id",
+    ],
+    known_test_values={
+        # Single-character masks (with the digit / upper-case each body needs).
+        *(p + "_" + "X" * 37 + "0" for p in ("zut", "zqt", "zwt")),
+        *(p + "_" + "A0" * 19 for p in ("zut", "zqt", "zwt")),
+    },
+    recommendation=(
+        "Delete the key in the Vectara console (API Keys, or Personal API Key"
+        " for zut_), create a replacement with the narrowest role and corpus"
+        " scope, and update every application that used it. Query keys"
+        " embedded in a front end should be rate-limited and read-only."
+    ),
+    tags=["ai", "vectara", "rag", "search"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -2092,4 +2160,7 @@ register(
     # 2026-11-02 — Fireworks AI API key ('fw_' + 22 or 24 alphanumeric; prefix
     # per the vendor's own CLI validator, widths measured on public samples).
     FIREWORKS_API_KEY,
+    # 2026-11-09 — Vectara API key ('zut_' / 'zqt_' / 'zwt_' + 38 base64url;
+    # prefixes per the vendor's docs, width measured).
+    VECTARA_API_KEY,
 )
