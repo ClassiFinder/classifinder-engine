@@ -4933,6 +4933,107 @@ VERCEL_BLOB_READ_WRITE_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# PROXMOX VE API TOKEN — 'PVEAPIToken' header (2026-11-06)
+# ===================================================
+# Proxmox VE (open-source virtualization platform: KVM virtual machines + LXC
+# containers, clustering, Ceph, backup) API token as carried in the HTTP
+# Authorization header: the literal scheme 'PVEAPIToken', the vendor's '='
+# (or single-space) separator, the token id USER@REALM!TOKENID, '=' and the
+# token VALUE — a dashed 8-4-4-4-12 hex UUID. Only the UUID is the secret
+# span: Proxmox itself calls USER@REALM!TOKENID the 'full-tokenid' (a
+# listable identifier) and the UUID the token 'value', and keeping the id
+# visible after redaction tells the owner exactly which token to revoke.
+# - SCHEME + LAYOUT, VENDOR-CONFIRMED: pve-http-server
+#   src/PVE/APIServer/AnyEvent.pm sets apitoken_name //= 'PVEAPIToken';
+#   src/PVE/APIServer/Formatter.pm extract_auth_value matches the header with
+#   /(?:^|\s)\QPVEAPIToken\E(?:=| )([^;]*)/ (case-sensitive scheme, '=' or
+#   exactly one space) and create_auth_header emits "PVEAPIToken <value>".
+#   The pve-admin-guide and the Proxmox VE API wiki both document the header
+#   value as PVEAPIToken=USER@REALM!TOKENID=UUID.
+# - VALUE, VENDOR-CONFIRMED: pve-access-control src/PVE/TokenConfig.pm
+#   generate_token stores UUID::uuid() (RFC 4122 string form: 36 characters,
+#   lowercase hex) as the token value; upper-case hex is accepted as well.
+# - ID CHARSETS, VENDOR-CONFIRMED: src/PVE/Auth/Plugin.pm $user_regex =
+#   [^\s:/]+ and $realm_regex = [A-Za-z][A-Za-z0-9.\-_]+; AccessControl.pm
+#   $token_subid_regex = $realm_regex and $token_full_regex =
+#   (user)@(realm)!(subid). The user segment below is the vendor's minus the
+#   structural separators ('!', '=') and quotes, and it keeps '@', so an
+#   LDAP / AD style user@corp.example.com@ad id still parses (backtracking
+#   resolves USER@REALM on the last '@' before '!').
+#
+# The scheme literal plus the user@realm!tokenid=UUID layout leaves no room
+# for a coincidental match, so confidence_base 0.95 with no entropy gate (a
+# UUID's entropy says nothing). Deliberately out of scope: the URI-escaped
+# wire form Proxmox's own perl client sends (root%40pam%21...) and the bare
+# 'user@realm!tokenid=uuid' value of the bpg/proxmox terraform provider's
+# api_token, which carries no scheme literal. Severity critical: the token
+# acts as its user across the whole cluster API unless it was created with
+# privilege separation and a narrower ACL.
+
+PROXMOX_VE_API_TOKEN = SecretPattern(
+    id="proxmox_ve_api_token",
+    name="Proxmox VE API Token",
+    description=(
+        "Proxmox VE API token as sent in the HTTP Authorization header —"
+        " 'PVEAPIToken=USER@REALM!TOKENID=UUID', where the dashed 8-4-4-4-12"
+        " hex UUID is the token value Proxmox generates. Authenticates to the"
+        " cluster's REST API (/api2/json) as the owning user; unless the token"
+        " was created with privilege separation and a narrower ACL, it can"
+        " create, start, stop and delete VMs and containers, change storage"
+        " and networking, and read every guest's configuration."
+    ),
+    provider="proxmox",
+    severity="critical",
+    # Only the UUID value is the secret span; the case-sensitive 'PVEAPIToken'
+    # scheme ('=' or one space, exactly as the vendor's header parser accepts
+    # it) and the USER@REALM!TOKENID id are the anchor.
+    # Source: https://github.com/proxmox/pve-access-control/blob/master/src/PVE/TokenConfig.pm
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])PVEAPIToken(?:=|[ \t])"
+        r"[^\s:/!=\"']+@[A-Za-z][A-Za-z0-9.\-_]+![A-Za-z][A-Za-z0-9.\-_]+="
+        r"(?P<secret>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+        r"(?![0-9A-Za-z_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # the scheme literal and the id layout carry the precision; a UUID's entropy says nothing
+    context_keywords=[
+        "proxmox",
+        "pve",
+        "PVEAPIToken",
+        "pveum",
+        "pvesh",
+        "/api2/json",
+        ":8006",
+        "Authorization",
+    ],
+    known_test_values={
+        # Mask and placeholder UUIDs that fit the shape — how docs and redacted
+        # configs render the value. Pinned (~0.15). Built by concatenation so no
+        # contiguous value sits in source. (The Proxmox wiki's own illustrative
+        # 'aaaaaaaaa-bbb-cccc-dddd-ef0123456789' is a malformed 9-3-4-4-12 and
+        # never matches.)
+        "00000000-0000-0000-" + "0000-000000000000",
+        "11111111-1111-1111-" + "1111-111111111111",
+        "12345678-1234-1234-" + "1234-123456789012",
+        "aaaaaaaa-bbbb-cccc-" + "dddd-eeeeeeeeeeee",
+        "AAAAAAAA-BBBB-CCCC-" + "DDDD-EEEEEEEEEEEE",
+        "deadbeef-dead-beef-" + "dead-beefdeadbeef",
+        "DEADBEEF-DEAD-BEEF-" + "DEAD-BEEFDEADBEEF",
+    },
+    recommendation=(
+        "Remove the token with 'pveum user token remove USER@REALM TOKENID' (or"
+        " in the web UI under Datacenter > Permissions > API Tokens), create a"
+        " replacement with privilege separation enabled and only the ACL paths"
+        " and roles it needs, and update every client that sent it (monitoring"
+        " agents, Terraform / Ansible configs, backup jobs, CI). Review the"
+        " cluster task log and /var/log/pve/tasks for actions you did not take."
+    ),
+    tags=["cloud", "proxmox", "virtualization", "hypervisor"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -5103,4 +5204,8 @@ register(
     # store id + '_' + 30-char secret; structure per the vendor SDK's token
     # parser, widths measured).
     VERCEL_BLOB_READ_WRITE_TOKEN,
+    # 2026-11-06 — Proxmox VE API token ('PVEAPIToken' Authorization scheme +
+    # USER@REALM!TOKENID + '=' + the UUID value TokenConfig.pm generates;
+    # only the UUID is the secret span).
+    PROXMOX_VE_API_TOKEN,
 )
