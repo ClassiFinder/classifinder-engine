@@ -1648,6 +1648,96 @@ LIGHTDASH_PERSONAL_ACCESS_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# FORMBRICKS API KEY — 'fbk_' (2026-11-09)
+# ===================================================
+# Formbricks (open-source survey / experience-management platform — the
+# Typeform alternative, formbricks.com cloud or self-hosted) organization
+# API key: the literal 'fbk_' prefix followed by exactly 43 base64url
+# characters ([A-Za-z0-9_-]), 47 characters in total. Created under
+# Organization settings > API keys and sent as 'x-api-key: fbk_...' (or
+# 'Authorization: Bearer fbk_...') to the Management API, and read from
+# FORMBRICKS_API_KEY by the vendor's MCP server, CLI and SDK examples. It
+# acts with whatever per-environment read / write / manage permissions the
+# key was granted — surveys, responses, contacts, webhooks — across every
+# project the organization owns.
+# - PREFIX + WIDTH + ALPHABET, VENDOR-STATED (source, not measured): in
+#   formbricks/formbricks (AGPL-3.0 — read for FORMAT FACTS ONLY, no code
+#   copied) apps/web/modules/organization/settings/api-keys/lib/api-key.ts
+#   createApiKey() builds the secret as randomBytes(32).toString("base64url")
+#   and returns the key as `fbk_${secret}`; apps/web/lib/crypto.ts
+#   parseApiKeyV2() enforces the 'fbk_' prefix and a [A-Za-z0-9_-]+ secret.
+#   32 random bytes in unpadded base64url is always exactly 43 characters,
+#   so the body width is fixed by construction. The older v1 key format
+#   (a bare hex string, no prefix) is unshippable and is NOT matched.
+#
+# The body alphabet includes '_' and '-', so both guards refuse
+# [A-Za-z0-9_-]: a 42- or 44-character body matches nothing rather than
+# being truncated, and 'fbk_' is never carved out of a longer identifier.
+# Confidence 0.95, no entropy gate (a distinctive vendor prefix plus a
+# fixed-width random body carries the precision). Severity high: an
+# organization-level API key that can read every survey response — personal
+# data — and, with write / manage permissions, alter surveys and webhooks.
+
+FORMBRICKS_API_KEY = SecretPattern(
+    id="formbricks_api_key",
+    name="Formbricks API Key",
+    description=(
+        "Formbricks (open-source survey platform, cloud or self-hosted)"
+        " organization API key — the literal 'fbk_' prefix followed by exactly"
+        " 43 base64url characters, 47 characters in total. Sent as 'x-api-key:"
+        " fbk_...' or 'Authorization: Bearer fbk_...' to the Management API;"
+        " grants the key's per-environment read / write / manage access to"
+        " surveys, responses, contacts and webhooks."
+    ),
+    provider="formbricks",
+    severity="high",
+    # Prefix and body per the vendor's own generator (createApiKey:
+    # randomBytes(32).toString("base64url"), returned as fbk_<secret>) and
+    # validator (apps/web/lib/crypto.ts parseApiKeyV2). Independently authored.
+    # Source: https://github.com/formbricks/formbricks/blob/main/apps/web/modules/organization/settings/api-keys/lib/api-key.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>fbk_[A-Za-z0-9_-]{43})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # vendor prefix plus fixed-width body carries the precision
+    context_keywords=[
+        "formbricks",
+        "FORMBRICKS_API_KEY",
+        "FORMBRICKS_HOST",
+        "x-api-key",
+        "formbricks.com",
+        "management api",
+        "api key",
+    ],
+    known_test_values={
+        # Single-character masks — how docs and redacted configs render this
+        # key. Built by concatenation so no scannable key literal sits in
+        # source.
+        "fb" + "k_" + fill * 43
+        for fill in ("x", "X", "0", "a", "A")
+    }
+    | {
+        # Sequential base64url fillers.
+        "fb" + "k_" + (run * 5)[:43]
+        for run in ("0123456789", "abcdefghij", "ABCDEFGHIJ")
+    },
+    recommendation=(
+        "Delete this API key in Formbricks (Organization settings > API keys)"
+        " and create a replacement with the narrowest per-environment"
+        " permissions that still work, then update FORMBRICKS_API_KEY in every"
+        " MCP config, CI secret, SDK integration and script that used it."
+        " Review recent survey, response and webhook changes for activity you"
+        " did not perform — the key could read every response in the"
+        " organization."
+    ),
+    tags=["data", "formbricks", "surveys", "experience-management"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -1710,4 +1800,7 @@ register(
     # 2026-10-31 — Lightdash personal access / service-account token ('ldpat_'
     # / 'ldsvc_' + 32 lowercase hex; per the vendor's own generator).
     LIGHTDASH_PERSONAL_ACCESS_TOKEN,
+    # 2026-11-09 — Formbricks organization API key ('fbk_' + 43 base64url =
+    # 47 chars; prefix, width and alphabet per the vendor's own generator).
+    FORMBRICKS_API_KEY,
 )
