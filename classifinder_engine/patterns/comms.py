@@ -3218,6 +3218,70 @@ PUBNUB_SECRET_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# SMTP2GO API KEY — 'api-' + 32 alnum, context-gated (2026-11-10)
+# ===================================================
+# SMTP2GO API key: the literal 'api-' prefix followed by 32 alphanumeric
+# characters (36 in all). The key authenticates the SMTP2GO REST API
+# (api.smtp2go.com/v3) and can send mail as the account. The shape is weak
+# and not unique ('api-' + 32 alnum is a common identifier shape), so this
+# detector is context-gated: it only fires when an SMTP2GO-qualified label
+# sits before the value on the same line (SMTP2GO_API_KEY, the
+# X-Smtp2go-Api-Key header, an api.smtp2go.com request carrying an api_key
+# field). A bare 'api-<32>' string matches nothing.
+# - FORMAT, VENDOR-STATED: SMTP2GO's own Go SDK (smtp2go-oss/smtp2go-go
+#   core.go) validates keys with APIKeyRegexp = ^api-[a-zA-Z0-9]{32}$ before
+#   every request and reads the SMTP2GO_API_KEY env var and the
+#   X-Smtp2go-Api-Key header.
+# The (?i:...) scope covers the label only; the body stays case-sensitive
+# alphanumeric. confidence_base 0.60 reflects the format-only body.
+
+SMTP2GO_API_KEY = SecretPattern(
+    id="smtp2go_api_key",
+    name="SMTP2GO API Key",
+    description=(
+        "SMTP2GO API key — the literal 'api-' prefix followed by 32"
+        " alphanumeric characters (36 in all). Authenticates the SMTP2GO REST"
+        " API and can send email as the account. The body shape is generic, so"
+        " the detector is context-gated and only fires when an SMTP2GO label"
+        " (SMTP2GO_API_KEY, X-Smtp2go-Api-Key, or an api.smtp2go.com request"
+        " with an api_key field) precedes the value on the same line."
+    ),
+    provider="smtp2go",
+    severity="high",
+    # Source: https://github.com/smtp2go-oss/smtp2go-go/blob/master/core.go
+    regex=re.compile(
+        r"(?i:smtp2go[^\n]{0,120}?api[_-]?key)"
+        r"[\"'\s]*[=:][\"'\s]*"
+        r"(?P<secret>api-[A-Za-z0-9]{32})"
+        r"(?![A-Za-z0-9])",
+        re.ASCII,
+    ),
+    confidence_base=0.60,  # format-only body; the SMTP2GO label is the gate
+    entropy_threshold=3.0,  # penalize low-entropy placeholders
+    context_keywords=[
+        "smtp2go",
+        "SMTP2GO_API_KEY",
+        "X-Smtp2go-Api-Key",
+        "api.smtp2go.com",
+    ],
+    known_test_values={
+        # Sequential / single-character placeholders, built by concatenation
+        # so no contiguous key literal sits in source. Pinned (~0.15).
+        "api" + "-" + "0123456789abcdef" + "0123456789abcdef",
+        "api" + "-" + "0123456789ABCDEF" + "0123456789ABCDEF",
+        *("api" + "-" + fill * 32 for fill in ("x", "X", "A", "0")),
+    },
+    recommendation=(
+        "Revoke this key in the SMTP2GO dashboard (Settings > API Keys) and"
+        " create a replacement with the narrowest permissions the sender needs."
+        " Review the account's sent-mail activity for messages you did not"
+        " send, and keep the key in a secret store or environment variable."
+    ),
+    tags=["comms", "smtp2go", "email"],
+)
+
+
 register(
     SLACK_BOT_TOKEN,
     SLACK_USER_TOKEN,
@@ -3326,4 +3390,7 @@ register(
     # 2026-11-09 — PubNub keyset secret key ('sec-c-' + 48 base64 = 54 chars;
     # prefix per the vendor's own SDKs; 'pub-c-' / 'sub-c-' not matched).
     PUBNUB_SECRET_KEY,
+    # 2026-11-10 — SMTP2GO API key ('api-' + 32 alnum; format per the vendor's
+    # own Go SDK validator; context-gated on an SMTP2GO label).
+    SMTP2GO_API_KEY,
 )
