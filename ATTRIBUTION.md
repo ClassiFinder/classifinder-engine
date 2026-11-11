@@ -419,6 +419,7 @@ The following patterns were independently derived from official vendor documenta
 | `vault_unseal_key` | https://developer.hashicorp.com/vault/tutorials/get-started/setup (the `vault operator init` output label `Unseal Key N:` and the 44-character base64 share); Nosey Parker (Apache-2.0) `np.hashicorp.7` anchors the same way |
 | `oculus_app_access_token` | https://developers.meta.com/vr/documentation/spatial-sdk/ps-s2s-basics/ (Meta: the app access token "follows this format: OC\|$APPID\|$APPSECRET") |
 | `authorization_token_header` | https://www.django-rest-framework.org/api-guide/authentication/#tokenauthentication (the `Authorization: Token <key>` scheme of DRF TokenAuthentication); gitleaks (MIT) `curl-auth-header` covers the same header. Charset, length window, guards and scoring are independently authored. |
+| `smtp2go_api_key` | https://github.com/smtp2go-oss/smtp2go-go/blob/master/core.go (SMTP2GO's own Go SDK — `APIKeyRegexp = ^api-[a-zA-Z0-9]{32}$` validates every key before a request, with the `SMTP2GO_API_KEY` env var and `X-Smtp2go-Api-Key` header; the pattern is context-gated on an SMTP2GO label because the `api-` + 32 alnum shape is generic). |
 Vendor-published token formats (e.g. `AKIA...`, `sk_live_...`, `AIza...`, PEM markers, JWT structure, Bitcoin WIF, credit-card IINs) are facts and not subject to copyright.
 
 ---
