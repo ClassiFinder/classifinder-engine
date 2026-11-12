@@ -2085,6 +2085,53 @@ VECTARA_API_KEY = SecretPattern(
 )
 
 
+ONYX_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="onyx_personal_access_token",
+    name="Onyx Personal Access Token",
+    description=(
+        "Onyx (open-source enterprise search / AI assistant) personal access"
+        " token — 'onyx_pat_' followed by 256 base64url characters"
+        " (secrets.token_urlsafe(192)). Multi-tenant deployments insert a"
+        " URL-encoded tenant id and a '.' between the prefix and the body."
+        " A PAT authenticates as the user against the Onyx API, including every"
+        " connected document source that user can search."
+    ),
+    provider="onyx",
+    severity="critical",
+    # Source: https://github.com/onyx-dot-app/onyx/blob/main/backend/onyx/auth/pat.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>onyx_pat_(?:[A-Za-z0-9%_.~-]{1,189}\.)?[A-Za-z0-9_-]{256})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.5,  # token_urlsafe(192) bodies score ~5.8 bits; masks fall below
+    context_keywords=[
+        "onyx",
+        "ONYX_PAT",
+        "ONYX_API_KEY",
+        "onyx_pat",
+        "Authorization",
+        "Bearer",
+    ],
+    known_test_values={
+        # Single-character masks (the body is 256 wide).
+        "onyx_pat" + "_" + "A" * 256,
+        "onyx_pat" + "_" + "X" * 256,
+        "onyx_pat" + "_" + "0" * 256,
+        "onyx_pat" + "_" + "AB" * 128,
+    },
+    recommendation=(
+        "Delete the token in Onyx (Settings > Personal Access Tokens), create a"
+        " replacement with the shortest expiry that works, and update every"
+        " script or integration that used it. Review recent searches and"
+        " document-source access made with the leaked token."
+    ),
+    tags=["ai", "onyx", "search", "pat"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -2163,4 +2210,7 @@ register(
     # 2026-11-09 — Vectara API key ('zut_' / 'zqt_' / 'zwt_' + 38 base64url;
     # prefixes per the vendor's docs, width measured).
     VECTARA_API_KEY,
+    # 2026-11-12 — Onyx personal access token ('onyx_pat_' + optional
+    # '<tenant>.' + 256 base64url; format per the vendor's own pat.py).
+    ONYX_PERSONAL_ACCESS_TOKEN,
 )
