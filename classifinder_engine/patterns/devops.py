@@ -4261,6 +4261,55 @@ SOURCEGRAPH_LICENSE_KEY_TOKEN = SecretPattern(
 )
 
 
+# ===================================================
+# MEDUSA SECRET API KEY — 'sk_' + 64 lowercase hex (2026-11-11)
+# ===================================================
+# Medusa (open-source commerce) secret API key: the literal 'sk_' prefix
+# followed by 64 lowercase hex characters (68 in all). Vendor source: the
+# api-key module's generateSecretKey() builds the token as 'sk_' plus
+# crypto.randomBytes(32).toString("hex"). A secret key authenticates the
+# Admin API (Authorization: Basic) and so grants full store administration.
+# The publishable 'pk_' key is public by design and is not matched.
+# 'sk_' is a shared prefix: Stripe ('sk_live_' / 'sk_test_'), Liveblocks
+# ('sk_prod_') and Cartesia ('sk_car_') all carry a further literal segment,
+# so none can match 'sk_' + 64 bare hex; the lookarounds also stop the match
+# being carved out of a longer snake_case identifier or hex run.
+# confidence_base 0.80: the prefix is shared and the body is hex-only, so
+# a Medusa context keyword lifts it and masks fall to the entropy gate.
+
+MEDUSA_SECRET_API_KEY = SecretPattern(
+    id="medusa_secret_api_key",
+    name="Medusa Secret API Key",
+    description=(
+        "Medusa secret API key — the literal 'sk_' prefix followed by 64"
+        " lowercase hex characters (68 in all). Authenticates the Medusa Admin"
+        " API and grants full administrative access to the store."
+    ),
+    provider="medusa",
+    severity="critical",
+    # Source: https://github.com/medusajs/medusa/blob/develop/packages/modules/api-key/src/services/api-key-module-service.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>sk_[0-9a-f]{64})"
+        r"(?![0-9A-Za-z_])",
+        re.ASCII,
+    ),
+    confidence_base=0.80,
+    entropy_threshold=3.0,  # random 64-hex bodies score >= ~3.8 bits; masks fall below
+    context_keywords=["medusa", "MEDUSA_", "medusajs", "admin api", "api_key_module"],
+    known_test_values={
+        *("sk" + "_" + fill * 64 for fill in ("0", "a", "f")),
+        "sk" + "_" + "0123456789abcdef" * 4,
+    },
+    recommendation=(
+        "Revoke the secret API key in the Medusa Admin (Settings > Secret API"
+        " Keys), create a replacement and update every service that used it."
+        " Review admin activity for changes you did not make."
+    ),
+    tags=["devops", "medusa", "ecommerce", "admin"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -4423,4 +4472,7 @@ register(
     # 2026-11-09 — Sourcegraph license key token ('slk_' + 64 hex; per the
     # vendor's own secret-format table).
     SOURCEGRAPH_LICENSE_KEY_TOKEN,
+    # 2026-11-11 — Medusa secret API key ('sk_' + 64 lowercase hex; per the
+    # vendor's own api-key module; 'pk_' publishable key not matched).
+    MEDUSA_SECRET_API_KEY,
 )
