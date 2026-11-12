@@ -69,17 +69,118 @@ The `redact()` function:
 2. Processes spans in reverse order so replacements don't shift offsets
 3. Supports three styles: `label` → `[AWS_ACCESS_KEY_REDACTED]`, `mask` → `AKIA**************`, `hash` → `[REDACTED:sha256:a1b2c3d4]`
 
-## What's NOT Here
+## Self-host with Docker
 
-The hosted API layer (routes, middleware, auth, rate limiting, key provisioning) is not open-source. That's the business. What's here is the code that processes your text — the part you'd want to audit.
+Run the full ClassiFinder API on your own infrastructure. The image wraps this engine in the same HTTP server that runs at `api.classifinder.ai`. Your text never leaves your network.
 
-## Dockerfile
+```bash
+docker run -d --name classifinder -p 8000:8000 \
+  -e CLASSIFINDER_API_KEYS=change-me \
+  ghcr.io/classifinder/classifinder:latest
+```
 
-The included `Dockerfile` shows exactly what runs in production: Python 3.12, FastAPI, Uvicorn. No database driver, no persistent volume, no logging SDK that captures request bodies. A container with a small surface area.
+```bash
+curl -s -X POST http://localhost:8000/v1/redact \
+  -H 'X-API-Key: change-me' -H 'Content-Type: application/json' \
+  -d '{"text":"Deploy with AWS_ACCESS_KEY_ID=AKIAQWERTYUIOPASDFGH"}'
+```
+
+```json
+{
+  "findings_count": 1,
+  "redacted_text": "Deploy with AWS_ACCESS_KEY_ID=[AWS_ACCESS_KEY_REDACTED]",
+  "findings": [
+    { "type": "aws_access_key", "severity": "critical", "confidence": 0.99,
+      "span": { "start": 30, "end": 50 }, "redacted_as": "[AWS_ACCESS_KEY_REDACTED]" }
+  ],
+  "summary": { "critical": 1, "high": 0, "medium": 0, "low": 0 }
+}
+```
+
+Interactive API docs are served at `http://localhost:8000/docs`.
+
+### What's in the image
+
+- **Platforms:** `linux/amd64` and `linux/arm64` (Apple Silicon, Graviton).
+- **Base:** `python:3.12-slim`, running as a non-root user. About 275 MB.
+- **No database, no volume, no outbound calls.** The server holds nothing between requests, and it logs only metadata (request id, endpoint, input size, finding count, latency, status). It never logs request bodies or secret values.
+- **Built in CI from the commit that deployed production.** Every merge to `main` publishes a new image, so the self-hosted pattern set matches the hosted API.
+
+### Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CLASSIFINDER_API_KEYS` | *(empty)* | **Required.** Comma-separated keys accepted in the `X-API-Key` header. With none set, every request returns 401 and a warning is logged at startup. Any string works; use something long and random. |
+| `CLASSIFINDER_RATE_LIMIT_PER_MINUTE` | `60` | Requests per minute per key. Raise it for internal pipelines. |
+| `CLASSIFINDER_MAX_PAYLOAD_BYTES` | `262144` | Max request body (256 KB). |
+| `WEB_CONCURRENCY` | `2` | Uvicorn worker processes. The rate limit is per worker, so the effective limit is workers × the per-minute value. |
+
+### Endpoints
+
+| Method | Path | Auth |
+|---|---|---|
+| `POST` | `/v1/scan` | `X-API-Key` |
+| `POST` | `/v1/redact` | `X-API-Key` |
+| `GET` | `/v1/types` | `X-API-Key` |
+| `GET` | `/v1/health` | none (used by the container `HEALTHCHECK`) |
+
+`/v1/keys/*` and `/v1/feedback` exist for the hosted service; with no database configured they return a clear error or write metadata to stdout.
+
+### Docker Compose
+
+```yaml
+services:
+  classifinder:
+    image: ghcr.io/classifinder/classifinder:latest
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      CLASSIFINDER_API_KEYS: ${CLASSIFINDER_API_KEYS:?set a key}
+      CLASSIFINDER_RATE_LIMIT_PER_MINUTE: "600"
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+```
+
+### Using it from Python
+
+The [Python SDK](https://pypi.org/project/classifinder/) takes a `base_url`:
+
+```python
+from classifinder import ClassiFinder
+
+client = ClassiFinder(api_key="change-me", base_url="http://localhost:8000")
+result = client.redact("my key is AKIAQWERTYUIOPASDFGH")
+print(result.redacted_text)
+```
+
+### Tags
+
+| Tag | Meaning |
+|---|---|
+| `latest` | Current `main`, same build as production |
+| `YYYY.MM.DD-<sha7>` | Immutable build from a given day and commit. Pin this in production. |
+| `sha-<full sha>` | Immutable, by commit |
+
+### Verifying the image
+
+Each image carries an SBOM and SLSA build provenance, attached by BuildKit in GitHub Actions:
+
+```bash
+docker buildx imagetools inspect ghcr.io/classifinder/classifinder:latest \
+  --format '{{ json .Provenance }}'
+docker buildx imagetools inspect ghcr.io/classifinder/classifinder:latest \
+  --format '{{ json .SBOM }}'
+```
+
+The server code is plain Python at `/app` inside the image, so you can read exactly what runs:
+
+```bash
+docker run --rm --entrypoint sh ghcr.io/classifinder/classifinder:latest -c 'ls -R /app | head'
+```
 
 ## The Hosted Service
 
-Don't want to run this yourself? [ClassiFinder](https://classifinder.ai) wraps this engine in a fast, stateless API with auth, rate limiting, a Python SDK (`pip install classifinder`), and a LangChain integration. Free tier: 60 requests/minute, no credit card required.
+Don't want to run a container? [ClassiFinder](https://classifinder.ai) hosts the same server as a fast, stateless API with auth, rate limiting, a Python SDK (`pip install classifinder`), and a LangChain integration. Free tier: 60 requests/minute, no credit card required.
 
 Want a ready-to-use CLI? [cfsniff](https://github.com/ClassiFinder/cfsniff) wraps the ClassiFinder API to scan files, shell history, and configs for secrets (`pipx install cfsniff`).
 
