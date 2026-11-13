@@ -2132,6 +2132,55 @@ ONYX_PERSONAL_ACCESS_TOKEN = SecretPattern(
 )
 
 
+ONYX_API_KEY = SecretPattern(
+    id="onyx_api_key",
+    name="Onyx API Key",
+    description=(
+        "Onyx (open-source enterprise search / AI assistant) admin-issued API"
+        " key — 'on_' followed by 256 base64url characters"
+        " (secrets.token_urlsafe(192)). Multi-tenant deployments insert a"
+        " URL-encoded tenant id and a '.' between the prefix and the body."
+        " The key authenticates a service account against the Onyx API with the"
+        " role it was issued, including search over connected document sources."
+    ),
+    provider="onyx",
+    severity="critical",
+    # The 'on_' prefix is only two letters, so the body width is pinned at
+    # exactly 256 and both sides carry word/'-' guards (which also keep it off
+    # 'onyx_pat_' tokens). The deprecated 'dn_' prefix has no pinned width.
+    # Source: https://github.com/onyx-dot-app/onyx/blob/main/backend/onyx/auth/api_key.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>on_(?:[A-Za-z0-9%_.~-]{1,189}\.)?[A-Za-z0-9_-]{256})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.5,  # token_urlsafe(192) bodies score ~5.8 bits; masks fall below
+    context_keywords=[
+        "onyx",
+        "ONYX_API_KEY",
+        "X-Onyx-Authorization",
+        "api_key",
+        "Authorization",
+        "Bearer",
+    ],
+    known_test_values={
+        # Single-character masks (the body is 256 wide).
+        "on" + "_" + "A" * 256,
+        "on" + "_" + "X" * 256,
+        "on" + "_" + "0" * 256,
+        "on" + "_" + "AB" * 128,
+    },
+    recommendation=(
+        "Revoke the key in the Onyx admin panel (API Keys), issue a replacement"
+        " with the narrowest role that works, and update every integration that"
+        " used it. Review recent API activity made with the leaked key."
+    ),
+    tags=["ai", "onyx", "search", "api_key"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -2213,4 +2262,7 @@ register(
     # 2026-11-12 — Onyx personal access token ('onyx_pat_' + optional
     # '<tenant>.' + 256 base64url; format per the vendor's own pat.py).
     ONYX_PERSONAL_ACCESS_TOKEN,
+    # 2026-11-13 — Onyx API key ('on_' + optional '<tenant>.' + 256 base64url;
+    # format per the vendor's own api_key.py).
+    ONYX_API_KEY,
 )
