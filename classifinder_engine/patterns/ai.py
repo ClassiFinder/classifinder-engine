@@ -2181,6 +2181,53 @@ ONYX_API_KEY = SecretPattern(
 )
 
 
+ONYX_SCIM_TOKEN = SecretPattern(
+    id="onyx_scim_token",
+    name="Onyx SCIM Token",
+    description=(
+        "Onyx (open-source enterprise search / AI assistant) SCIM bearer token"
+        " — 'onyx_scim_' followed by 64 base64url characters"
+        " (secrets.token_urlsafe(48)). Multi-tenant deployments insert a"
+        " URL-encoded tenant id and a '.' between the prefix and the body."
+        " The token lets an identity provider create, update and deactivate"
+        " users and groups across the whole Onyx workspace."
+    ),
+    provider="onyx",
+    severity="critical",
+    # Source: https://github.com/onyx-dot-app/onyx/blob/main/backend/ee/onyx/server/scim/auth.py
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>onyx_scim_(?:[A-Za-z0-9%_.~-]{1,189}\.)?[A-Za-z0-9_-]{64})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.5,  # token_urlsafe(48) bodies score ~5.5 bits; masks fall below
+    context_keywords=[
+        "onyx",
+        "scim",
+        "SCIM",
+        "ONYX_SCIM_TOKEN",
+        "Authorization",
+        "Bearer",
+    ],
+    known_test_values={
+        # Single-character masks (the body is 64 wide).
+        "onyx_scim" + "_" + "A" * 64,
+        "onyx_scim" + "_" + "X" * 64,
+        "onyx_scim" + "_" + "0" * 64,
+        "onyx_scim" + "_" + "AB" * 32,
+    },
+    recommendation=(
+        "Revoke the SCIM token in Onyx (Admin > SCIM), generate a new one, and"
+        " update it in your identity provider's provisioning settings. Audit"
+        " recent user and group changes made through SCIM for accounts or"
+        " group memberships you did not expect."
+    ),
+    tags=["ai", "onyx", "search", "scim"],
+)
+
+
 register(
     OPENAI_API_KEY,
     ANTHROPIC_API_KEY,
@@ -2265,4 +2312,7 @@ register(
     # 2026-11-13 — Onyx API key ('on_' + optional '<tenant>.' + 256 base64url;
     # format per the vendor's own api_key.py).
     ONYX_API_KEY,
+    # 2026-11-14 — Onyx SCIM token ('onyx_scim_' + optional '<tenant>.' + 64
+    # base64url; format per the vendor's own scim/auth.py).
+    ONYX_SCIM_TOKEN,
 )
