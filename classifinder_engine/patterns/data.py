@@ -1905,6 +1905,59 @@ TOLGEE_PROJECT_API_KEY = SecretPattern(
 )
 
 
+LOGSEQ_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="logseq_personal_access_token",
+    name="Logseq Personal Access Token",
+    description=(
+        "Logseq DB Sync personal access token — the literal 'logseq_pat_' prefix"
+        " followed by exactly 64 lowercase hex characters (32 random bytes),"
+        " 75 characters in total. Sent as 'Authorization: Bearer <token>' to the"
+        " Logseq DB Sync API and grants access to the user's synced graphs."
+    ),
+    provider="logseq",
+    severity="high",
+    # Prefix per deps/db-sync/src/logseq/db_sync/worker/auth.cljs
+    # (personal-access-token-prefix); body per generate-token / random-hex 32 in
+    # the handler below (getRandomValues bytes, each written as 2 lowercase hex
+    # digits). Independently authored.
+    # Source: https://github.com/logseq/logseq/blob/master/deps/db-sync/src/logseq/db_sync/worker/handler/personal_access_token.cljs
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>logseq_pat_[0-9a-f]{64})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # vendor prefix plus fixed-width hex body carries the precision
+    context_keywords=[
+        "logseq",
+        "LOGSEQ_TOKEN",
+        "LOGSEQ_PAT",
+        "db-sync",
+        "Authorization",
+        "Bearer",
+        "personal access token",
+    ],
+    known_test_values={
+        # Single-character masks. Built by concatenation so no scannable token
+        # literal exists in source.
+        "logseq" + "_pat_" + fill * 64
+        for fill in ("0", "a", "f", "x")
+    }
+    | {
+        # Sequential-hex placeholder shape.
+        "logseq" + "_pat_" + "0123456789abcdef" * 4,
+    },
+    recommendation=(
+        "Revoke the token in Logseq (Settings > Personal access tokens for DB"
+        " Sync), create a replacement and update every script or integration"
+        " that used it. Review recent sync activity on your graphs for changes"
+        " you did not make."
+    ),
+    tags=["data", "logseq", "notes", "sync", "pat"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -1978,4 +2031,7 @@ register(
     # 2026-11-09 — Tolgee project API key ('tgpak_' + 40-60 lowercase base32;
     # per the vendor's own ApiKeyService encodeKey()).
     TOLGEE_PROJECT_API_KEY,
+    # 2026-11-15 — Logseq DB Sync personal access token ('logseq_pat_' + 64
+    # lowercase hex = 75 chars; per the vendor's own generate-token).
+    LOGSEQ_PERSONAL_ACCESS_TOKEN,
 )
