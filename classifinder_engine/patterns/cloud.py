@@ -5094,6 +5094,62 @@ YANDEX_SMARTCAPTCHA_SERVER_KEY = SecretPattern(
 )
 
 
+K3S_JOIN_TOKEN = SecretPattern(
+    id="k3s_join_token",
+    name="K3s / RKE2 Secure Join Token",
+    description=(
+        "K3s or RKE2 secure cluster token in K10 format — 'K10', the 64"
+        " lowercase-hex SHA-256 digest of the cluster CA bundle, '::' and the"
+        " credentials: either '<username>:<password>' (the server token,"
+        " e.g. 'server:<password>') or a bootstrap token"
+        " '<6 [a-z0-9]>.<16 [a-z0-9]>'. Passed as K3S_TOKEN / --token, it lets"
+        " the holder join servers or agents to the cluster; the server token"
+        " also decrypts the cluster's bootstrap data."
+    ),
+    provider="k3s",
+    severity="critical",
+    # tokenPrefix = "K10"; Info.String() returns tokenPrefix + hashCA digest
+    # (hex SHA-256) + "::" + Username + ":" + Password, or the bootstrap
+    # token string. Span covers the whole token so it wins dedup over
+    # kubernetes_bootstrap_token on the tail. Docs: https://docs.k3s.io/cli/token
+    # Source: https://github.com/k3s-io/k3s/blob/master/pkg/clientaccess/token.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>K10[0-9a-f]{64}::"
+        r"(?:[a-z0-9]{6}\.[a-z0-9]{16}(?![A-Za-z0-9_.:-])"
+        r"|[A-Za-z0-9._@-]{1,64}:[^\s\"'`]{6,256}(?![^\s\"'`])))",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # 'K10' + fixed 64-hex digest + '::' is the anchor
+    context_keywords=[
+        "k3s",
+        "rke2",
+        "K3S_TOKEN",
+        "K3S_URL",
+        "node-token",
+        "--token",
+        "join",
+    ],
+    known_test_values={
+        # Masked CA digests seen in docs and tutorials.
+        *(
+            "K10" + fill * 64 + "::" + tail
+            for fill in ("0", "a", "x")
+            for tail in ("server:" + "0" * 32, "abcdef.0123456789abcdef")
+        ),
+    },
+    recommendation=(
+        "Rotate the token with 'k3s token rotate' (or 'rke2 token rotate'),"
+        " delete any bootstrap token with 'k3s token delete <id>', and update"
+        " every node and automation that joins with it. Review the node list"
+        " for members you did not add."
+    ),
+    tags=["cloud", "kubernetes", "k3s", "rke2", "cluster"],
+)
+
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -5271,4 +5327,7 @@ register(
     # 2026-11-09 — Yandex SmartCaptcha server key ('ysc2_' + 48 alnum;
     # prefix per Yandex Cloud docs, width measured; 'ysc1_' not matched).
     YANDEX_SMARTCAPTCHA_SERVER_KEY,
+    # 2026-11-16 — K3s / RKE2 secure join token ('K10' + 64-hex CA digest +
+    # '::' + user:password or bootstrap token; per k3s clientaccess/token.go).
+    K3S_JOIN_TOKEN,
 )

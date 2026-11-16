@@ -4310,6 +4310,101 @@ MEDUSA_SECRET_API_KEY = SecretPattern(
 )
 
 
+LARAVEL_APP_KEY = SecretPattern(
+    id="laravel_app_key",
+    name="Laravel APP_KEY",
+    description=(
+        "Laravel application encryption key — 'base64:' followed by the"
+        " base64 of 32 random bytes (44 characters, AES-256 ciphers) or 16"
+        " bytes (24 characters, AES-128), assigned to APP_KEY or listed in"
+        " APP_PREVIOUS_KEYS. It encrypts and signs cookies and sessions;"
+        " leaked, it allows session forgery and, on apps that unserialize"
+        " encrypted payloads, remote code execution."
+    ),
+    provider="laravel",
+    severity="critical",
+    # generateRandomKey() returns 'base64:' . base64_encode(Encrypter::
+    # generateKey(cipher)), 16 or 32 bytes per Encrypter::$supportedCiphers.
+    # 'base64:' alone is generic, so the APP_KEY / APP_PREVIOUS_KEYS name
+    # anchors it (.env, docker-compose, config/app.php env() default). The
+    # final character before the padding is restricted to the values base64
+    # can produce for that byte count.
+    # Source: https://github.com/laravel/framework/blob/12.x/src/Illuminate/Foundation/Console/KeyGenerateCommand.php
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])(?i:APP_(?:PREVIOUS_)?KEYS?)[\"']?"
+        r"[ \t]*(?:=>?|:|,)[ \t]*[\"']?"
+        r"(?P<secret>base64:(?:[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]="
+        r"|[A-Za-z0-9+/]{21}[AQgw]==))"
+        r"(?![A-Za-z0-9+/=])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=3.5,  # random 32-byte keys score ~5 bits; masks fall below
+    context_keywords=["laravel", "APP_KEY", "artisan", "key:generate", "APP_ENV", ".env"],
+    known_test_values={
+        "base64:" + "A" * 43 + "=",
+        "base64:" + "A" * 22 + "==",
+    },
+    recommendation=(
+        "Generate a new key with 'php artisan key:generate', deploy it, and"
+        " move the old key into APP_PREVIOUS_KEYS only for as long as you need"
+        " to decrypt existing data. Expect every session to be invalidated;"
+        " re-encrypt anything stored with Crypt:: under the old key."
+    ),
+    tags=["devops", "laravel", "php", "encryption-key"],
+)
+
+
+JENKINS_API_TOKEN = SecretPattern(
+    id="jenkins_api_token",
+    name="Jenkins API Token",
+    description=(
+        "Jenkins user API token (current format) — the hash-version prefix"
+        " '11' followed by 32 lowercase hex characters (16 random bytes), 34"
+        " characters in total, used as the password in HTTP basic auth to the"
+        " Jenkins REST API and CLI. Because '11' + hex is not distinctive on"
+        " its own, a Jenkins token/API/password/auth variable name must"
+        " precede the value."
+    ),
+    provider="jenkins",
+    severity="high",
+    # ApiTokenStore.generateNewToken(): HASH_VERSION "11" + toHexString of 16
+    # random bytes (TOKEN_LENGTH_V2 = 34). Keyword-gated: 'jenkins' then a
+    # token / api / pass / auth word in the same identifier.
+    # Source: https://github.com/jenkinsci/jenkins/blob/master/core/src/main/java/jenkins/security/apitoken/ApiTokenStore.java
+    regex=re.compile(
+        r"(?i:jenkins[A-Za-z0-9_.-]{0,30}?(?:token|api|pass(?:word)?|auth|secret)"
+        r"[A-Za-z0-9_.-]{0,20})[\"']?[ \t]*(?:=|:|=>)[ \t]*[\"']?"
+        r"(?P<secret>11[0-9a-f]{32})"
+        r"(?![0-9A-Za-z])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=3.0,  # random 32-hex bodies score ~3.8 bits; masks fall below
+    context_keywords=[
+        "jenkins",
+        "JENKINS_API_TOKEN",
+        "JENKINS_TOKEN",
+        "JENKINS_USER",
+        "JENKINS_URL",
+        "jenkins-cli",
+        "crumb",
+    ],
+    known_test_values={
+        *("11" + fill * 32 for fill in ("0", "a", "f")),
+        "11" + "0123456789abcdef" * 2,
+    },
+    recommendation=(
+        "Revoke the token in Jenkins (user > Security > API Token), create a"
+        " replacement and update every script, job or plugin configuration"
+        " that used it. Check the Jenkins audit log for API calls made with"
+        " the token."
+    ),
+    tags=["devops", "jenkins", "ci-cd", "api-token"],
+)
+
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -4475,4 +4570,9 @@ register(
     # 2026-11-11 — Medusa secret API key ('sk_' + 64 lowercase hex; per the
     # vendor's own api-key module; 'pk_' publishable key not matched).
     MEDUSA_SECRET_API_KEY,
+    # 2026-11-16 — Laravel APP_KEY ('base64:' + 44/24 base64, APP_KEY-
+    # anchored; per KeyGenerateCommand.php) and Jenkins API token ('11' + 32
+    # lowercase hex, jenkins-keyword-gated; per ApiTokenStore.java).
+    LARAVEL_APP_KEY,
+    JENKINS_API_TOKEN,
 )
