@@ -1237,6 +1237,125 @@ PRISMA_ACCELERATE_API_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# PUTTY PPK / COSIGN ENCRYPTED KEYS (2026-11-16)
+# ===================================================
+
+def _ppk_placeholders() -> set[str]:
+    """PuTTY key-file blocks whose key data is an obvious placeholder.
+
+    confidence_base 0.95 sits above the 0.85 FP-wordlist gate, so docs-style
+    masks must be pinned explicitly to score as test values.
+    """
+    values: set[str] = set()
+    for version, mac in (("2", "0" * 40), ("3", "0" * 64)):
+        for fill in ("A", "x"):
+            values.add(
+                f"PuTTY-User-Key-File-{version}: ssh-ed25519\n"
+                "Encryption: none\n"
+                "Comment: example\n"
+                "Public-Lines: 1\n"
+                f"{fill * 64}\n"
+                "Private-Lines: 1\n"
+                f"{fill * 64}\n"
+                f"Private-MAC: {mac}"
+            )
+    return values
+
+
+PUTTY_PPK_PRIVATE_KEY = SecretPattern(
+    id="putty_ppk_private_key",
+    name="PuTTY PPK Private Key File",
+    description=(
+        "PuTTY private key file (.ppk), format versions 1-3 — the"
+        " 'PuTTY-User-Key-File-<n>: <algorithm>' header, the 'Encryption:'"
+        " line, the public and private key-data sections and the closing"
+        " 'Private-MAC:' (or v1 'Private-Hash:') line. With 'Encryption: none'"
+        " the private key is in clear; 'aes256-cbc' files are passphrase"
+        " protected (still worth rotating: the passphrase is often stored"
+        " nearby). Used by PuTTY, WinSCP and FileZilla for SSH access."
+    ),
+    provider="putty",
+    severity="critical",
+    # Header / Encryption / Public-Lines / (v3 Key-Derivation + Argon2-*) /
+    # Private-Lines / Private-MAC layout per PuTTY's own documentation,
+    # Appendix C "PPK file format". The span runs from the header to the end
+    # of the MAC so redaction covers the private key lines.
+    # Source: https://the.earth.li/~sgtatham/putty/latest/htmldoc/AppendixC.html
+    regex=re.compile(
+        r"(?P<secret>PuTTY-User-Key-File-[123]:[ \t]*[A-Za-z0-9@.-]{3,64}\r?\n"
+        r"Encryption:[ \t]*[A-Za-z0-9-]{1,32}\r?\n"
+        r"(?:[^\r\n]{0,256}\r?\n){1,80}?"
+        r"Private-Lines:[ \t]*\d{1,4}\r?\n"
+        r"(?:[A-Za-z0-9+/=]{1,128}\r?\n){1,128}"
+        r"Private-(?:MAC|Hash):[ \t]*[0-9a-fA-F]{40,64})"
+        r"(?![0-9a-fA-F])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # structural multi-line block; the header is the anchor
+    context_keywords=["putty", "ppk", "puttygen", "winscp", "ssh", "private key"],
+    known_test_values=_ppk_placeholders(),
+    recommendation=(
+        "Remove the matching public key from ~/.ssh/authorized_keys (and any"
+        " cloud or Git host it was registered with) on every server that"
+        " accepted it, then generate a new key pair with puttygen and protect"
+        " it with a passphrase."
+    ),
+    tags=["infrastructure", "ssh", "putty", "key"],
+)
+
+
+def _cosign_placeholders() -> set[str]:
+    """Cosign PEM blocks whose body is an obvious placeholder."""
+    values: set[str] = set()
+    for label in ("ENCRYPTED COSIGN PRIVATE KEY", "ENCRYPTED SIGSTORE PRIVATE KEY"):
+        for body in ("REDACTED" * 6, "x" * 64, "...\n" * 12 + "..."):
+            values.add(f"-----BEGIN {label}-----\n{body}\n-----END {label}-----")
+    return values
+
+
+COSIGN_ENCRYPTED_PRIVATE_KEY = SecretPattern(
+    id="cosign_encrypted_private_key",
+    name="Cosign / Sigstore Encrypted Private Key",
+    description=(
+        "Sigstore cosign signing key as written by 'cosign generate-key-pair'"
+        " (cosign.key) — a PEM block labelled 'ENCRYPTED SIGSTORE PRIVATE KEY'"
+        " (or the older 'ENCRYPTED COSIGN PRIVATE KEY') wrapping an"
+        " scrypt + secretbox envelope. It is password-encrypted, but"
+        " COSIGN_PASSWORD frequently leaks in the same CI configuration, and"
+        " together they let an attacker sign container images and artifacts"
+        " that verify as yours."
+    ),
+    provider="sigstore",
+    severity="high",
+    # PEM types CosignPrivateKeyPemType / SigstorePrivateKeyPemType in
+    # pkg/cosign/keys.go. ssh_private_key does not match these labels (it
+    # needs 'PRIVATE KEY' right after the optional 'ENCRYPTED '), so the two
+    # are disjoint; the backreference pins BEGIN and END to the same label.
+    # Source: https://github.com/sigstore/cosign/blob/main/pkg/cosign/keys.go
+    regex=re.compile(
+        r"(?P<secret>-----BEGIN ENCRYPTED (?P<label>COSIGN|SIGSTORE) PRIVATE KEY-----"
+        r"[\s\S]{40,8000}?"
+        r"-----END ENCRYPTED (?P=label) PRIVATE KEY-----)",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # structural PEM armor
+    context_keywords=["cosign", "sigstore", "COSIGN_PASSWORD", "cosign.key", "sign"],
+    known_test_values=_cosign_placeholders(),
+    recommendation=(
+        "Generate a new key pair with 'cosign generate-key-pair', publish the"
+        " new public key to every verifier and policy (Kyverno, Connaisseur,"
+        " admission controllers), and rotate COSIGN_PASSWORD. Re-sign"
+        " artifacts you still ship and treat signatures made with the old key"
+        " after the leak as untrusted. Consider keyless signing instead."
+    ),
+    tags=["infrastructure", "sigstore", "cosign", "supply-chain", "key"],
+)
+
+
+
 register(
     POSTGRES_CONNECTION_STRING,
     MYSQL_CONNECTION_STRING,
@@ -1277,4 +1396,8 @@ register(
     # 2026-10-23 — base64-encoded PEM private key (Kubernetes Secret data,
     # CI variables). Header prefixes re-derived from base64.b64encode.
     BASE64_ENCODED_PEM_PRIVATE_KEY,
+    # 2026-11-16 — PuTTY .ppk private key file (structural v1-3 block per
+    # PuTTY Appendix C) and cosign / Sigstore encrypted PEM private key.
+    PUTTY_PPK_PRIVATE_KEY,
+    COSIGN_ENCRYPTED_PRIVATE_KEY,
 )

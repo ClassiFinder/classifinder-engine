@@ -2148,6 +2148,172 @@ CASHFREE_SECRET_KEY = SecretPattern(
 )
 
 
+# ===================================================
+# NOSTR / BIP-32 / CARDANO (2026-11-16)
+# ===================================================
+
+_BECH32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+NOSTR_NSEC_PRIVATE_KEY = SecretPattern(
+    id="nostr_nsec_private_key",
+    name="Nostr nsec Private Key",
+    description=(
+        "Nostr private key in NIP-19 bech32 form — the human-readable part"
+        " 'nsec', the separator '1', then 58 bech32 characters (52 for the"
+        " 32-byte secp256k1 private key plus a 6-character checksum), 63"
+        " characters in total. Whoever holds it can sign events as that Nostr"
+        " identity. The public 'npub1' form is not matched."
+    ),
+    provider="nostr",
+    severity="critical",
+    # NIP-19: bech32 with HRP 'nsec' for private keys ('npub' is the public
+    # key and is excluded by the literal HRP). 32 bytes -> 52 data characters
+    # + 6 checksum characters.
+    # Source: https://github.com/nostr-protocol/nips/blob/master/19.md
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>nsec1[" + _BECH32 + r"]{58})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,  # random bech32 bodies score ~4.6 bits; masks fall below
+    context_keywords=[
+        "nostr",
+        "nsec",
+        "NOSTR_PRIVATE_KEY",
+        "NOSTR_NSEC",
+        "relay",
+        "private key",
+    ],
+    known_test_values={
+        # The NIP-19 specification's own test vector, split so no scannable
+        # key literal exists in source.
+        "nsec1" + "vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5",
+        *("nsec1" + fill * 58 for fill in ("q", "x")),
+    },
+    recommendation=(
+        "Treat the Nostr identity as compromised: a private key cannot be"
+        " revoked. Generate a new key pair, announce the migration from the old"
+        " npub to your followers, and move any NIP-05 or Lightning address"
+        " mappings to the new key."
+    ),
+    tags=["crypto", "nostr", "private-key", "bech32"],
+)
+
+
+BIP32_EXTENDED_PRIVATE_KEY = SecretPattern(
+    id="bip32_extended_private_key",
+    name="BIP-32 Extended Private Key (xprv)",
+    description=(
+        "Hierarchical-deterministic wallet extended private key — a"
+        " Base58Check string of 111 characters that opens with a version"
+        " prefix ending in 'prv': 'xprv' / 'tprv' (BIP-32 mainnet / testnet)"
+        " or the SLIP-132 variants 'yprv', 'zprv', 'Yprv', 'Zprv', 'uprv',"
+        " 'vprv', 'Uprv', 'Vprv'. It derives every private key below it, so a"
+        " leaked account or master xprv exposes the whole wallet subtree."
+        " Public 'xpub'-family keys are not matched."
+    ),
+    provider="bitcoin",
+    severity="critical",
+    # BIP-32 serialization: 78-byte payload + 4-byte checksum, Base58Check
+    # encoded to 111 characters; the 4-byte version yields the readable
+    # prefix. Private-key version prefixes from SLIP-0132:
+    # https://github.com/satoshilabs/slips/blob/master/slip-0132.md
+    # Source: https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>[xyzYZtuvUV]prv[1-9A-HJ-NP-Za-km-z]{107})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.5,  # random base58 bodies score ~5.6 bits; masks fall below
+    context_keywords=[
+        "xprv",
+        "tprv",
+        "zprv",
+        "bip32",
+        "extended private key",
+        "wallet",
+        "derivation",
+        "bitcoin",
+    ],
+    known_test_values={
+        # BIP-32 test vector 1 master key (chain m), printed in the
+        # specification and copied into countless wallet test suites. Split
+        # so no scannable key literal exists in source.
+        "xprv" + "9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKm"
+        + "PGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi",
+    },
+    recommendation=(
+        "Move every coin controlled by keys derived from this extended key to"
+        " a wallet created from a fresh seed, on every account and chain the"
+        " key covers. Extended private keys cannot be revoked; anyone holding"
+        " it can derive and spend from all child addresses."
+    ),
+    tags=["crypto", "bitcoin", "wallet", "bip32", "hd-wallet"],
+)
+
+
+CARDANO_SIGNING_KEY = SecretPattern(
+    id="cardano_signing_key",
+    name="Cardano Bech32 Signing Key",
+    description=(
+        "Cardano private signing key in CIP-5 bech32 form: a key-role"
+        " human-readable part (root_, acct_, addr_, stake_, policy_, pool_,"
+        " drep_, cc_cold_, cc_hot_, cvote_, gen_ ... with an optional"
+        " '_shared' segment) ending in 'sk' (32-byte Ed25519 key, 58"
+        " characters after '1', or a 64-byte extended key, 109) or 'xsk'"
+        " (96-byte extended key per CIP-16, 160 characters), plus the library"
+        " forms 'ed25519_sk1' and"
+        " 'ed25519e_sk1' (64-byte extended key, 109 characters). Verification"
+        " keys ('_vk' / '_xvk') are not matched."
+    ),
+    provider="cardano",
+    severity="critical",
+    # HRPs per CIP-0005 (key prefixes table); payload sizes per CIP-0016
+    # (32-byte signing key, 96-byte extended signing key):
+    # https://github.com/cardano-foundation/CIPs/blob/master/CIP-0016/README.md
+    # Bech32 data widths: 32 B -> 52+6, 64 B -> 103+6 (=109), 96 B -> 154+6 (=160).
+    # Source: https://github.com/cardano-foundation/CIPs/blob/master/CIP-0005/README.md
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>"
+        r"(?:(?:root|acct|addr|stake|drep|cc_cold|cc_hot|pool|policy|cvote"
+        r"|gen|gen_deleg|gen_utxo)(?:_shared)?_"
+        r"(?:sk1(?:[" + _BECH32 + r"]{109}|[" + _BECH32 + r"]{58})"
+        r"|xsk1[" + _BECH32 + r"]{160})"
+        r"|ed25519_sk1[" + _BECH32 + r"]{58}"
+        r"|ed25519e_sk1[" + _BECH32 + r"]{109})"
+        r")"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=3.0,  # random bech32 bodies score ~4.7 bits; masks fall below
+    context_keywords=[
+        "cardano",
+        "cardano-cli",
+        "cardano-address",
+        "signing key",
+        "skey",
+        "ada",
+        "wallet",
+    ],
+    known_test_values={
+        *("addr" + "_sk1" + fill * 58 for fill in ("q", "x")),
+        *("root" + "_xsk1" + fill * 160 for fill in ("q", "x")),
+    },
+    recommendation=(
+        "Move all ADA, tokens and delegated stake controlled by this key to"
+        " addresses derived from a fresh recovery phrase. If it is a pool,"
+        " policy or DRep key, rotate the operational certificate or"
+        " registration as the role requires. Signing keys cannot be revoked."
+    ),
+    tags=["crypto", "cardano", "wallet", "private-key", "bech32"],
+)
+
 
 
 register(
@@ -2221,4 +2387,10 @@ register(
     # 2026-10-08 — Cashfree Payments secret key ('cfsk_ma_prod_' /
     # 'cfsk_ma_test_' + 32 hex + '_' + 8 hex; prefix per an integrator doc).
     CASHFREE_SECRET_KEY,
+    # 2026-11-16 — Nostr nsec private key (NIP-19 bech32, 'nsec1' + 58),
+    # BIP-32 / SLIP-132 extended private key ('xprv'-family + 107 base58),
+    # Cardano CIP-5 bech32 signing key ('*_sk1' / '*_xsk1' / 'ed25519e_sk1').
+    NOSTR_NSEC_PRIVATE_KEY,
+    BIP32_EXTENDED_PRIVATE_KEY,
+    CARDANO_SIGNING_KEY,
 )
