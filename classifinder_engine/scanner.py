@@ -73,17 +73,115 @@ def _mask_value(value: str) -> str:
     return value[:4] + "****" + value[-4:]
 
 
-def _extract_context(text: str, start: int, end: int, window: int = 40) -> str:
+def _merge_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Merge overlapping or touching (start, end) spans into a sorted, disjoint list."""
+    merged: list[tuple[int, int]] = []
+    for s, e in sorted(spans):
+        if merged and s <= merged[-1][1]:
+            if e > merged[-1][1]:
+                merged[-1] = (merged[-1][0], e)
+        else:
+            merged.append((s, e))
+    return merged
+
+
+def _mask_side(text: str, lo: int, hi: int, mask_spans: list[tuple[int, int]]) -> str:
+    """
+    Return text[lo:hi] with every part covered by ``mask_spans`` masked.
+
+    ``mask_spans`` must be sorted and disjoint (see ``_merge_spans``). A span
+    that crosses lo/hi is clipped to the window: only the visible part is
+    masked, and the mask is computed from that visible part alone so nothing
+    outside the window is revealed.
+    """
+    if lo >= hi:
+        return ""
+    parts: list[str] = []
+    cursor = lo
+    # First span that could reach into the window: the one before the
+    # insertion point may still end after ``lo``.
+    i = bisect.bisect_left(mask_spans, (lo,))
+    if i > 0 and mask_spans[i - 1][1] > lo:
+        i -= 1
+    while i < len(mask_spans) and mask_spans[i][0] < hi:
+        s = max(mask_spans[i][0], lo)
+        e = min(mask_spans[i][1], hi)
+        if e > s:
+            parts.append(text[cursor:s])
+            parts.append(_mask_value(text[s:e]))
+            cursor = e
+        i += 1
+    parts.append(text[cursor:hi])
+    return "".join(parts)
+
+
+_CONTEXT_WINDOW = 40
+
+# How far beyond a context window the unselected patterns are run when a
+# `types` filter is active. A neighbouring secret has to match in full to be
+# masked, so the slice must reach its far end and any key name in front of it.
+# Secrets longer than this that merely graze a window are not matched; at most
+# a window-sized (40-char) fragment of such a secret can appear in context.
+_MASK_SCAN_PAD = 1024
+
+
+def _spans_near_findings(
+    text: str, findings: list[Finding], selected_types: set[str]
+) -> list[tuple[int, int]]:
+    """
+    Spans matched by the patterns a `types` filter excluded, restricted to the
+    text around ``findings``.
+
+    A filtered scan skips most of the registry, which is the point of the
+    filter. But a finding's context must still not show a neighbouring secret
+    of an excluded type, so those patterns are run here over only the padded
+    context windows. Cost scales with the number of findings, not the size of
+    the text; it reaches a full scan only when findings cover the whole text.
+
+    ``finditer(text, lo, hi)`` is used rather than slicing so lookbehinds and
+    ``^`` see the real surrounding text.
+    """
+    reach = _CONTEXT_WINDOW + _MASK_SCAN_PAD
+    regions = _merge_spans(
+        [(max(0, f.span_start - reach), min(len(text), f.span_end + reach)) for f in findings]
+    )
+
+    spans: list[tuple[int, int]] = []
+    for pattern in registry.PATTERN_REGISTRY:
+        if pattern.id in selected_types:
+            continue
+        has_secret_group = "secret" in pattern.regex.groupindex
+        for lo, hi in regions:
+            for match in pattern.regex.finditer(text, lo, hi):
+                if has_secret_group and match.start("secret") != -1:
+                    spans.append((match.start("secret"), match.end("secret")))
+                else:
+                    spans.append((match.start(), match.end()))
+    return spans
+
+
+def _extract_context(
+    text: str,
+    start: int,
+    end: int,
+    window: int = _CONTEXT_WINDOW,
+    mask_spans: list[tuple[int, int]] | None = None,
+) -> str:
     """
     Extract a short snippet of text around a finding, with the
     secret itself masked. Used for human review.
+
+    ``mask_spans`` (sorted, disjoint) lists every other span the scan
+    matched. Any of them that falls inside the window is masked too, so a
+    finding's context never carries a neighbouring secret in the clear.
     """
     ctx_start = max(0, start - window)
     ctx_end = min(len(text), end + window)
 
-    before = text[ctx_start:start]
+    spans = mask_spans or []
+    before = _mask_side(text, ctx_start, start, spans)
     secret = text[start:end]
-    after = text[end:ctx_end]
+    after = _mask_side(text, end, ctx_end, spans)
 
     masked = _mask_value(secret)
 
@@ -141,9 +239,19 @@ def scan(
     # on nested base64 inputs.
     decoded_segments = decode_base64_segments(text) if _depth == 0 else []
 
+    # Every span any pattern matched, kept regardless of confidence, dedup or
+    # the `types` filter. Used only to mask neighbouring secrets inside
+    # context snippets — a finding's context must never show another secret
+    # in the clear, including one the caller filtered out or that scored
+    # below min_confidence.
+    mask_spans: list[tuple[int, int]] = []
+    type_filter_active = bool(types) and "all" not in types
+
     for pattern in registry.PATTERN_REGISTRY:
-        # Filter by type if specified
-        if types and "all" not in types and pattern.id not in types:
+        # Filter by type if specified. Unselected patterns are skipped here;
+        # when context is requested they get a second, much smaller pass over
+        # just the text around the final findings (see _spans_near_findings).
+        if type_filter_active and pattern.id not in types:
             continue
 
         for match in pattern.regex.finditer(text):
@@ -155,6 +263,9 @@ def scan(
 
             span_start = match.start("secret") if "secret" in match.groupdict() else match.start()
             span_end = match.end("secret") if "secret" in match.groupdict() else match.end()
+
+            if include_context:
+                mask_spans.append((span_start, span_end))
 
             # -- Confidence calculation --
             confidence = pattern.confidence_base
@@ -227,7 +338,7 @@ def scan(
                 value_preview=_mask_value(secret_value),
                 span_start=span_start,
                 span_end=span_end,
-                context=(_extract_context(text, span_start, span_end) if include_context else None),
+                context=None,  # filled in after the loop, once all mask spans are known
                 is_likely_test_value=is_test,
                 recommendation=pattern.recommendation,
                 matched_pattern=f"{pattern.id}_v1",
@@ -244,6 +355,8 @@ def scan(
         )
         for df in decoded_findings:
             finding_counter += 1
+            if include_context:
+                mask_spans.append((orig_start, orig_end))
             raw_findings.append(Finding(
                 id=f"f_{finding_counter:03d}",
                 type=df.type,
@@ -254,7 +367,7 @@ def scan(
                 value_preview=df.value_preview,
                 span_start=orig_start,
                 span_end=orig_end,
-                context=(_extract_context(text, orig_start, orig_end) if include_context else None),
+                context=None,  # filled in after the loop
                 is_likely_test_value=df.is_likely_test_value,
                 recommendation=df.recommendation,
                 matched_pattern=df.matched_pattern,
@@ -263,6 +376,17 @@ def scan(
             ))
 
     final_findings = _dedup_overlapping_findings(raw_findings)
+
+    # Build context snippets last: only now is every matched span known, so
+    # neighbouring secrets inside each window can be masked.
+    if include_context and final_findings:
+        if type_filter_active:
+            mask_spans.extend(_spans_near_findings(text, final_findings, set(types or [])))
+        merged_spans = _merge_spans(mask_spans)
+        for f in final_findings:
+            f.context = _extract_context(
+                text, f.span_start, f.span_end, mask_spans=merged_spans
+            )
 
     # Re-number IDs sequentially after dedup
     for i, f in enumerate(final_findings, 1):
