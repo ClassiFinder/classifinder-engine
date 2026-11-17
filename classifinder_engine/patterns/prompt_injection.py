@@ -274,12 +274,17 @@ FAKE_ASSISTANT_TURN = SecretPattern(
     ),
     provider="prompt_injection",
     severity="high",
+    # The indent class is whitespace EXCLUDING newline: with a bare \s* every
+    # start position in a run of blank lines rescans the rest of the run
+    # (quadratic — 16 KB of newlines took ~3.7 s). Any newline can still be
+    # the anchor, so the set of matched labels is unchanged.
+    #
     # Independently authored — pattern observed in indirect-injection
     # samples from Greshake et al. 2023 ("Not what you've signed up for");
     # user attempts to spoof an assistant message by prefixing input with
     # role labels. Anchored to start of input or after newline.
     regex=re.compile(
-        r"(?:^|\n)\s*"
+        r"(?:^|\n)[^\S\n]*"
         r"(?P<secret>"
         # Specific AI-product / chatbot role labels. Words "model" and "ai"
         # are intentionally excluded — too common as Python identifiers
