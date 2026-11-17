@@ -4310,6 +4310,54 @@ MEDUSA_SECRET_API_KEY = SecretPattern(
 )
 
 
+N8N_LEGACY_API_KEY = SecretPattern(
+    id="n8n_legacy_api_key",
+    name="n8n Legacy API Key",
+    description=(
+        "n8n legacy public-API key — the literal 'n8n_api_' prefix followed by"
+        " exactly 80 lowercase hex characters (40 random bytes), 88 characters"
+        " in total. Sent in the 'X-N8N-API-KEY' header; grants access to the"
+        " n8n public API (workflows, executions, credentials metadata). Newer"
+        " n8n releases issue JWT-format keys, which this pattern does not"
+        " cover; legacy keys remain accepted."
+    ),
+    provider="n8n",
+    severity="high",
+    # Prefix and width per createApiKeyString at the last revision before JWT
+    # keys: API_KEY_PREFIX + randomBytes(40).toString('hex'). Independently
+    # authored.
+    # Source: https://github.com/n8n-io/n8n/blob/a13a4f74425559f5caff4d696ab2b00486295fee/packages/cli/src/services/public-api-key.service.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>n8n_api_[0-9a-f]{80})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # vendor prefix plus fixed-width hex body carries the precision
+    context_keywords=[
+        "n8n",
+        "N8N_API_KEY",
+        "X-N8N-API-KEY",
+        "api/v1",
+        "workflow",
+        "apiKey",
+    ],
+    known_test_values={
+        # Single-character masks and the hex ramp (the body is 80 wide).
+        *("n8n" + "_api_" + fill * 80 for fill in ("0", "a", "f")),
+        "n8n" + "_api_" + "0123456789abcdef" * 5,
+    },
+    recommendation=(
+        "Delete the API key in n8n (Settings > n8n API) and create a new one;"
+        " newer n8n versions issue a scoped JWT key in its place. Update every"
+        " integration that used the old key and review workflow, credential"
+        " and execution changes made through the public API."
+    ),
+    tags=["devops", "n8n", "automation", "api_key"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -4475,4 +4523,7 @@ register(
     # 2026-11-11 — Medusa secret API key ('sk_' + 64 lowercase hex; per the
     # vendor's own api-key module; 'pk_' publishable key not matched).
     MEDUSA_SECRET_API_KEY,
+    # 2026-11-17 — n8n legacy API key ('n8n_api_' + 80 lowercase hex; per the
+    # vendor's own createApiKeyString; current JWT-format keys not matched).
+    N8N_LEGACY_API_KEY,
 )
