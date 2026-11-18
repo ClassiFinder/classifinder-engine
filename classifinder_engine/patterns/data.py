@@ -1958,6 +1958,54 @@ LOGSEQ_PERSONAL_ACCESS_TOKEN = SecretPattern(
 )
 
 
+HOPPSCOTCH_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="hoppscotch_personal_access_token",
+    name="Hoppscotch Personal Access Token",
+    description=(
+        "Hoppscotch personal access token — the literal 'pat-' prefix followed by a"
+        " lowercase 8-4-4-4-12 hex UUID, 40 characters in total. Passed to the"
+        " Hoppscotch CLI as 'hopp test <collection> --token <token>' and grants API"
+        " access to the user's workspaces and collections."
+    ),
+    provider="hoppscotch",
+    severity="high",
+    # TOKEN_PREFIX = 'pat-' and the returned `${this.TOKEN_PREFIX}${createdPAT.token}`
+    # in access-token.service.ts; body per prisma/schema.prisma, model
+    # PersonalAccessToken, `token String @unique @default(uuid())`. The UUID body is
+    # structural rather than high-entropy, so the bare-token base sits below the
+    # long-prefix tier and context lifts it. Word/hyphen guards keep glpat- and
+    # CFPAT- tails out; HubSpot's 'pat-na1-' / 'pat-eu1-' cannot match 8 hex.
+    # Source: https://github.com/hoppscotch/hoppscotch/blob/main/packages/hoppscotch-backend/src/access-token/access-token.service.ts
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>pat-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.88,
+    entropy_threshold=0.0,  # prefix plus fixed-width UUID carries the precision
+    context_keywords=[
+        "hoppscotch",
+        "hopp",
+        "HOPP_TOKEN",
+        "--token",
+        "personal access token",
+    ],
+    known_test_values={
+        # Single-character UUID masks. Built by concatenation so no scannable
+        # token literal exists in source.
+        "pat" + "-" + "-".join(fill * n for n in (8, 4, 4, 4, 12))
+        for fill in ("0", "a", "f", "x")
+    },
+    recommendation=(
+        "Delete the token in Hoppscotch's personal access token settings, create a"
+        " replacement and update every CI job or script that runs 'hopp test' with it."
+        " Review your workspaces for collection or environment changes you did not make."
+    ),
+    tags=["data", "hoppscotch", "api-client", "pat"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -2034,4 +2082,7 @@ register(
     # 2026-11-15 — Logseq DB Sync personal access token ('logseq_pat_' + 64
     # lowercase hex = 75 chars; per the vendor's own generate-token).
     LOGSEQ_PERSONAL_ACCESS_TOKEN,
+    # 2026-11-18 — Hoppscotch personal access token ('pat-' + lowercase UUID =
+    # 40 chars; per the vendor's own access-token.service.ts + prisma schema).
+    HOPPSCOTCH_PERSONAL_ACCESS_TOKEN,
 )
