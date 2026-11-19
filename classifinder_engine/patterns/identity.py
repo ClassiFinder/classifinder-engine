@@ -1879,6 +1879,84 @@ RADAR_SECRET_KEY = SecretPattern(
 )
 
 
+# ---------------------------------------------------------------
+# Laravel Sanctum personal access token (2026-11-19)
+# ---------------------------------------------------------------
+# Laravel Sanctum's HasApiTokens::createToken() returns the plaintext token as
+# '<token id>|<plainTextToken>' (PersonalAccessToken::findToken splits on '|').
+# generateTokenString() builds plainTextToken as
+# sprintf('%s%s%s', config('sanctum.token_prefix', ''), Str::random(40),
+# hash('crc32b', $tokenEntropy)): an optional prefix (empty by default), 40
+# [A-Za-z0-9] and the 8-lowercase-hex CRC32 of those 40. There is no literal
+# vendor prefix, so the anchor is the structure itself: a 1-10 digit id, '|',
+# exactly 40 alphanumerics and an 8-char lowercase-hex tail (a random
+# alphanumeric 48-char run ends in 8 lowercase hex with probability ~2e-5).
+# Not matched, on purpose: legacy pre-3.3 tokens (40 chars, no CRC tail) and
+# tokens minted with a custom sanctum.token_prefix. Confidence 0.90
+# (structural) keeps it above the 0.85 FP-wordlist gate. No entropy gate.
+# Guards refuse [A-Za-z0-9_|] on the left (so the id cannot start mid-number)
+# and [A-Za-z0-9_] on the right. Severity high: the token acts as the user
+# against the application's Sanctum-guarded API with the token's abilities.
+
+LARAVEL_SANCTUM_PERSONAL_ACCESS_TOKEN = SecretPattern(
+    id="laravel_sanctum_personal_access_token",
+    name="Laravel Sanctum Personal Access Token",
+    description=(
+        "Laravel Sanctum personal access token in its plaintext form — the"
+        " numeric token id, a '|' separator, 40 alphanumeric characters and an"
+        " 8-character lowercase-hex CRC32 checksum of those 40. Sent as"
+        " 'Authorization: Bearer <id>|<token>' to a Laravel application's"
+        " Sanctum-guarded API routes."
+    ),
+    provider="laravel",
+    severity="high",
+    # Format per laravel/sanctum (MIT): HasApiTokens::generateTokenString()
+    # (Str::random(40) + hash('crc32b', ...)) and createToken() ('<id>|'
+    # prefix); PersonalAccessToken::findToken() splits on '|'. Guards,
+    # confidence and known_test_values are ClassiFinder's own. Independently
+    # authored; no third-party detector consulted.
+    # Source: https://github.com/laravel/sanctum/blob/4.x/src/HasApiTokens.php
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_|])"
+        r"(?P<secret>[0-9]{1,10}\|[A-Za-z0-9]{40}[0-9a-f]{8})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # id|body structure plus checksum tail carries the precision
+    context_keywords=[
+        "sanctum",
+        "laravel",
+        "SANCTUM_TOKEN",
+        "plainTextToken",
+        "personal_access_tokens",
+        "Authorization",
+        "Bearer",
+    ],
+    known_test_values={
+        # Single-character masks under id 1, with a zeroed tail and with the
+        # real CRC32 of the mask. Built by concatenation so no scannable token
+        # literal exists in source.
+        "1" + "|" + fill * 40 + tail
+        for fill, crc in (
+            ("a", "c95b8a25"),
+            ("x", "c41a71f0"),
+            ("X", "27a877e5"),
+            ("0", "963fbb8e"),
+        )
+        for tail in (crc, "0" * 8)
+    },
+    recommendation=(
+        "Delete the token (remove its row from personal_access_tokens, or call"
+        " $user->tokens()->where('id', <id>)->delete()) and issue a"
+        " replacement with createToken(). Update every client that used it and"
+        " review the application's logs for requests made with the token while"
+        " it was exposed."
+    ),
+    tags=["identity", "laravel", "sanctum", "php", "pat"],
+)
+
+
 register(
     ATLASSIAN_API_TOKEN,
     ONEPASSWORD_SECRET_KEY,
@@ -1949,4 +2027,8 @@ register(
     # lowercase hex; prefixes per the vendor's own API reference, width
     # measured; publishable 'prj_*_pk_' keys not matched).
     RADAR_SECRET_KEY,
+    # 2026-11-19 — Laravel Sanctum personal access token ('<id>|' + 40
+    # alphanumeric + 8 lowercase-hex CRC32; per the vendor's own
+    # HasApiTokens::generateTokenString() / createToken()).
+    LARAVEL_SANCTUM_PERSONAL_ACCESS_TOKEN,
 )
