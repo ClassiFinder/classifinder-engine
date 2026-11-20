@@ -1958,6 +1958,62 @@ LOGSEQ_PERSONAL_ACCESS_TOKEN = SecretPattern(
 )
 
 
+RILL_ACCESS_TOKEN = SecretPattern(
+    id="rill_access_token",
+    name="Rill Access Token",
+    description=(
+        "Rill Cloud access token — the literal 'rill_' prefix, a token-type tag"
+        " ('usr' user, 'svc' service, 'dpl' deployment, 'mgc' magic/shareable"
+        " link, 'mgs' magic session), '_', then a base-62 body of 50-54"
+        " characters encoding a 16-byte token id plus a 24-byte random secret."
+        " Sent as a Bearer token to the Rill admin API, the rill CLI and"
+        " embedded dashboards."
+    ),
+    provider="rill",
+    severity="critical",
+    # Prefix and type tags per const Prefix and the Type constants; body per
+    # String() = Prefix_Type_marshalBase62(40-byte payload), i.e. big.Int.Text(62)
+    # over [0-9a-zA-Z] with no padding (54 chars, shorter when leading bytes are
+    # zero). Independently authored; no third-party detector consulted.
+    # Source: https://github.com/rilldata/rill/blob/main/admin/pkg/authtoken/authtoken.go
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>rill_(?:usr|svc|dpl|mgc|mgs)_[0-9A-Za-z]{50,54})"
+        r"(?![A-Za-z0-9_])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # vendor prefix + type tag + 50-54 base62 carries the precision
+    context_keywords=[
+        "rill",
+        "RILL_ADMIN_TOKEN",
+        "RILL_TOKEN",
+        "rilldata",
+        "Authorization",
+        "Bearer",
+        "access token",
+    ],
+    known_test_values={
+        # The vendor's own doc-comment example in authtoken.go. Split so no
+        # scannable token literal exists in source.
+        "rill" + "_usr_" + "2Dws32dc2FxTThgCQjHerGM1rx9pJLCPQh5QbWjUiwpkZNkCCRrlrK",
+    }
+    | {
+        # Single-character masks for every token type.
+        "rill" + "_" + typ + "_" + fill * 54
+        for typ in ("usr", "svc", "dpl", "mgc", "mgs")
+        for fill in ("0", "a", "x", "X")
+    },
+    recommendation=(
+        "Revoke the token in Rill Cloud (rill token revoke / rill service token"
+        " revoke, or remove the shareable link for magic tokens), issue a"
+        " replacement and update every script, CI job or embed that used it."
+        " Review project access logs for activity you did not expect."
+    ),
+    tags=["data", "rill", "analytics", "bi", "bearer"],
+)
+
+
 register(
     CLICKHOUSE_CLOUD_API_SECRET_KEY,
     PLANETSCALE_API_TOKEN,
@@ -2034,4 +2090,7 @@ register(
     # 2026-11-15 — Logseq DB Sync personal access token ('logseq_pat_' + 64
     # lowercase hex = 75 chars; per the vendor's own generate-token).
     LOGSEQ_PERSONAL_ACCESS_TOKEN,
+    # 2026-11-20 — Rill access token ('rill_' + usr|svc|dpl|mgc|mgs + '_' +
+    # 50-54 base62; per the vendor's own authtoken.go String()).
+    RILL_ACCESS_TOKEN,
 )
