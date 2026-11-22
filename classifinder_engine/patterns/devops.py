@@ -4310,6 +4310,62 @@ MEDUSA_SECRET_API_KEY = SecretPattern(
 )
 
 
+CLOUDSMITH_API_KEY = SecretPattern(
+    id="cloudsmith_api_key",
+    name="Cloudsmith API Key",
+    description=(
+        "Cloudsmith API key — the literal 'csa_' (or 'CSA_') prefix, 30 hex"
+        " characters and a 6-character checksum from [A-Za-z0-9+/_-], 40"
+        " characters in all. Sent as the X-Api-Key header to the Cloudsmith API"
+        " and the cloudsmith CLI, and grants the owning user's or service"
+        " account's access to package repositories."
+    ),
+    provider="cloudsmith",
+    severity="high",
+    # Format per the vendor's own CLI redaction rule (_CREDENTIAL_PATTERNS):
+    # "Cloudsmith API keys: csa_/CSA_, 30 hex characters, 6-character checksum."
+    # The legacy bare 40-hex key is deliberately not matched (a git SHA looks
+    # the same). Independently authored.
+    # Source: https://github.com/cloudsmith-io/cloudsmith-cli/blob/31bbadd8d2b9255bcaf7b82335ce3d3cdcbf9841/cloudsmith_cli/core/telemetry.py#L548-L551
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<secret>(?:csa|CSA)_[0-9a-fA-F]{30}[A-Za-z0-9+/_-]{6})"
+        r"(?![A-Za-z0-9+/_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.95,
+    entropy_threshold=0.0,  # literal prefix plus fixed 30-hex + 6 checksum carries the precision
+    context_keywords=[
+        "cloudsmith",
+        "CLOUDSMITH_API_KEY",
+        "X-Api-Key",
+        "api key",
+        "repository",
+    ],
+    known_test_values={
+        # Single-character masks. Built by concatenation so no scannable key
+        # literal exists in source.
+        "csa" + "_" + fill * 36
+        for fill in ("0", "a", "f", "x")
+    }
+    | {
+        "CSA" + "_" + fill * 36
+        for fill in ("0", "A", "F", "X")
+    }
+    | {
+        # Sequential-hex placeholder shape.
+        "csa" + "_" + "0123456789abcdef0123456789abcd" + "efghij",
+    },
+    recommendation=(
+        "Revoke the API key in Cloudsmith (user or service account settings >"
+        " API key), create a replacement and update every CI job, package"
+        " manager config and script that used it. Review the audit log for"
+        " package pushes or deletions you did not make."
+    ),
+    tags=["devops", "cloudsmith", "package-registry", "supply-chain"],
+)
+
+
 register(
     # Part 2.1 — DevOps / CI-CD / Observability
     DATABRICKS_API_TOKEN,
@@ -4475,4 +4531,7 @@ register(
     # 2026-11-11 — Medusa secret API key ('sk_' + 64 lowercase hex; per the
     # vendor's own api-key module; 'pk_' publishable key not matched).
     MEDUSA_SECRET_API_KEY,
+    # 2026-11-22 — Cloudsmith API key ('csa_'/'CSA_' + 30 hex + 6-char
+    # checksum = 40 chars; per the vendor's own CLI redaction rule).
+    CLOUDSMITH_API_KEY,
 )
