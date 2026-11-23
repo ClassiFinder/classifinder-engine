@@ -5094,6 +5094,58 @@ YANDEX_SMARTCAPTCHA_SERVER_KEY = SecretPattern(
 )
 
 
+NAVER_CLOUD_IAM_ACCESS_KEY_SECRET = SecretPattern(
+    id="naver_cloud_iam_access_key_secret",
+    name="Naver Cloud IAM Access Key Secret",
+    description=(
+        "Naver Cloud Platform (NCP) IAM sub-account access key secret — the"
+        " literal 'ncp_iam_' prefix followed by a 34-character body (a"
+        " 6-letter upper-case head, then 28 alphanumerics), 42 characters in"
+        " all. Paired with the 'ncp_iam_' access key ID (20-character body) to"
+        " sign Naver Cloud API calls. The shorter access key ID is an"
+        " identifier and is not matched."
+    ),
+    provider="naver_cloud",
+    severity="critical",
+    # Prefix and the 34-character secret width per the vendor's Create Access
+    # Key API response example ("keySecret": "ncp_iam_****"); the upper-case
+    # head and alphanumeric body are MEASURED on public samples, not named.
+    # Source: https://api.ncloud-docs.com/docs/en/management-subaccount-createaccesskey
+    regex=re.compile(
+        r"(?<![A-Za-z0-9_-])"
+        r"(?P<secret>ncp_iam_[A-Z]{6}[A-Za-z0-9]{28})"
+        r"(?![A-Za-z0-9_-])",
+        re.ASCII,
+    ),
+    confidence_base=0.92,
+    entropy_threshold=3.5,  # random alphanumeric bodies score >= ~4.5 bits; masks fall below
+    context_keywords=[
+        "ncloud",
+        "naver",
+        "ncp",
+        "NCLOUD_SECRET_KEY",
+        "NCP_SECRET_KEY",
+        "keySecret",
+        "secret_key",
+        "x-ncp-iam-access-key",
+    ],
+    known_test_values={
+        # Single-character masks. Built by concatenation so no scannable key
+        # literal exists in source.
+        *("ncp" + "_iam_" + "BPKMKR" + fill * 28 for fill in ("x", "X", "0", "A")),
+        *("ncp" + "_iam_" + fill * 34 for fill in ("X", "A")),
+    },
+    recommendation=(
+        "Delete the access key in the Naver Cloud console (Sub Account > the"
+        " sub-account > Access Key), create a replacement, and update every"
+        " application or CLI profile that used it. Review the sub-account's"
+        " recent API activity in Cloud Activity Tracer for calls you did not"
+        " make."
+    ),
+    tags=["cloud", "naver_cloud", "iam", "access_key"],
+)
+
+
 register(
     AWS_ACCESS_KEY,
     AWS_SECRET_KEY,
@@ -5271,4 +5323,7 @@ register(
     # 2026-11-09 — Yandex SmartCaptcha server key ('ysc2_' + 48 alnum;
     # prefix per Yandex Cloud docs, width measured; 'ysc1_' not matched).
     YANDEX_SMARTCAPTCHA_SERVER_KEY,
+    # 2026-11-23 — Naver Cloud IAM access key secret ('ncp_iam_' + 6 upper +
+    # 28 alnum; prefix and width per the vendor's Create Access Key API docs).
+    NAVER_CLOUD_IAM_ACCESS_KEY_SECRET,
 )
