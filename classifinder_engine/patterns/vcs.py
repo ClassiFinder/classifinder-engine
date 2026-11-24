@@ -1462,6 +1462,62 @@ GITLAB_ROUTABLE_TOKEN = SecretPattern(
 )
 
 
+GITALK_V1_GITHUB_OAUTH_CLIENT_SECRET = SecretPattern(
+    id="gitalk_v1_github_oauth_client_secret",
+    name="Gitalk 1.x GitHub OAuth Client Secret",
+    description=(
+        "GitHub OAuth App client secret embedded in a Gitalk 1.x comment-widget"
+        " config: new Gitalk({ clientID: '<20 hex>', clientSecret: '<40 hex>', ... })."
+        " Gitalk 1.x ran the OAuth exchange in the browser, so the secret ships in"
+        " every static blog page (Hexo / Jekyll / Hugo themes on GitHub Pages)."
+        " Only the 40-hex clientSecret is reported; the 20-hex clientID is public."
+    ),
+    provider="gitalk",
+    severity="high",
+    # No prefix: the 'new Gitalk({' constructor plus the clientSecret key is the
+    # structural anchor, and the body is the legacy 40-lowercase-hex GitHub OAuth
+    # App client secret. Single/double quotes and quoted keys are accepted; an
+    # escaped quote (\' or \") before the value is not, so string-in-string
+    # copies stay negative. The 300-char window is bounded (no ReDoS).
+    # Pattern attribution: Nosey Parker (Apache-2.0) rule np.gitalk.1, independently re-authored
+    # Format per https://github.com/gitalk/gitalk/blob/v1.8.1/readme.md
+    regex=re.compile(
+        r"\bnew\s+Gitalk\s*\(\s*\{"
+        r"[^}]{0,300}?"
+        r"\bclientSecret\b[\"']?\s*:\s*[\"']"
+        r"(?P<secret>[a-f0-9]{40})"
+        r"[\"']",
+        re.ASCII,
+    ),
+    confidence_base=0.90,
+    entropy_threshold=0.0,  # constructor + key anchor and fixed-width hex carry the precision
+    context_keywords=[
+        "gitalk",
+        "clientID",
+        "github",
+        "oauth",
+        "admin",
+        "repo",
+    ],
+    known_test_values={
+        # Single-character and sequential-hex placeholders.
+        fill * 40
+        for fill in ("0", "a", "f", "x")
+    }
+    | {
+        "0123456789abcdef" * 2 + "01234567",
+        "1234567890" * 4,
+    },
+    recommendation=(
+        "Reset the client secret of the GitHub OAuth App behind this Gitalk widget"
+        " (GitHub > Settings > Developer settings > OAuth Apps > Generate a new"
+        " client secret) and delete the old one. Upgrade to Gitalk 2.x, which uses"
+        " a GitHub App with no secret in the browser, or keep the secret server-side."
+    ),
+    tags=["vcs", "github", "gitalk", "oauth", "client-secret"],
+)
+
+
 register(
     GITHUB_PAT_CLASSIC,
     GITHUB_PAT_FINE_GRAINED,
@@ -1515,4 +1571,8 @@ register(
     # '.01.' + 9 base36 length/CRC32; from GitLab's own RoutableToken
     # generator). Classic 20-char patterns above cannot match this form.
     GITLAB_ROUTABLE_TOKEN,
+    # 2026-11-24 — Gitalk 1.x GitHub OAuth App client secret (40 lowercase
+    # hex), structurally anchored on 'new Gitalk({' + the clientSecret key.
+    # Fixes misattribution of these blocks as azure_ad_client_secret.
+    GITALK_V1_GITHUB_OAUTH_CLIENT_SECRET,
 )
